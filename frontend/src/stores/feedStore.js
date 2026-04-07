@@ -57,14 +57,14 @@ export const useFeedStore = create((set, get) => ({
         return data.url; // Cloudinary secure_url
     },
 
-    createPost: async ({ content, tags, mediaURLs, poll, channelId, mentions }) => {
+    createPost: async ({ content, tags, mediaURLs, resourceLinks, poll, channelId, mentions }) => {
         set({ isLoading: true, error: null });
         try {
             const res = await apiFetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({ content, tags, mediaURLs, poll, channelId, mentions }),
+                body: JSON.stringify({ content, tags, mediaURLs, resourceLinks, poll, channelId, mentions }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Failed to create post');

@@ -8,7 +8,7 @@ import { OAuth2Client } from "google-auth-library";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import speakeasy from "speakeasy";
 import QRCode from "qrcode";
-import { generateTokenandSetCookie } from "../utils/generateTokenandSetCookie.js";
+import { clearAuthCookies, generateTokenandSetCookie, hashRefreshToken } from "../utils/generateTokenandSetCookie.js";
 
 import {
     sendVerificationEmail,
@@ -21,6 +21,8 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const appleJwks = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/keys"));
 const TWO_FACTOR_ISSUER = process.env.TWO_FACTOR_ISSUER || "CircleCore";
 const MIN_SIGNUP_HUMAN_DELAY_MS = 3000;
+const ACCOUNT_LOCK_THRESHOLD = Number(process.env.ACCOUNT_LOCK_THRESHOLD || 5);
+const ACCOUNT_LOCK_DURATION_MS = Number(process.env.ACCOUNT_LOCK_DURATION_MS || 15 * 60 * 1000);
 
 const FRONTEND_URL = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/+$/, "");
 const BACKEND_URL = (process.env.SERVER_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, "");
@@ -120,6 +122,67 @@ const ensureHumanSignup = (body = {}) => {
         if (elapsed < MIN_SIGNUP_HUMAN_DELAY_MS) {
             throw new Error("Please take a moment before submitting the form");
         }
+    }
+};
+
+const assertAccountNotLocked = (user) => {
+    if (!user?.lockoutUntil) return;
+    if (new Date(user.lockoutUntil) > new Date()) {
+        throw new Error("Account is temporarily locked due to repeated failed login attempts");
+    }
+};
+
+const markFailedLoginAttempt = async (user) => {
+    if (!user) return;
+    const attempts = Number(user.failedLoginAttempts || 0) + 1;
+    const updates = { failedLoginAttempts: attempts };
+    if (attempts >= ACCOUNT_LOCK_THRESHOLD) {
+        updates.lockoutUntil = new Date(Date.now() + ACCOUNT_LOCK_DURATION_MS);
+        updates.failedLoginAttempts = 0;
+    }
+    await User.findByIdAndUpdate(user._id, { $set: updates });
+};
+
+const clearFailedLoginAttempts = async (user) => {
+    if (!user) return;
+    if (!user.failedLoginAttempts && !user.lockoutUntil) return;
+    await User.findByIdAndUpdate(user._id, {
+        $set: { failedLoginAttempts: 0, lockoutUntil: null },
+    });
+};
+
+const verifyCaptchaIfEnabled = async (req, expectedAction) => {
+    if (!process.env.RECAPTCHA_SECRET_KEY) return;
+
+    const token = req.body?.captchaToken;
+    if (!token) {
+        throw new Error("Captcha verification is required");
+    }
+
+    const params = new URLSearchParams({
+        secret: process.env.RECAPTCHA_SECRET_KEY,
+        response: token,
+        remoteip: req.ip || req.socket?.remoteAddress || "",
+    });
+
+    const response = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params.toString(),
+    });
+
+    const payload = await response.json();
+    if (!payload.success) {
+        throw new Error("Captcha verification failed");
+    }
+
+    const minScore = Number(process.env.RECAPTCHA_MIN_SCORE || 0.5);
+    if (typeof payload.score === "number" && payload.score < minScore) {
+        throw new Error("Captcha score too low");
+    }
+
+    if (expectedAction && payload.action && payload.action !== expectedAction) {
+        throw new Error("Captcha action mismatch");
     }
 };
 
@@ -287,7 +350,7 @@ const completeOAuthLogin = async ({
         isEmailVerified,
     });
 
-    generateTokenandSetCookie(res, user._id);
+    await generateTokenandSetCookie(res, user);
     user.lastLogin = new Date();
     await user.save();
 
@@ -333,7 +396,7 @@ export const googleAuth = async (req, res) => {
 
         if (user) {
             // ── Existing user → log them in ─────────────────────────────────
-            generateTokenandSetCookie(res, user._id);
+            await generateTokenandSetCookie(res, user);
             user.lastLogin = new Date();
             if (!user.googleId) user.googleId = googleId;
             await user.save();
@@ -415,7 +478,7 @@ export const googleAuth = async (req, res) => {
             avatar: picture || "",
         });
 
-        generateTokenandSetCookie(res, user._id);
+        await generateTokenandSetCookie(res, user);
 
         const populatedUser = await User.findById(user._id)
             .populate("memberships.communityId", "name slug icon")
@@ -672,6 +735,7 @@ export const signUp = async (req, res) => {
     const { email, password, name, inviteCode } = req.body;
 
     try {
+        await verifyCaptchaIfEnabled(req, "signup");
         ensureHumanSignup(req.body);
 
         if (!email || !password || !name) {
@@ -745,7 +809,7 @@ export const signUp = async (req, res) => {
         user.memberships.push({ communityId: community._id, role: "member" });
         await user.save();
 
-        generateTokenandSetCookie(res, user._id);
+        await generateTokenandSetCookie(res, user);
 
         await sendVerificationEmail(user.email, verificationToken);
 
@@ -773,6 +837,7 @@ export const login = async (req, res) => {
     const { email, password } = req.body;
 
     try {
+        await verifyCaptchaIfEnabled(req, "login");
         const user = await User.findOne({ email });
 
         if (!user) {
@@ -782,14 +847,19 @@ export const login = async (req, res) => {
             });
         }
 
+        assertAccountNotLocked(user);
+
         const isPasswordValid = await bcrypt.compare(password, user.password);
 
         if (!isPasswordValid) {
+            await markFailedLoginAttempt(user);
             return res.status(400).json({
                 success: false,
                 message: "Invalid credentials",
             });
         }
+
+        await clearFailedLoginAttempts(user);
 
         if (user.twoFactorEnabled && user.twoFactorSecret) {
             return res.status(200).json({
@@ -800,7 +870,7 @@ export const login = async (req, res) => {
             });
         }
 
-        generateTokenandSetCookie(res, user._id);
+        await generateTokenandSetCookie(res, user);
         user.lastLogin = new Date();
         await user.save();
 
@@ -928,7 +998,7 @@ export const twoFactorVerifyLogin = async (req, res) => {
             return res.status(400).json({ success: false, message: "Invalid verification code" });
         }
 
-        generateTokenandSetCookie(res, user._id);
+        await generateTokenandSetCookie(res, user);
         user.lastLogin = new Date();
         await user.save();
 
@@ -948,15 +1018,63 @@ export const twoFactorVerifyLogin = async (req, res) => {
     }
 };
 
+// ── Refresh Session ─────────────────────────────────────────────────────────
+export const refreshToken = async (req, res) => {
+    try {
+        const token = req.cookies?.RefreshToken;
+        if (!token) {
+            return res.status(401).json({ success: false, message: "No refresh token provided" });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (!decoded || decoded.type !== "refresh") {
+            return res.status(401).json({ success: false, message: "Invalid refresh token" });
+        }
+
+        const user = await User.findById(decoded.userId).select(
+            "_id sessionVersion refreshTokenHash refreshTokenExpiresAt lockoutUntil"
+        );
+        if (!user) {
+            return res.status(401).json({ success: false, message: "User not found" });
+        }
+
+        if (user.lockoutUntil && new Date(user.lockoutUntil) > new Date()) {
+            return res.status(403).json({ success: false, message: "Account is temporarily locked" });
+        }
+
+        if (Number(decoded.sv || 0) !== Number(user.sessionVersion || 0)) {
+            return res.status(401).json({ success: false, message: "Session expired" });
+        }
+
+        if (!user.refreshTokenHash || hashRefreshToken(token) !== user.refreshTokenHash) {
+            return res.status(401).json({ success: false, message: "Refresh token does not match active session" });
+        }
+
+        if (!user.refreshTokenExpiresAt || new Date(user.refreshTokenExpiresAt) <= new Date()) {
+            return res.status(401).json({ success: false, message: "Refresh token expired" });
+        }
+
+        await generateTokenandSetCookie(res, user);
+        return res.status(200).json({ success: true, message: "Session refreshed" });
+    } catch (error) {
+        if (error.name === "TokenExpiredError" || error.name === "JsonWebTokenError") {
+            return res.status(401).json({ success: false, message: "Invalid refresh token" });
+        }
+        console.log("Error in refreshToken:", error);
+        return res.status(500).json({ success: false, message: "Unable to refresh session" });
+    }
+};
+
 // ── Logout ──────────────────────────────────────────────────────────────────
 export const logout = async (req, res) => {
     try {
         let userId = req.userId;
         if (!userId) {
-            const token = req.cookies?.Token;
-            if (token && process.env.JWT_SECRET) {
+            const accessToken = req.cookies?.Token;
+            const refresh = req.cookies?.RefreshToken;
+            if ((accessToken || refresh) && process.env.JWT_SECRET) {
                 try {
-                    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                    const decoded = jwt.verify(accessToken || refresh, process.env.JWT_SECRET);
                     userId = decoded?.userId;
                 } catch {
                     // ignore invalid token
@@ -991,11 +1109,22 @@ export const logout = async (req, res) => {
                 // ignore socket errors
             }
         }
+
+        if (userId) {
+            await User.findByIdAndUpdate(userId, {
+                $set: {
+                    refreshTokenHash: null,
+                    refreshTokenExpiresAt: null,
+                    lastActivityAt: new Date(),
+                },
+                $inc: { sessionVersion: 1 },
+            });
+        }
     } catch {
         // best effort
     }
 
-    res.clearCookie("Token");
+    clearAuthCookies(res);
     res.status(200).json({
         success: true,
         message: "Logged out successfully",
@@ -1051,6 +1180,7 @@ export const forgotPassword = async (req, res) => {
     const { email } = req.body;
 
     try {
+        await verifyCaptchaIfEnabled(req, "forgot_password");
         const user = await User.findOne({ email });
 
         if (!user) {
@@ -1108,6 +1238,10 @@ export const resetPassword = async (req, res) => {
         user.password = hashpassword;
         user.resetPasswordToken = undefined;
         user.resetPasswordExpiresAt = undefined;
+        user.refreshTokenHash = null;
+        user.refreshTokenExpiresAt = null;
+        user.sessionVersion = (user.sessionVersion || 1) + 1;
+        user.lastActivityAt = new Date();
         await user.save();
 
         await sendResetSuccessEmail(user.email);

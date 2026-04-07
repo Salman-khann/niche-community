@@ -1,5 +1,6 @@
 import Profile from "../models/profile.model.js";
 import User from "../models/user.model.js";
+import Community from "../models/community.model.js";
 
 // ── Get Profile ─────────────────────────────────────────────────────────────
 export const getProfile = async (req, res) => {
@@ -42,6 +43,19 @@ export const getProfile = async (req, res) => {
                     skills: [],
                     interests: [],
                     reputation: 0,
+                    reputationSignals: {
+                        postsCreated: 0,
+                        commentsCreated: 0,
+                        repliesReceived: 0,
+                        helpfulRepliesReceived: 0,
+                        postLikesReceived: 0,
+                        postLikesGiven: 0,
+                        messagesSent: 0,
+                        messageCommentsCreated: 0,
+                        messageRepliesReceived: 0,
+                        messageLikesReceived: 0,
+                        messageLikesGiven: 0,
+                    },
                     stripeCustomerId: null,
                     stripeSubscriptionId: null,
                     tier: "free",
@@ -147,6 +161,63 @@ export const updateProfile = async (req, res) => {
     } catch (error) {
         console.log("Error in updateProfile:", error);
         res.status(500).json({
+            success: false,
+            message: "Server error",
+        });
+    }
+};
+
+// ── Reputation + Community Score Leaderboard ───────────────────────────────
+export const getLeaderboard = async (req, res) => {
+    try {
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
+
+        const [topProfiles, topCommunities] = await Promise.all([
+            Profile.find({ reputation: { $gt: 0 } })
+                .sort({ reputation: -1, updatedAt: -1 })
+                .limit(limit)
+                .populate("userId", "name email")
+                .lean(),
+            Community.find({ communityScore: { $gt: 0 } })
+                .sort({ communityScore: -1, updatedAt: -1 })
+                .limit(limit)
+                .select("name slug icon communityScore scoreSignals members")
+                .lean(),
+        ]);
+
+        const members = topProfiles.map((profile, index) => ({
+            rank: index + 1,
+            userId: profile.userId?._id || null,
+            name: profile.userId?.name || profile.displayName || "Member",
+            email: profile.userId?.email || "",
+            displayName: profile.displayName || "",
+            avatar: profile.avatar || "",
+            reputation: profile.reputation || 0,
+            reputationSignals: profile.reputationSignals || {},
+            tier: profile.tier || "free",
+        }));
+
+        const communities = topCommunities.map((community, index) => ({
+            rank: index + 1,
+            communityId: community._id,
+            name: community.name,
+            slug: community.slug,
+            icon: community.icon || "",
+            communityScore: community.communityScore || 0,
+            scoreSignals: community.scoreSignals || {},
+            membersCount: Array.isArray(community.members) ? community.members.length : 0,
+        }));
+
+        return res.status(200).json({
+            success: true,
+            leaderboards: {
+                members,
+                communities,
+            },
+        });
+    } catch (error) {
+        console.log("Error in getLeaderboard:", error);
+        return res.status(500).json({
             success: false,
             message: "Server error",
         });

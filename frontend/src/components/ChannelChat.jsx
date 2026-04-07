@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Hash, Plus, Send, Smile, Image as ImageIcon, X, Heart, MessageCircle, Pin, Flag } from 'lucide-react';
+import { Hash, Plus, Send, Smile, Image as ImageIcon, X, Heart, MessageCircle, Pin, Flag, FileText } from 'lucide-react';
 import { useChannelMessageStore } from '../stores/channelMessageStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -8,8 +8,18 @@ import { apiUrl } from '../config/urls';
 import EmojiPicker from './EmojiPicker';
 import PinnedMessagesModal from './PinnedMessagesModal';
 import ChannelEditModal from './ChannelEditModal';
+import AttachmentPreviewCard from './AttachmentPreviewCard';
 
 const isImageUrl = (url) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(url) || url.includes('image/upload');
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ALLOWED_DOC_EXTENSIONS = new Set(['pdf', 'doc', 'docx', 'txt', 'csv', 'xls', 'xlsx', 'ppt', 'pptx']);
+
+const formatBytes = (bytes = 0) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 const formatTime = (date) => {
     try {
@@ -64,6 +74,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     const [isReporting, setIsReporting] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [editError, setEditError] = useState('');
+    const [sendError, setSendError] = useState('');
     const [isSavingEdit, setIsSavingEdit] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const typingTimeoutRef = useRef(null);
@@ -265,7 +276,32 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     };
 
     const handleFiles = (fileList) => {
-        const next = Array.from(fileList || []).map((file) => ({
+        const incoming = Array.from(fileList || []);
+        const valid = [];
+        let rejectionMessage = '';
+
+        incoming.forEach((file) => {
+            const ext = (file.name.split('.').pop() || '').toLowerCase();
+            const isImage = file.type.startsWith('image/');
+            const isSupportedDoc = ALLOWED_DOC_EXTENSIONS.has(ext);
+            if (!isImage && !isSupportedDoc) {
+                rejectionMessage = 'Unsupported file type. Use images, PDF, DOC/DOCX, TXT, CSV, XLS/XLSX, or PPT/PPTX.';
+                return;
+            }
+            if (file.size > MAX_UPLOAD_BYTES) {
+                rejectionMessage = 'File is too large. Maximum size is 10 MB per file.';
+                return;
+            }
+            valid.push(file);
+        });
+
+        if (rejectionMessage) {
+            setSendError(rejectionMessage);
+        } else {
+            setSendError('');
+        }
+
+        const next = valid.map((file) => ({
             file,
             id: `${file.name}-${file.size}-${file.lastModified}`,
             isImage: file.type.startsWith('image/'),
@@ -280,6 +316,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
             if (file?.preview) URL.revokeObjectURL(file.preview);
             return prev.filter((f) => f.id !== id);
         });
+        setSendError('');
     };
 
     const handleSend = async () => {
@@ -287,6 +324,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         const trimmed = text.trim();
         if (!trimmed && files.length === 0) return;
         setIsUploading(true);
+        setSendError('');
         try {
             const mediaURLs = [];
             for (const f of files) {
@@ -307,6 +345,8 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
             files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
             setFiles([]);
             socket?.emit('channel:typing', { channelId: channel._id, userId: currentUser?.id, isTyping: false });
+        } catch (err) {
+            setSendError(err?.message || 'Failed to send message with attachment.');
         } finally {
             setIsUploading(false);
         }
@@ -563,18 +603,20 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                             </button>
                                         </div>
                                         {m.mediaURLs?.length > 0 && (
-                                            <div className="mt-3 grid grid-cols-2 gap-3 max-w-md">
-                                                {m.mediaURLs.map((url) => (
-                                                    <div key={url} className="rounded-lg border border-discord-border/40 overflow-hidden bg-discord-darkest">
-                                                        {isImageUrl(url) ? (
+                                            <div className="mt-3 grid grid-cols-1 gap-3 max-w-md">
+                                                {m.mediaURLs.map((url) => {
+                                                    const docUrls = m.mediaURLs.filter((candidate) => !isImageUrl(candidate));
+                                                    const docIndex = docUrls.findIndex((candidate) => candidate === url);
+                                                    return (
+                                                    isImageUrl(url) ? (
+                                                        <div key={url} className="rounded-lg border border-discord-border/40 overflow-hidden bg-discord-darkest">
                                                             <img src={url} alt="" className="w-full h-full object-cover" />
-                                                        ) : (
-                                                        <a href={url} className="block p-3 text-xs text-blurple hover:underline" target="_blank" rel="noreferrer">
-                                                            Download file
-                                                        </a>
-                                                        )}
-                                                    </div>
-                                                ))}
+                                                        </div>
+                                                    ) : (
+                                                        <AttachmentPreviewCard key={url} url={url} allUrls={docUrls} initialIndex={Math.max(0, docIndex)} />
+                                                    )
+                                                    );
+                                                })}
                                             </div>
                                         )}
                                         {showComments && (
@@ -636,6 +678,12 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                     <div className="text-xs text-discord-faint mb-2">{typingLabel}</div>
                 )}
 
+                {sendError && (
+                    <div className="mb-2 rounded-lg border border-discord-red/30 bg-discord-red/10 px-3 py-2 text-xs text-discord-red">
+                        {sendError}
+                    </div>
+                )}
+
                 {!canPost && isAnnouncement && (
                     <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
                         Announcements are read-only. Only admins and moderators can post here.
@@ -649,9 +697,10 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                 {f.preview ? (
                                     <img src={f.preview} alt="" className="w-full h-full object-cover" />
                                 ) : (
-                                    <div className="flex flex-col items-center justify-center h-full text-xs text-discord-faint">
-                                        <ImageIcon className="w-4 h-4 mb-1" />
-                                        <span className="px-2 text-center truncate">{f.file.name}</span>
+                                    <div className="flex flex-col items-center justify-center h-full text-[10px] text-discord-faint px-1">
+                                        <FileText className="w-4 h-4 mb-1" />
+                                        <span className="text-center truncate w-full">{f.file.name}</span>
+                                        <span className="text-[9px] opacity-70">{formatBytes(f.file.size)}</span>
                                     </div>
                                 )}
                                 <button
@@ -671,6 +720,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                         <input
                             type="file"
                             multiple
+                            accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.ppt,.pptx"
                             className="hidden"
                             disabled={!canPost}
                             onChange={(e) => {

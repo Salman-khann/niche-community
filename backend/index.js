@@ -28,6 +28,7 @@ import dmRoutes from './routes/dm.route.js';
 import serverInviteRoutes from './routes/serverInvite.route.js';
 import { stripeWebhook } from './controllers/billing.controller.js';
 import { ensureRootUser } from './utils/ensureRootUser.js';
+import { startLeaderboardBotScheduler } from './utils/leaderboardBot.js';
 
 const allowedOrigins = (process.env.CLIENT_URL || '')
     .split(',')
@@ -80,6 +81,12 @@ server.listen(PORT, () => {
                 await ensureRootUser();
             } catch (error) {
                 console.log("⚠️  Root user seed failed:", error.message || error);
+            }
+
+            try {
+                await startLeaderboardBotScheduler();
+            } catch (error) {
+                console.log("⚠️  Leaderboard bot startup failed:", error.message || error);
             }
         }
         console.log(`Server is running on port ${PORT}`);

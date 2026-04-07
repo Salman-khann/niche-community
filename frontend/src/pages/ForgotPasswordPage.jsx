@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Mail, Sparkles, KeyRound, Send } from 'lucide-react';
+import ReCAPTCHA from 'react-google-recaptcha';
 import InputField from '../components/InputField';
 import Button from '../components/Button';
 import { useAuthStore } from '../stores/authStore';
@@ -8,8 +9,11 @@ import { useAuthStore } from '../stores/authStore';
 const ForgotPasswordPage = () => {
     const [email, setEmail] = useState('');
     const [emailError, setEmailError] = useState('');
+    const [captchaToken, setCaptchaToken] = useState('');
+    const [captchaError, setCaptchaError] = useState('');
     const [submitted, setSubmitted] = useState(false);
     const [mounted, setMounted] = useState(false);
+    const recaptchaSiteKey = (import.meta.env.VITE_RECAPTCHA_SITE_KEY || '').trim();
 
     const { forgotPassword, isLoading, error, message, clearError } = useAuthStore();
 
@@ -24,9 +28,11 @@ const ForgotPasswordPage = () => {
         e.preventDefault();
         if (!email.trim()) { setEmailError('Email is required'); return; }
         if (!/\S+@\S+\.\S+/.test(email)) { setEmailError('Enter a valid email'); return; }
+        if (recaptchaSiteKey && !captchaToken) { setCaptchaError('Please complete the reCAPTCHA check'); return; }
         setEmailError('');
+        setCaptchaError('');
         try {
-            await forgotPassword(email);
+            await forgotPassword(email, captchaToken);
             setSubmitted(true);
         } catch { /* error set in store */ }
     };
@@ -104,7 +110,34 @@ const ForgotPasswordPage = () => {
                                         icon={!isLoading && <Send className="w-4 h-4" strokeWidth={2} />}>
                                         {isLoading ? 'Sending…' : 'Send Reset Link'}
                                     </Button>
+
+                                    {recaptchaSiteKey && (
+                                        <div className="space-y-2">
+                                            <div className="flex justify-center">
+                                                <ReCAPTCHA
+                                                    sitekey={recaptchaSiteKey}
+                                                    onChange={(token) => {
+                                                        setCaptchaToken(token || '');
+                                                        setCaptchaError('');
+                                                    }}
+                                                />
+                                            </div>
+                                            {captchaError && <p className="text-xs text-discord-red text-center">{captchaError}</p>}
+                                        </div>
+                                    )}
                                 </form>
+
+                                <p className="mt-4 text-[11px] text-discord-faint text-center leading-relaxed">
+                                    This site is protected by reCAPTCHA and the Google
+                                    <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer" className="ml-1 text-blurple hover:underline">
+                                        Privacy Policy
+                                    </a>
+                                    and
+                                    <a href="https://policies.google.com/terms" target="_blank" rel="noreferrer" className="ml-1 text-blurple hover:underline">
+                                        Terms of Service
+                                    </a>
+                                    apply.
+                                </p>
                             </>
                         )}
                     </div>

@@ -7,6 +7,8 @@ const userSchema = new mongoose.Schema({
   googleId: { type: String, default: null },
   appleId: { type: String, default: null },
   linkedinId: { type: String, default: null },
+  isBot: { type: Boolean, default: false },
+  botKey: { type: String, default: null, index: true },
   twoFactorEnabled: { type: Boolean, default: false },
   twoFactorSecret: { type: String, default: null },
   role: { type: String, enum: ["user", "moderator", "admin"], default: "user" },
@@ -39,6 +41,12 @@ const userSchema = new mongoose.Schema({
   resetPasswordExpiresAt: Date,
   verificationToken: String,
   verificationTokenExpiresAt: Date,
+  refreshTokenHash: { type: String, default: null },
+  refreshTokenExpiresAt: { type: Date, default: null },
+  sessionVersion: { type: Number, default: 1 },
+  lastActivityAt: { type: Date, default: Date.now },
+  failedLoginAttempts: { type: Number, default: 0 },
+  lockoutUntil: { type: Date, default: null },
 }, { timestamps: true });
 
 export default mongoose.model("User", userSchema);

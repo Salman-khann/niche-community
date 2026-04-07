@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Mail, Lock, LogIn, Sparkles, ShieldCheck } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
+import ReCAPTCHA from 'react-google-recaptcha';
 import { SiApple } from 'react-icons/si';
 import { FaLinkedinIn } from 'react-icons/fa';
 import InputField from '../components/InputField';
@@ -18,7 +19,10 @@ const LoginPage = () => {
     const [twoFactorToken, setTwoFactorToken] = useState('');
     const [twoFactorCode, setTwoFactorCode] = useState('');
     const [twoFactorError, setTwoFactorError] = useState('');
+    const [captchaToken, setCaptchaToken] = useState('');
+    const [captchaError, setCaptchaError] = useState('');
     const navigate = useNavigate();
+    const recaptchaSiteKey = (import.meta.env.VITE_RECAPTCHA_SITE_KEY || '').trim();
 
     const { login, googleLogin, startAppleLogin, startLinkedInLogin, verifyTwoFactorLogin, isLoading, error, clearError } = useAuthStore();
     const [googleLoading, setGoogleLoading] = useState(false);
@@ -42,8 +46,12 @@ const LoginPage = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!validate()) return;
+        if (recaptchaSiteKey && !captchaToken) {
+            setCaptchaError('Please complete the reCAPTCHA check');
+            return;
+        }
         try {
-            const data = await login(email, password);
+            const data = await login(email, password, captchaToken);
             if (data?.requiresTwoFactor) {
                 setRequiresTwoFactor(true);
                 setTwoFactorToken(data.twoFactorToken || '');
@@ -163,6 +171,21 @@ const LoginPage = () => {
                                 icon={!isLoading && <LogIn className="w-4 h-4" strokeWidth={2} />}>
                                 {isLoading ? 'Logging in…' : 'Log In'}
                             </Button>
+
+                            {recaptchaSiteKey && (
+                                <div className="space-y-2">
+                                    <div className="flex justify-center">
+                                        <ReCAPTCHA
+                                            sitekey={recaptchaSiteKey}
+                                            onChange={(token) => {
+                                                setCaptchaToken(token || '');
+                                                setCaptchaError('');
+                                            }}
+                                        />
+                                    </div>
+                                    {captchaError && <p className="text-xs text-discord-red text-center">{captchaError}</p>}
+                                </div>
+                            )}
                         </form>
                         ) : (
                         <form onSubmit={handleTwoFactorSubmit} className="space-y-4">
@@ -253,6 +276,18 @@ const LoginPage = () => {
                         <Button variant="secondary" fullWidth onClick={() => navigate('/signup')}>
                             Create an account
                         </Button>
+
+                        <p className="mt-4 text-[11px] text-discord-faint text-center leading-relaxed">
+                            This site is protected by reCAPTCHA and the Google
+                            <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer" className="ml-1 text-blurple hover:underline">
+                                Privacy Policy
+                            </a>
+                            and
+                            <a href="https://policies.google.com/terms" target="_blank" rel="noreferrer" className="ml-1 text-blurple hover:underline">
+                                Terms of Service
+                            </a>
+                            apply.
+                        </p>
                     </div>
 
                     {/* Back link */}

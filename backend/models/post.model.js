@@ -5,12 +5,18 @@ const pollOptionSchema = new mongoose.Schema({
   votes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 }, { _id: true });
 
+const resourceLinkSchema = new mongoose.Schema({
+  url: { type: String, required: true, trim: true },
+  label: { type: String, default: "", trim: true, maxlength: 120 },
+}, { _id: true });
+
 const postSchema = new mongoose.Schema({
   communityId: { type: mongoose.Schema.Types.ObjectId, ref: "Community", required: true },
   channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", default: null },
   authorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   content: { type: String, default: "", maxlength: 5000 },
   mediaURLs: { type: [String], default: [] },
+  resourceLinks: { type: [resourceLinkSchema], default: [] },
   tags: { type: [String], default: [] },
   poll: {
     question: { type: String },

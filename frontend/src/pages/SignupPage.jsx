@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Mail, Lock, User, Sparkles, UserPlus } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
+import ReCAPTCHA from 'react-google-recaptcha';
 import { SiApple } from 'react-icons/si';
 import { FaLinkedinIn } from 'react-icons/fa';
 import InputField from '../components/InputField';
@@ -24,7 +25,10 @@ const SignupPage = () => {
     const [autoValidating, setAutoValidating] = useState(false);
     const [formStartedAt] = useState(() => Date.now());
     const [botField, setBotField] = useState('');
+    const [captchaToken, setCaptchaToken] = useState('');
+    const [captchaError, setCaptchaError] = useState('');
     const navigate = useNavigate();
+    const recaptchaSiteKey = (import.meta.env.VITE_RECAPTCHA_SITE_KEY || '').trim();
 
     const { signup, googleLogin, startAppleLogin, startLinkedInLogin, isLoading, error, clearError } = useAuthStore();
     const { validateInviteCode } = useInviteStore();
@@ -66,11 +70,15 @@ const SignupPage = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!validate()) return;
+        if (recaptchaSiteKey && !captchaToken) {
+            setCaptchaError('Please complete the reCAPTCHA check');
+            return;
+        }
         try {
             await signup(name, email, password, inviteCode, {
                 formStartedAt,
                 website: botField,
-            });
+            }, captchaToken);
             sessionStorage.removeItem('circlecore_invite_code');
             navigate('/verify-email');
         } catch { /* error is set in store */ }
@@ -193,6 +201,21 @@ const SignupPage = () => {
                                 icon={!isLoading && <UserPlus className="w-4 h-4" strokeWidth={2} />}>
                                 {isLoading ? 'Creating account…' : 'Create Account'}
                             </Button>
+
+                            {recaptchaSiteKey && (
+                                <div className="space-y-2">
+                                    <div className="flex justify-center">
+                                        <ReCAPTCHA
+                                            sitekey={recaptchaSiteKey}
+                                            onChange={(token) => {
+                                                setCaptchaToken(token || '');
+                                                setCaptchaError('');
+                                            }}
+                                        />
+                                    </div>
+                                    {captchaError && <p className="text-xs text-discord-red text-center">{captchaError}</p>}
+                                </div>
+                            )}
                         </form>
 
                         <div className="relative flex items-center gap-3 my-5">
@@ -253,6 +276,18 @@ const SignupPage = () => {
                         </div>
 
                         <Button variant="secondary" fullWidth onClick={() => navigate('/login')}>Log In</Button>
+
+                        <p className="mt-4 text-[11px] text-discord-faint text-center leading-relaxed">
+                            This site is protected by reCAPTCHA and the Google
+                            <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer" className="ml-1 text-blurple hover:underline">
+                                Privacy Policy
+                            </a>
+                            and
+                            <a href="https://policies.google.com/terms" target="_blank" rel="noreferrer" className="ml-1 text-blurple hover:underline">
+                                Terms of Service
+                            </a>
+                            apply.
+                        </p>
                     </div>
 
                     <div className={`text-center mt-6 transition-all duration-500 delay-500 ${mounted ? 'opacity-100' : 'opacity-0'}`}>

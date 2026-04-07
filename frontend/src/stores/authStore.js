@@ -4,6 +4,29 @@ import { apiUrl } from '../config/urls';
 
 const API_URL = apiUrl('/api/auth');
 
+const authFetch = async (url, options = {}, allowRetry = true) => {
+    const requestOptions = {
+        ...options,
+        credentials: 'include',
+    };
+
+    const response = await fetch(url, requestOptions);
+    if (response.status !== 401 || !allowRetry) {
+        return response;
+    }
+
+    const refreshResponse = await fetch(`${API_URL}/refresh-token`, {
+        method: 'POST',
+        credentials: 'include',
+    });
+
+    if (!refreshResponse.ok) {
+        return response;
+    }
+
+    return fetch(url, requestOptions);
+};
+
 const startOAuthRedirect = (provider, inviteCode, flow = 'login') => {
     const params = new URLSearchParams({ flow });
     if (inviteCode) params.set('inviteCode', inviteCode);
@@ -18,14 +41,13 @@ export const useAuthStore = create((set) => ({
     message: null,
     isCheckingAuth: true,
 
-    signup: async (name, email, password, inviteCode, botFields = {}) => {
+    signup: async (name, email, password, inviteCode, botFields = {}, captchaToken = '') => {
         set({ isLoading: true, error: null });
         try {
-            const res = await fetch(`${API_URL}/signup`, {
+            const res = await authFetch(`${API_URL}/signup`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ name, email, password, inviteCode, ...botFields }),
+                body: JSON.stringify({ name, email, password, inviteCode, captchaToken, ...botFields }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Signup failed');
@@ -41,14 +63,13 @@ export const useAuthStore = create((set) => ({
         }
     },
 
-    login: async (email, password) => {
+    login: async (email, password, captchaToken = '') => {
         set({ isLoading: true, error: null });
         try {
-            const res = await fetch(`${API_URL}/login`, {
+            const res = await authFetch(`${API_URL}/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ email, password, captchaToken }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Login failed');
@@ -70,9 +91,8 @@ export const useAuthStore = create((set) => ({
     logout: async () => {
         set({ isLoading: true, error: null });
         try {
-            await fetch(`${API_URL}/logout`, {
+            await authFetch(`${API_URL}/logout`, {
                 method: 'POST',
-                credentials: 'include',
             });
             useWorkspaceStore.getState().clearWorkspace();
             set({ user: null, tier: 'free', isLoading: false });
@@ -85,9 +105,7 @@ export const useAuthStore = create((set) => ({
     checkAuth: async () => {
         set({ isCheckingAuth: true, error: null });
         try {
-            const res = await fetch(`${API_URL}/check-auth`, {
-                credentials: 'include',
-            });
+            const res = await authFetch(`${API_URL}/check-auth`);
             const data = await res.json();
             if (!res.ok) throw new Error(data.message);
             set({ user: data.user, tier: data.user?.tier || 'free', isCheckingAuth: false });
@@ -103,10 +121,9 @@ export const useAuthStore = create((set) => ({
     verifyEmail: async (code) => {
         set({ isLoading: true, error: null });
         try {
-            const res = await fetch(`${API_URL}/verify-email`, {
+            const res = await authFetch(`${API_URL}/verify-email`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
                 body: JSON.stringify({ code }),
             });
             const data = await res.json();
@@ -119,14 +136,13 @@ export const useAuthStore = create((set) => ({
         }
     },
 
-    forgotPassword: async (email) => {
+    forgotPassword: async (email, captchaToken = '') => {
         set({ isLoading: true, error: null, message: null });
         try {
-            const res = await fetch(`${API_URL}/forgotpassword`, {
+            const res = await authFetch(`${API_URL}/forgotpassword`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ email }),
+                body: JSON.stringify({ email, captchaToken }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Failed to send reset email');
@@ -141,10 +157,9 @@ export const useAuthStore = create((set) => ({
     resetPassword: async (token, password) => {
         set({ isLoading: true, error: null, message: null });
         try {
-            const res = await fetch(`${API_URL}/reset-password/${token}`, {
+            const res = await authFetch(`${API_URL}/reset-password/${token}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
                 body: JSON.stringify({ password }),
             });
             const data = await res.json();
@@ -160,10 +175,9 @@ export const useAuthStore = create((set) => ({
     googleLogin: async (credential, inviteCode) => {
         set({ isLoading: true, error: null });
         try {
-            const res = await fetch(`${API_URL}/google`, {
+            const res = await authFetch(`${API_URL}/google`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
                 body: JSON.stringify({ credential, inviteCode: inviteCode || undefined }),
             });
             const data = await res.json();
@@ -182,10 +196,9 @@ export const useAuthStore = create((set) => ({
     verifyTwoFactorLogin: async (token, code) => {
         set({ isLoading: true, error: null });
         try {
-            const res = await fetch(`${API_URL}/2fa/verify-login`, {
+            const res = await authFetch(`${API_URL}/2fa/verify-login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
                 body: JSON.stringify({ token, code }),
             });
             const data = await res.json();
@@ -204,9 +217,8 @@ export const useAuthStore = create((set) => ({
     getTwoFactorSetup: async () => {
         set({ isLoading: true, error: null });
         try {
-            const res = await fetch(`${API_URL}/2fa/setup`, {
+            const res = await authFetch(`${API_URL}/2fa/setup`, {
                 method: 'POST',
-                credentials: 'include',
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Failed to start 2FA setup');
@@ -221,10 +233,9 @@ export const useAuthStore = create((set) => ({
     enableTwoFactor: async (secret, code) => {
         set({ isLoading: true, error: null });
         try {
-            const res = await fetch(`${API_URL}/2fa/enable`, {
+            const res = await authFetch(`${API_URL}/2fa/enable`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
                 body: JSON.stringify({ secret, code }),
             });
             const data = await res.json();
@@ -240,10 +251,9 @@ export const useAuthStore = create((set) => ({
     disableTwoFactor: async (code) => {
         set({ isLoading: true, error: null });
         try {
-            const res = await fetch(`${API_URL}/2fa/disable`, {
+            const res = await authFetch(`${API_URL}/2fa/disable`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
                 body: JSON.stringify({ code }),
             });
             const data = await res.json();

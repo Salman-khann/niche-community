@@ -14,6 +14,11 @@ const eventSchema = new mongoose.Schema({
   status: { type: String, enum: ["scheduled", "live", "ended"], default: "scheduled" },
   startedAt: { type: Date },
   endedAt: { type: Date },
+  botReminders: {
+    d24h: { type: Boolean, default: false },
+    d1h: { type: Boolean, default: false },
+    d10m: { type: Boolean, default: false },
+  },
   rsvpList: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 }, { timestamps: true });
 

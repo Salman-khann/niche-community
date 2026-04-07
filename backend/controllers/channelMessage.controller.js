@@ -6,6 +6,8 @@ import Community from "../models/community.model.js";
 import Notification from "../models/notification.model.js";
 import { io } from "../socket.js";
 import { filterBadWords } from "../utils/badWords.js";
+import { trackReputationSignal } from "../utils/reputationSignals.js";
+import { tryHandleBotCommand } from "../utils/leaderboardBot.js";
 
 const SUSPICIOUS_TLDS = new Set(['zip', 'mov', 'xyz', 'top', 'gq', 'tk', 'ml', 'cf', 'ru']);
 const SUSPICIOUS_DOMAINS = new Set(['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'is.gd', 'cutt.ly', 'ow.ly', 'rb.gy']);
@@ -58,12 +60,33 @@ export const createChannelMessage = async (req, res) => {
         }
 
         const cleanedContent = filterBadWords(content?.trim() || "");
+
+        const botMessage = await tryHandleBotCommand({
+            communityId: req.communityId,
+            channelId,
+            content: cleanedContent,
+            senderId: req.userId,
+        });
+        if (botMessage) {
+            return res.status(200).json({
+                success: true,
+                message: botMessage,
+                commandHandled: true,
+            });
+        }
+
         const message = await ChannelMessage.create({
             channelId,
             senderId: req.userId,
             content: cleanedContent,
             mediaURLs: mediaURLs || [],
             mentions: mentions || [],
+        });
+
+        await trackReputationSignal({
+            userId: req.userId,
+            communityId: req.communityId,
+            signal: "message_sent",
         });
 
         const actor = await User.findById(req.userId).select("name").lean();
@@ -191,6 +214,22 @@ export const reactToChannelMessage = async (req, res) => {
 
         await message.save();
 
+        if (message.senderId.toString() !== userId) {
+            const likeMultiplier = alreadyLiked ? -1 : 1;
+            await trackReputationSignal({
+                userId: message.senderId,
+                communityId: req.communityId,
+                signal: "message_like_received",
+                multiplier: likeMultiplier,
+            });
+            await trackReputationSignal({
+                userId,
+                communityId: req.communityId,
+                signal: "message_like_given",
+                multiplier: likeMultiplier,
+            });
+        }
+
         const payload = {
             messageId: message._id,
             likesCount: message.likesCount,
@@ -272,6 +311,12 @@ export const addChannelMessageComment = async (req, res) => {
             mentions: mentions || [],
         });
 
+        await trackReputationSignal({
+            userId: req.userId,
+            communityId: req.communityId,
+            signal: "message_comment_created",
+        });
+
         message.commentsCount += 1;
         await message.save();
 
@@ -292,6 +337,11 @@ export const addChannelMessageComment = async (req, res) => {
 
         // ── Reply notification (comment on message) ────────────────────────
         if (message.senderId?.toString() !== req.userId) {
+            await trackReputationSignal({
+                userId: message.senderId,
+                communityId: req.communityId,
+                signal: "message_reply_received",
+            });
             try {
                 const notification = await Notification.create({
                     userId: message.senderId,

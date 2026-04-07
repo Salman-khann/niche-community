@@ -8,6 +8,21 @@ import { useAuthStore } from '../stores/authStore';
 import { useProfileStore } from '../stores/profileStore';
 import { useChannelStore } from '../stores/channelStore';
 
+const FILE_ACCEPT = {
+    'image/*': ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
+    'application/pdf': ['.pdf'],
+    'application/msword': ['.doc'],
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+    'text/plain': ['.txt'],
+    'text/csv': ['.csv'],
+    'application/vnd.ms-excel': ['.xls'],
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+    'application/vnd.ms-powerpoint': ['.ppt'],
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
+    // Some browsers label documents as generic octet-stream.
+    'application/octet-stream': ['.pdf', '.doc', '.docx', '.txt', '.csv', '.xls', '.xlsx', '.ppt', '.pptx'],
+};
+
 const TAG_OPTIONS = [
     'General', 'Question', 'Discussion', 'Showcase', 'Help',
     'React', 'Node.js', 'Design', 'DevOps', 'Career',
@@ -27,6 +42,7 @@ const CreatePost = () => {
     const [error, setError] = useState('');
 
     const [files, setFiles] = useState([]);
+    const [resourceLinks, setResourceLinks] = useState([{ url: '', label: '' }]);
     const [uploading, setUploading] = useState(false);
 
     const [pollQuestion, setPollQuestion] = useState('');
@@ -45,14 +61,45 @@ const CreatePost = () => {
             Object.assign(file, { preview: URL.createObjectURL(file) })
         );
         setFiles((prev) => [...prev, ...newFiles].slice(0, 4));
+        setError('');
+    }, []);
+
+    const onDropRejected = useCallback((rejections) => {
+        const first = rejections?.[0];
+        const reason = first?.errors?.[0]?.code;
+        if (reason === 'file-too-large') {
+            setError('File is too large. Maximum size is 10 MB per file.');
+            return;
+        }
+        if (reason === 'file-invalid-type') {
+            setError('Unsupported file type. Use images, PDF, DOC/DOCX, TXT, CSV, XLS/XLSX, or PPT/PPTX.');
+            return;
+        }
+        setError('Some files could not be added. Please check type and size limits.');
     }, []);
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
-        accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.gif', '.webp'], 'application/pdf': ['.pdf'] },
+        onDropRejected,
+        accept: FILE_ACCEPT,
         maxSize: 10 * 1024 * 1024,
         maxFiles: 4,
     });
+
+    const updateResourceLink = (index, key, value) => {
+        setResourceLinks((prev) => prev.map((link, i) => (i === index ? { ...link, [key]: value } : link)));
+    };
+
+    const addResourceLink = () => {
+        setResourceLinks((prev) => (prev.length >= 8 ? prev : [...prev, { url: '', label: '' }]));
+    };
+
+    const removeResourceLink = (index) => {
+        setResourceLinks((prev) => {
+            const next = prev.filter((_, i) => i !== index);
+            return next.length > 0 ? next : [{ url: '', label: '' }];
+        });
+    };
 
     const removeFile = (index) => {
         setFiles((prev) => {
@@ -79,17 +126,31 @@ const CreatePost = () => {
         setError('');
 
         const mentionIds = mentions.map((m) => m._id);
+        const hasResourceLink = resourceLinks.some((link) => link.url.trim());
 
         if (activeTab === 'post') {
-            if (!content.trim() && files.length === 0) { setError('Write something or attach media to share.'); return; }
+            if (!content.trim() && files.length === 0 && !hasResourceLink) { setError('Write something, add a link, or attach media to share.'); return; }
             try {
                 setUploading(true);
                 const mediaURLs = [];
                 for (const file of files) { const url = await uploadFile(file); mediaURLs.push(url); }
+                const cleanedResourceLinks = resourceLinks
+                    .map((link) => ({ url: link.url.trim(), label: link.label.trim() }))
+                    .filter((link) => link.url);
                 setUploading(false);
-                await createPost({ content: content.trim(), tags: selectedTags, mediaURLs, channelId: activeChannelId, mentions: mentionIds });
-                setContent(''); setSelectedTags([]); setShowTags(false); setFiles([]); setMentions([]);
-            } catch { setUploading(false); }
+                await createPost({
+                    content: content.trim(),
+                    tags: selectedTags,
+                    mediaURLs,
+                    resourceLinks: cleanedResourceLinks,
+                    channelId: activeChannelId,
+                    mentions: mentionIds,
+                });
+                setContent(''); setSelectedTags([]); setShowTags(false); setFiles([]); setMentions([]); setResourceLinks([{ url: '', label: '' }]);
+            } catch (err) {
+                setUploading(false);
+                setError(err?.message || 'Failed to upload or post files. Please try again.');
+            }
         } else {
             if (!pollQuestion.trim()) { setError('Enter a poll question.'); return; }
             const validOptions = pollOptions.filter((o) => o.trim());
@@ -157,9 +218,9 @@ const CreatePost = () => {
                                 <input {...getInputProps()} />
                                 <Upload className="w-5 h-5 text-discord-faint mx-auto mb-1.5" strokeWidth={1.5} />
                                 <p className="text-xs text-discord-muted font-medium">
-                                    {isDragActive ? 'Drop files here…' : 'Drag & drop images or click to browse'}
+                                    {isDragActive ? 'Drop files here…' : 'Drag & drop files or click to browse'}
                                 </p>
-                                <p className="text-[10px] text-discord-faint mt-0.5">JPG, JPEG, PNG, GIF, WebP, PDF · Max 10 MB · Up to 4 files</p>
+                                <p className="text-[10px] text-discord-faint mt-0.5">Images, PDF, DOC, DOCX, TXT, CSV, XLS/XLSX, PPT/PPTX · Max 10 MB · Up to 4 files</p>
                             </div>
 
                             {files.length > 0 && (
@@ -181,6 +242,48 @@ const CreatePost = () => {
                                     ))}
                                 </div>
                             )}
+
+                            <div className="mt-3 p-3 bg-discord-darkest/60 rounded-lg border border-discord-border/60">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-xs font-semibold text-discord-light">Resource links</p>
+                                    <button
+                                        type="button"
+                                        onClick={addResourceLink}
+                                        className="text-[11px] font-semibold text-blurple hover:text-blurple-hover transition-colors cursor-pointer"
+                                    >
+                                        + Add link
+                                    </button>
+                                </div>
+                                <div className="space-y-2">
+                                    {resourceLinks.map((link, i) => (
+                                        <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_180px_auto] gap-2">
+                                            <input
+                                                type="url"
+                                                value={link.url}
+                                                onChange={(e) => updateResourceLink(i, 'url', e.target.value)}
+                                                placeholder="https://resource-url"
+                                                className="rounded-md bg-discord-darkest text-xs text-discord-white placeholder:text-discord-faint/60 border border-discord-border/70 px-3 py-2 outline-none focus:border-blurple focus:ring-2 focus:ring-blurple/20"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={link.label}
+                                                onChange={(e) => updateResourceLink(i, 'label', e.target.value)}
+                                                placeholder="Label (optional)"
+                                                className="rounded-md bg-discord-darkest text-xs text-discord-white placeholder:text-discord-faint/60 border border-discord-border/70 px-3 py-2 outline-none focus:border-blurple focus:ring-2 focus:ring-blurple/20"
+                                                maxLength={120}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => removeResourceLink(i)}
+                                                className="h-9 w-9 rounded-md hover:bg-discord-red/10 text-discord-faint hover:text-discord-red transition-colors cursor-pointer justify-self-start sm:justify-self-center"
+                                                aria-label="Remove resource link"
+                                            >
+                                                <X className="w-4 h-4" strokeWidth={2.5} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         </>
                     )}
 
@@ -256,7 +359,7 @@ const CreatePost = () => {
                         </button>
 
                         <Button type="submit" variant="primary" size="sm" loading={busy}
-                            disabled={activeTab === 'post' ? (!content.trim() && files.length === 0) : !pollQuestion.trim()}
+                            disabled={activeTab === 'post' ? (!content.trim() && files.length === 0 && !resourceLinks.some((link) => link.url.trim())) : !pollQuestion.trim()}
                             icon={!busy && <Send className="w-3.5 h-3.5" strokeWidth={2} />}>
                             {uploading ? 'Uploading…' : isLoading ? 'Posting…' : activeTab === 'poll' ? 'Post Poll' : 'Post'}
                         </Button>

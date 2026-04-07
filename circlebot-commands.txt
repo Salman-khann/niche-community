@@ -1,0 +1,58 @@
+CircleBot Commands Reference
+===========================
+
+Leaderboard and Analytics
+-------------------------
+/leaderboard
+  Shows leaderboard table (top members by reputation + top communities by score).
+
+/digest
+  Posts community weekly digest summary.
+
+Moderation and Safety
+---------------------
+/modlog
+  Shows recent moderation log entries.
+  Note: Admin/Moderator only.
+
+/safety-status
+  Shows current safety snapshot (flagged content counts + risk level).
+
+/raid-mode on
+/raid-mode off
+  Toggles raid mode for the community.
+  Note: Admin only.
+
+Events and Onboarding
+---------------------
+/event-remind
+  Posts reminder for the nearest upcoming event.
+
+/event-remind <eventId>
+  Posts reminder for a specific event.
+
+/welcome-setup
+  Posts onboarding/setup guidance for the community.
+
+Content Curation
+----------------
+/bestof
+  Shows best posts of the week based on engagement.
+
+/unanswered
+  Shows recent posts with no replies/comments.
+
+Support and Utility
+-------------------
+/faq <topic>
+  Shows help for a topic.
+  Topics: invites, reputation, events, moderation, premium
+
+/poll Question | Option 1 | Option 2 | [Option 3...]
+  Creates a quick poll-style bot message.
+
+Examples
+--------
+/faq reputation
+/poll Which feature first? | Leaderboard | Digest | Event reminders
+/event-remind 67f2b2a8c4b4bd8f83aa98d1

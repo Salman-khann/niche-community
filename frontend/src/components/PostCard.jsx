@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Heart, ChevronDown, ChevronUp, Send, MoreHorizontal, Flag, BarChart3, Check, Crown, Bookmark } from 'lucide-react';
+import { MessageCircle, Heart, ChevronDown, ChevronUp, Send, MoreHorizontal, Flag, BarChart3, Check, Crown, Bookmark, Link2, ExternalLink, FileText } from 'lucide-react';
 import MentionInput from './MentionInput';
 import { useFeedStore } from '../stores/feedStore';
 import { useAuthStore } from '../stores/authStore';
@@ -134,9 +134,13 @@ const PostCard = ({ post }) => {
     const hasVoted = userVotedIndex >= 0;
 
     const media = post.mediaURLs?.filter(Boolean) || [];
+    const fileExtPattern = /\.(pdf|doc|docx|txt|csv|xls|xlsx|ppt|pptx)$/i;
+    const imageMedia = media.filter((url) => !fileExtPattern.test(url));
+    const fileMedia = media.filter((url) => fileExtPattern.test(url));
+    const resourceLinks = post.resourceLinks?.filter((link) => link?.url) || [];
     const mediaGridClass = () => {
-        if (media.length === 1) return 'grid-cols-1';
-        if (media.length === 2) return 'grid-cols-2';
+        if (imageMedia.length === 1) return 'grid-cols-1';
+        if (imageMedia.length === 2) return 'grid-cols-2';
         return 'grid-cols-2';
     };
 
@@ -242,17 +246,62 @@ const PostCard = ({ post }) => {
             )}
 
             {/* Media Grid */}
-            {media.length > 0 && (
+            {imageMedia.length > 0 && (
                 <div className={`grid ${mediaGridClass()} gap-2 mb-4 rounded-xl overflow-hidden`}>
-                    {media.map((url, i) => (
+                    {imageMedia.map((url, i) => (
                         <div key={i}
                             className={`relative overflow-hidden rounded-xl cursor-pointer group
-                                ${media.length === 3 && i === 0 ? 'row-span-2' : ''}
-                                ${media.length === 1 ? 'max-h-[400px]' : 'aspect-square'}`}
+                                ${imageMedia.length === 3 && i === 0 ? 'row-span-2' : ''}
+                                ${imageMedia.length === 1 ? 'max-h-[400px]' : 'aspect-square'}`}
                             onClick={() => setLightboxImg(url)}>
                             <img src={url} alt="" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
                         </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Uploaded documents */}
+            {fileMedia.length > 0 && (
+                <div className="mb-4 space-y-2">
+                    {fileMedia.map((url, i) => {
+                        const nameFromUrl = decodeURIComponent(url.split('/').pop() || 'document');
+                        return (
+                            <a
+                                key={i}
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center justify-between gap-3 rounded-lg border border-discord-border/70 bg-discord-darkest/50 px-3 py-2.5 hover:border-blurple/40 transition-colors"
+                            >
+                                <div className="min-w-0 flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-discord-faint shrink-0" strokeWidth={2} />
+                                    <span className="text-xs text-discord-light truncate">{nameFromUrl}</span>
+                                </div>
+                                <ExternalLink className="w-3.5 h-3.5 text-discord-faint shrink-0" strokeWidth={2} />
+                            </a>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Resource links */}
+            {resourceLinks.length > 0 && (
+                <div className="mb-4 space-y-2">
+                    {resourceLinks.map((link, i) => (
+                        <a
+                            key={link._id || `${link.url}-${i}`}
+                            href={link.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center justify-between gap-3 rounded-lg border border-discord-border/70 bg-discord-darkest/50 px-3 py-2.5 hover:border-blurple/40 transition-colors"
+                        >
+                            <div className="min-w-0 flex items-center gap-2">
+                                <Link2 className="w-4 h-4 text-blurple shrink-0" strokeWidth={2} />
+                                <span className="text-xs text-discord-light truncate">{link.label || link.url}</span>
+                            </div>
+                            <ExternalLink className="w-3.5 h-3.5 text-discord-faint shrink-0" strokeWidth={2} />
+                        </a>
                     ))}
                 </div>
             )}

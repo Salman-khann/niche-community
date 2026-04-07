@@ -259,6 +259,11 @@ body {
   width: 70%;
 }
 
+/* reCAPTCHA v3 badge is hidden; disclosure text is shown in auth forms. */
+.grecaptcha-badge {
+  visibility: hidden;
+}
+
 .feature-panel__line.tiny {
   width: 40%;
 }

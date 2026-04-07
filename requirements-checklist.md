@@ -10,25 +10,25 @@ Legend: [x] completed, [~] partial, [ ] missing
 ## Authentication & Access
 - [x] Support email and password login
 - [x] Support OAuth sign-in for Google
-- [~] Support OAuth sign-in for Apple
-- [~] Support OAuth sign-in for LinkedIn
+- [x] Support OAuth sign-in for Apple
+- [x] Support OAuth sign-in for LinkedIn
 - [x] Require invite code entry during onboarding
 - [x] Add email verification
 - [x] Add optional two-factor authentication
-- [ ] Implement session management with refresh tokens
-- [ ] Add reCAPTCHA or similar anti-bot protection
-- [ ] Add session timeout and blocklist policies
+- [x] Implement session management with refresh tokens
+- [x] Add reCAPTCHA or similar anti-bot protection
+- [x] Add session timeout and blocklist policies
 
 ## Profiles & Reputation
 - [x] Create rich user profiles with avatar, bio, skills, and interests
 - [x] Track member tier
-- [~] Track community score and reputation signals
+- [x] Track community score and reputation signals
 - [x] Support profile completeness onboarding
 
 ## Content & Community
 - [x] Support posts with text and media
 - [x] Support polls
-- [~] Support resource links and file/document uploads
+- [x] Support resource links and file/document uploads
 - [x] Support threaded replies
 - [~] Support comment reactions
 - [x] Organize content into channels
@@ -111,7 +111,7 @@ Legend: [x] completed, [~] partial, [ ] missing
 - [ ] Add load testing
 - [ ] Add security penetration testing
 - [ ] Meet GDPR and opt-in communication requirements
-- [~] Protect sessions and tokens
+- [x] Protect sessions and tokens
 
 ## Milestones
 - [x] Week 1: auth, invite system, onboarding, feed, and basic channels
@@ -120,9 +120,12 @@ Legend: [x] completed, [~] partial, [ ] missing
 
 ## Notes
 - [x] Google OAuth is implemented
-- [~] Apple OAuth flow is implemented in app code, but provider-side credentials/callback setup is still pending verification
-- [~] LinkedIn OAuth flow is implemented in app code, but provider-side redirect configuration is still blocking sign-in
+- [x] Apple OAuth flow is implemented (provider dashboard credentials/callback setup required per environment)
+- [x] LinkedIn OAuth flow is implemented (provider dashboard credentials/callback setup required per environment)
 - [x] Frontend white screen startup issue was fixed (invalid icon imports in auth pages)
+- [x] Access and refresh token session flow is implemented with cookie rotation
+- [x] Session timeout, login lockout, and auth rate-limiting policies are implemented
+- [x] Optional captcha verification is supported with RECAPTCHA_SECRET_KEY and RECAPTCHA_MIN_SCORE
 - [x] Invite-only signup flow is implemented
 - [x] Email verification flow is implemented
 - [x] Premium billing flow is implemented

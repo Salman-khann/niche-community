@@ -37,7 +37,7 @@ export const getMyCommunity = async (req, res) => {
 // ── GET /communities/mine-all ─────────────────────────────────────────────────
 export const getMyCommunities = async (req, res) => {
     try {
-        const communities = await Community.find({ owner: req.userId }).select('name slug description members').lean();
+        const communities = await Community.find({ owner: req.userId }).select('name slug description members communityScore').lean();
         res.status(200).json({ success: true, communities });
     } catch (error) {
         console.log("Error in getMyCommunities:", error);
@@ -49,7 +49,7 @@ export const getMyCommunities = async (req, res) => {
 export const getAllCommunities = async (req, res) => {
     try {
         const communities = await Community.find({})
-            .select('name slug description icon bannerColor traits profileDescription kind template members')
+            .select('name slug description icon bannerColor traits profileDescription kind template members communityScore')
             .lean();
 
         const payload = (communities || []).map((c) => ({
@@ -62,6 +62,7 @@ export const getAllCommunities = async (req, res) => {
             traits: c.traits || [],
             kind: c.kind,
             template: c.template,
+            communityScore: c.communityScore || 0,
             membersCount: Array.isArray(c.members) ? c.members.length : 0,
         }));
 

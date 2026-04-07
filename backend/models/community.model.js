@@ -43,6 +43,23 @@ const communitySchema = new mongoose.Schema({
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   inviteCodes: { type: [inviteCodeSchema], default: [] },
   roles: { type: [roleSchema], default: [] },
+  communityScore: { type: Number, default: 0 },
+  scoreSignals: {
+    postsCreated: { type: Number, default: 0 },
+    commentsCreated: { type: Number, default: 0 },
+    repliesReceived: { type: Number, default: 0 },
+    helpfulRepliesMarked: { type: Number, default: 0 },
+    postLikesReceived: { type: Number, default: 0 },
+    messagesSent: { type: Number, default: 0 },
+    messageCommentsCreated: { type: Number, default: 0 },
+    messageRepliesReceived: { type: Number, default: 0 },
+    messageLikesReceived: { type: Number, default: 0 },
+    reactionsGiven: { type: Number, default: 0 },
+  },
+  botMeta: {
+    lastDigestAt: { type: Date, default: null },
+    raidMode: { type: Boolean, default: false },
+  },
   blocklist: {
     type: [{
       value: { type: String, required: true, trim: true, lowercase: true },

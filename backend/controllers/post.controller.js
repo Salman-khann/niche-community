@@ -5,6 +5,7 @@ import Profile from "../models/profile.model.js";
 import Notification from "../models/notification.model.js";
 import User from "../models/user.model.js";
 import { io } from "../socket.js";
+import { trackReputationSignal } from "../utils/reputationSignals.js";
 
 // ── Get Feed ────────────────────────────────────────────────────────────────
 export const getFeed = async (req, res) => {
@@ -83,17 +84,38 @@ export const getFeed = async (req, res) => {
 // ── Create Post ─────────────────────────────────────────────────────────────
 export const createPost = async (req, res) => {
     try {
-        const { content, mediaURLs, tags, communityId, channelId, poll, mentions } = req.body;
-
-        // Require at least content or a poll
-        if ((!content || !content.trim()) && !poll?.question) {
-            return res.status(400).json({
-                success: false,
-                message: "Post content or a poll question is required",
-            });
-        }
+        const { content, mediaURLs, resourceLinks, tags, communityId, channelId, poll, mentions } = req.body;
 
         const targetCommunityId = req.communityId;
+
+        const normalizedResourceLinks = Array.isArray(resourceLinks)
+            ? resourceLinks
+                .map((link) => ({
+                    url: typeof link?.url === "string" ? link.url.trim() : "",
+                    label: typeof link?.label === "string" ? link.label.trim() : "",
+                }))
+                .filter((link) => {
+                    if (!link.url) return false;
+                    try {
+                        const parsed = new URL(link.url);
+                        return ["http:", "https:"].includes(parsed.protocol);
+                    } catch {
+                        return false;
+                    }
+                })
+                .slice(0, 8)
+            : [];
+
+        const hasMedia = Array.isArray(mediaURLs) && mediaURLs.length > 0;
+        const hasValidLinks = normalizedResourceLinks.length > 0;
+
+        // Require at least one meaningful payload: text, media, links, or poll
+        if ((!content || !content.trim()) && !poll?.question && !hasMedia && !hasValidLinks) {
+            return res.status(400).json({
+                success: false,
+                message: "Post content, media, links, or a poll question is required",
+            });
+        }
 
         const postData = {
             communityId: targetCommunityId,
@@ -101,6 +123,7 @@ export const createPost = async (req, res) => {
             authorId: req.userId,
             content: (content || "").trim(),
             mediaURLs: mediaURLs || [],
+            resourceLinks: normalizedResourceLinks,
             tags: tags || [],
             mentions: Array.isArray(mentions) ? mentions : [],
         };
@@ -117,6 +140,11 @@ export const createPost = async (req, res) => {
         }
 
         const post = await Post.create(postData);
+        await trackReputationSignal({
+            userId: req.userId,
+            communityId: targetCommunityId,
+            signal: "post_created",
+        });
 
         const populated = await Post.findById(post._id)
             .populate("authorId", "name email")
@@ -211,11 +239,19 @@ export const reactToPost = async (req, res) => {
         // ── Reputation: +1 on like, -1 on unlike (skip self-likes) ──────────
         const postAuthor = post.authorId.toString();
         if (postAuthor !== userId) {
-            const repDelta = alreadyLiked ? -1 : 1;
-            await Profile.findOneAndUpdate(
-                { userId: postAuthor },
-                { $inc: { reputation: repDelta } }
-            );
+            const likeMultiplier = alreadyLiked ? -1 : 1;
+            await trackReputationSignal({
+                userId: postAuthor,
+                communityId: post.communityId,
+                signal: "post_like_received",
+                multiplier: likeMultiplier,
+            });
+            await trackReputationSignal({
+                userId,
+                communityId: post.communityId,
+                signal: "post_like_given",
+                multiplier: likeMultiplier,
+            });
         }
 
         const reactionData = {
@@ -270,18 +306,20 @@ export const addComment = async (req, res) => {
         await post.save();
 
         // ── Reputation: +1 for commenter participation ─────────────────────
-        await Profile.findOneAndUpdate(
-            { userId: req.userId },
-            { $inc: { reputation: 1 } }
-        );
+        await trackReputationSignal({
+            userId: req.userId,
+            communityId: post.communityId,
+            signal: "comment_created",
+        });
 
         // ── Reputation: +2 for receiving a reply (skip self-replies) ────────
         const postAuthorId = post.authorId.toString();
         if (postAuthorId !== req.userId) {
-            await Profile.findOneAndUpdate(
-                { userId: postAuthorId },
-                { $inc: { reputation: 2 } }
-            );
+            await trackReputationSignal({
+                userId: postAuthorId,
+                communityId: post.communityId,
+                signal: "reply_received",
+            });
         }
 
         const populated = await Comment.findById(comment._id)
@@ -418,21 +456,23 @@ export const markReplyHelpful = async (req, res) => {
             previouslyHelpfulReply.helpfulByAuthor = false;
             previouslyHelpfulReply.helpfulMarkedAt = null;
             await previouslyHelpfulReply.save();
-
-            await Profile.findOneAndUpdate(
-                { userId: previouslyHelpfulReply.authorId.toString() },
-                { $inc: { reputation: -10 } }
-            );
+            await trackReputationSignal({
+                userId: previouslyHelpfulReply.authorId,
+                communityId: post.communityId,
+                signal: "helpful_reply_received",
+                multiplier: -1,
+            });
         }
 
         targetReply.helpfulByAuthor = true;
         targetReply.helpfulMarkedAt = new Date();
         await targetReply.save();
 
-        await Profile.findOneAndUpdate(
-            { userId: targetReply.authorId.toString() },
-            { $inc: { reputation: 10 } }
-        );
+        await trackReputationSignal({
+            userId: targetReply.authorId,
+            communityId: post.communityId,
+            signal: "helpful_reply_received",
+        });
 
         res.status(200).json({
             success: true,

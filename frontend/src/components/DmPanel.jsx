@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Phone, Smile, Send, Plus, Image as ImageIcon, X, Menu, Server, Mic, MicOff, ScreenShare, Video, VideoOff, UserPlus, LogOut } from 'lucide-react';
 import VoiceVideoPlayer from './VoiceVideoPlayer';
 import EmojiPicker from './EmojiPicker';
+import AttachmentPreviewCard from './AttachmentPreviewCard';
 
 const formatTime = (value) => {
     if (!value) return '';
@@ -438,18 +439,21 @@ const DmPanel = ({
                                     </div>
                                     <p className="text-sm text-discord-light">{m.content}</p>
                                     {m.mediaURLs?.length > 0 && (
-                                        <div className="mt-2 grid grid-cols-2 gap-2 max-w-md">
-                                            {m.mediaURLs.map((url) => (
-                                                <div key={url} className="rounded-lg border border-discord-border/40 overflow-hidden bg-discord-darkest">
-                                                    {url.match(/\.(png|jpe?g|gif|webp|bmp)$/i) || url.includes('image/upload') ? (
+                                        <div className="mt-2 grid grid-cols-1 gap-2 max-w-md">
+                                            {m.mediaURLs.map((url) => {
+                                                const isImage = url.match(/\.(png|jpe?g|gif|webp|bmp)$/i) || url.includes('image/upload');
+                                                const docUrls = m.mediaURLs.filter((candidate) => !(candidate.match(/\.(png|jpe?g|gif|webp|bmp)$/i) || candidate.includes('image/upload')));
+                                                const docIndex = docUrls.findIndex((candidate) => candidate === url);
+                                                return (
+                                                (url.match(/\.(png|jpe?g|gif|webp|bmp)$/i) || url.includes('image/upload')) ? (
+                                                    <div key={url} className="rounded-lg border border-discord-border/40 overflow-hidden bg-discord-darkest">
                                                         <img src={url} alt="" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <a href={url} className="block p-3 text-xs text-blurple hover:underline" target="_blank" rel="noreferrer">
-                                                            Download file
-                                                        </a>
-                                                    )}
-                                                </div>
-                                            ))}
+                                                    </div>
+                                                ) : (
+                                                    <AttachmentPreviewCard key={url} url={url} allUrls={docUrls} initialIndex={Math.max(0, docIndex)} />
+                                                )
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
@@ -492,6 +496,7 @@ const DmPanel = ({
                         <input
                             type="file"
                             multiple
+                            accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.ppt,.pptx"
                             className="hidden"
                             onChange={(e) => {
                                 onAddFiles?.(e.target.files);
