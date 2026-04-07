@@ -80,7 +80,24 @@ REDIS_URL=redis://localhost:6379
 # Google OAuth
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
+
+# Apple OAuth
+APPLE_CLIENT_ID=your_apple_services_id
+APPLE_TEAM_ID=your_apple_team_id
+APPLE_KEY_ID=your_apple_key_id
+APPLE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----
+
+# LinkedIn OAuth
+LINKEDIN_CLIENT_ID=your_linkedin_client_id
+LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
+
+# Optional server URL override for OAuth callbacks
+SERVER_URL=http://localhost:3000
 ```
+
+When configuring Apple and LinkedIn in their provider dashboards, register these callback URLs:
+- Apple: `http://localhost:3000/api/auth/apple/callback`
+- LinkedIn: `http://localhost:3000/api/auth/linkedin/callback`
 
 Frontend: `frontend/.env`
 ```env

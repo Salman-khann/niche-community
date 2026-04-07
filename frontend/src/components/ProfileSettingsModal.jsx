@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Palette, Pencil, X, LogOut, Camera } from 'lucide-react';
+import { Palette, Pencil, X, LogOut, Camera, ShieldCheck, ShieldAlert, QrCode } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useDropzone } from 'react-dropzone';
@@ -20,6 +20,7 @@ const BANNER_COLORS = [
 
 const SETTINGS_SECTIONS = [
     { label: 'My Account', key: 'account' },
+    { label: 'Security', key: 'security' },
     { label: 'Language', key: 'language' },
     { label: 'Data & Privacy', key: 'privacy' },
     { label: 'Community Essentials', key: 'community' },
@@ -31,7 +32,7 @@ const BILLING_SECTIONS = [
 
 const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const navigate = useNavigate();
-    const { logout } = useAuthStore();
+    const { logout, getTwoFactorSetup, enableTwoFactor, disableTwoFactor } = useAuthStore();
     const initial = useMemo(() => ({
         displayName: profile?.displayName || user?.name || '',
         pronouns: profile?.pronouns || '',
@@ -50,6 +51,11 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const [avatarUploading, setAvatarUploading] = useState(false);
     const [avatarError, setAvatarError] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const [twoFactorSetup, setTwoFactorSetup] = useState(null);
+    const [twoFactorCode, setTwoFactorCode] = useState('');
+    const [twoFactorError, setTwoFactorError] = useState('');
+    const [twoFactorMessage, setTwoFactorMessage] = useState('');
+    const [twoFactorBusy, setTwoFactorBusy] = useState(false);
     const { uploadFile } = useFeedStore();
     const [privacy, setPrivacy] = useState({
         improveData: profile?.dataPrivacy?.improveData ?? true,
@@ -74,6 +80,10 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
             personalizeExperience: profile?.dataPrivacy?.personalizeExperience ?? true,
             voiceClips: profile?.dataPrivacy?.voiceClips ?? true,
         });
+        setTwoFactorSetup(null);
+        setTwoFactorCode('');
+        setTwoFactorError('');
+        setTwoFactorMessage('');
     }, [isOpen, initial]);
 
     const onAvatarDrop = useCallback(async (acceptedFiles) => {
@@ -129,6 +139,56 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         if (sectionId !== 'circlecore-plus') return;
         onClose?.();
         navigate('/upgrade');
+    };
+
+    const handleTwoFactorSetup = async () => {
+        setTwoFactorBusy(true);
+        setTwoFactorError('');
+        setTwoFactorMessage('');
+        try {
+            const data = await getTwoFactorSetup();
+            setTwoFactorSetup(data);
+        } catch (error) {
+            setTwoFactorError(error.message || 'Unable to start 2FA setup');
+        } finally {
+            setTwoFactorBusy(false);
+        }
+    };
+
+    const handleTwoFactorEnable = async () => {
+        if (!twoFactorSetup?.secret) {
+            setTwoFactorError('Start 2FA setup first');
+            return;
+        }
+        setTwoFactorBusy(true);
+        setTwoFactorError('');
+        setTwoFactorMessage('');
+        try {
+            await enableTwoFactor(twoFactorSetup.secret, twoFactorCode);
+            setTwoFactorMessage('Two-factor authentication is now enabled.');
+            setTwoFactorSetup(null);
+            setTwoFactorCode('');
+        } catch (error) {
+            setTwoFactorError(error.message || 'Unable to enable 2FA');
+        } finally {
+            setTwoFactorBusy(false);
+        }
+    };
+
+    const handleTwoFactorDisable = async () => {
+        setTwoFactorBusy(true);
+        setTwoFactorError('');
+        setTwoFactorMessage('');
+        try {
+            await disableTwoFactor(twoFactorCode);
+            setTwoFactorMessage('Two-factor authentication is now disabled.');
+            setTwoFactorCode('');
+            setTwoFactorSetup(null);
+        } catch (error) {
+            setTwoFactorError(error.message || 'Unable to disable 2FA');
+        } finally {
+            setTwoFactorBusy(false);
+        }
     };
 
     return (
@@ -463,6 +523,109 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                             </div>
                                         </div>
                                         <div className="text-discord-faint text-sm">English, US</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'security' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto space-y-6">
+                                    <div className="rounded-3xl border border-discord-border/60 bg-discord-darkest/80 p-6 md:p-8">
+                                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                                            <div>
+                                                <p className="text-[11px] uppercase tracking-[0.3em] text-blurple/80 font-semibold">Account Security</p>
+                                                <h2 className="text-2xl font-semibold text-white mt-2">Two-factor authentication</h2>
+                                                <p className="text-sm text-discord-faint mt-2 max-w-2xl">
+                                                    Use an authenticator app for an extra sign-in step. This protects your account even if your password is exposed.
+                                                </p>
+                                            </div>
+                                            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border ${user?.twoFactorEnabled ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-discord-darkest border-discord-border text-discord-faint'}`}>
+                                                {user?.twoFactorEnabled ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
+                                                {user?.twoFactorEnabled ? 'Enabled' : 'Disabled'}
+                                            </div>
+                                        </div>
+
+                                        {twoFactorError && (
+                                            <div className="mt-5 px-4 py-3 bg-discord-red/10 border border-discord-red/20 rounded-lg text-sm text-discord-red font-medium">
+                                                {twoFactorError}
+                                            </div>
+                                        )}
+                                        {twoFactorMessage && (
+                                            <div className="mt-5 px-4 py-3 bg-discord-green/10 border border-discord-green/20 rounded-lg text-sm text-discord-green font-medium">
+                                                {twoFactorMessage}
+                                            </div>
+                                        )}
+
+                                        <div className="mt-6 grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6 items-start">
+                                            <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 p-4 flex items-center justify-center min-h-[260px]">
+                                                {twoFactorSetup?.qrCodeDataUrl ? (
+                                                    <img src={twoFactorSetup.qrCodeDataUrl} alt="2FA QR code" className="w-56 h-56 rounded-xl border border-discord-border/60 bg-white p-2" />
+                                                ) : (
+                                                    <div className="text-center space-y-3">
+                                                        <QrCode className="w-12 h-12 text-discord-faint mx-auto" />
+                                                        <p className="text-sm text-discord-faint">Generate a QR code to start 2FA setup.</p>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 p-4">
+                                                    <p className="text-sm font-semibold text-white">Setup flow</p>
+                                                    <p className="text-xs text-discord-faint mt-1">
+                                                        1. Generate a secret. 2. Scan the QR code in an authenticator app. 3. Enter the 6-digit code to confirm.
+                                                    </p>
+                                                    {twoFactorSetup?.manualEntryKey && (
+                                                        <div className="mt-4 rounded-xl border border-discord-border/60 bg-discord-darkest px-3 py-2 text-xs text-discord-light break-all">
+                                                            {twoFactorSetup.manualEntryKey}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex flex-col sm:flex-row gap-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleTwoFactorSetup}
+                                                        disabled={twoFactorBusy}
+                                                        className="px-4 py-2 rounded-lg bg-blurple text-white text-sm font-semibold hover:bg-blurple/90 disabled:opacity-60"
+                                                    >
+                                                        {twoFactorBusy ? 'Working…' : 'Generate QR Code'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleTwoFactorEnable}
+                                                        disabled={twoFactorBusy || !twoFactorSetup?.secret || !twoFactorCode.trim()}
+                                                        className="px-4 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-200 text-sm font-semibold hover:bg-emerald-500/20 disabled:opacity-60"
+                                                    >
+                                                        Enable 2FA
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleTwoFactorDisable}
+                                                        disabled={twoFactorBusy || !user?.twoFactorEnabled || !twoFactorCode.trim()}
+                                                        className="px-4 py-2 rounded-lg border border-discord-red/30 bg-discord-red/10 text-discord-red text-sm font-semibold hover:bg-discord-red/20 disabled:opacity-60"
+                                                    >
+                                                        Disable 2FA
+                                                    </button>
+                                                </div>
+
+                                                <div className="space-y-2 max-w-sm">
+                                                    <label className="text-sm font-semibold text-discord-light">Authenticator Code</label>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        autoComplete="one-time-code"
+                                                        value={twoFactorCode}
+                                                        onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                                        placeholder="123456"
+                                                        className="w-full rounded-lg border border-discord-border/60 bg-discord-darkest px-4 py-2.5 text-white outline-none focus:border-blurple"
+                                                    />
+                                                    <p className="text-xs text-discord-faint">
+                                                        Use the same code to confirm setup or disable 2FA.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

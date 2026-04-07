@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Sparkles, Ticket, ArrowRight, ShieldCheck, Plus, Building2, Globe, FileText } from 'lucide-react';
 import InputField from '../components/InputField';
 import Button from '../components/Button';
@@ -19,6 +19,26 @@ const InviteCodePage = () => {
     const [wsDesc, setWsDesc] = useState('');
     const [wsSlug, setWsSlug] = useState('');
     const [wsErrors, setWsErrors] = useState({});
+    const [searchParams] = useSearchParams();
+    const oauthError = searchParams.get('oauth_error');
+
+    const getOauthErrorMessage = (value) => {
+        if (!value) return '';
+
+        const normalized = value.trim();
+        const knownErrors = {
+            invite_required: 'Apple or LinkedIn sign-in needs an invite code. Enter one below to continue.',
+            linkedin_oauth_missing_code: 'LinkedIn sign-in was cancelled or did not return a code. Please try again.',
+            linkedin_email_unavailable: 'LinkedIn did not provide an email address. Use another sign-in method or LinkedIn account email visibility settings.',
+            apple_oauth_missing_code: 'Apple sign-in was cancelled or did not return a code. Please try again.',
+            apple_email_unavailable: 'Apple did not provide an email address for this account.',
+        };
+
+        if (knownErrors[normalized]) return knownErrors[normalized];
+
+        // Show provider messages as-is for unknown failures so users can act on them.
+        return normalized;
+    };
 
     const { validateInviteCode, isLoading, error, clearError } = useInviteStore();
     const { createCommunity, isLoading: wsLoading, error: wsError, clearError: clearWsError } = useCommunityStore();
@@ -126,6 +146,12 @@ const InviteCodePage = () => {
                     <section className={`w-full max-w-[420px] mx-auto transition-all duration-700 delay-300
                         ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
                         <div className="relative bg-discord-darker rounded-xl p-6 sm:p-8 shadow-2xl shadow-black/20 border border-discord-border/50">
+                            {oauthError && (
+                                <div className="mb-5 px-4 py-3 bg-discord-yellow/10 border border-discord-yellow/20 rounded-lg text-sm text-discord-yellow font-medium text-center">
+                                    {getOauthErrorMessage(oauthError)}
+                                </div>
+                            )}
+
                             {error && (
                                 <div className="mb-5 px-4 py-3 bg-discord-red/10 border border-discord-red/20 rounded-lg text-sm text-discord-red font-medium text-center animate-shake">
                                     {error}

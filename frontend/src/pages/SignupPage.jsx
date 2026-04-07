@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Mail, Lock, User, Sparkles, UserPlus } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
+import { SiApple } from 'react-icons/si';
+import { FaLinkedinIn } from 'react-icons/fa';
 import InputField from '../components/InputField';
 import Button from '../components/Button';
 import CursorFollower from '../components/CursorFollower';
@@ -20,9 +22,11 @@ const SignupPage = () => {
     const [errors, setErrors] = useState({});
     const [mounted, setMounted] = useState(false);
     const [autoValidating, setAutoValidating] = useState(false);
+    const [formStartedAt] = useState(() => Date.now());
+    const [botField, setBotField] = useState('');
     const navigate = useNavigate();
 
-    const { signup, googleLogin, isLoading, error, clearError } = useAuthStore();
+    const { signup, googleLogin, startAppleLogin, startLinkedInLogin, isLoading, error, clearError } = useAuthStore();
     const { validateInviteCode } = useInviteStore();
     const [googleLoading, setGoogleLoading] = useState(false);
 
@@ -63,7 +67,10 @@ const SignupPage = () => {
         e.preventDefault();
         if (!validate()) return;
         try {
-            await signup(name, email, password, inviteCode);
+            await signup(name, email, password, inviteCode, {
+                formStartedAt,
+                website: botField,
+            });
             sessionStorage.removeItem('circlecore_invite_code');
             navigate('/verify-email');
         } catch { /* error is set in store */ }
@@ -141,6 +148,18 @@ const SignupPage = () => {
                         )}
 
                         <form onSubmit={handleSubmit} className="space-y-4">
+                            <div className="hidden" aria-hidden="true">
+                                <label htmlFor="website">Website</label>
+                                <input
+                                    id="website"
+                                    type="text"
+                                    value={botField}
+                                    onChange={(e) => setBotField(e.target.value)}
+                                    tabIndex={-1}
+                                    autoComplete="off"
+                                />
+                            </div>
+
                             <InputField id="signup-name" label="Full Name" type="text" placeholder="John Doe"
                                 value={name} onChange={(e) => { setName(e.target.value); setErrors((p) => ({ ...p, name: '' })); }}
                                 error={errors.name} icon={<User className="w-4 h-4" strokeWidth={2} />} />
@@ -202,6 +221,29 @@ const SignupPage = () => {
                                 text="continue_with"
                                 shape="rectangular"
                             />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                className="bg-[#1d1d1f] border-[#3a3a3c] text-white hover:bg-[#2a2a2d]"
+                                onClick={() => startAppleLogin(inviteCode, 'signup')}
+                                icon={<SiApple className="w-4 h-4" />}
+                                fullWidth
+                            >
+                                Apple
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                className="bg-[#0A66C2] border-[#0A66C2] text-white hover:bg-[#0959ac] hover:border-[#0959ac]"
+                                onClick={() => startLinkedInLogin(inviteCode, 'signup')}
+                                icon={<FaLinkedinIn className="w-4 h-4" />}
+                                fullWidth
+                            >
+                                LinkedIn
+                            </Button>
                         </div>
 
                         <div className="relative flex items-center gap-3 my-6">

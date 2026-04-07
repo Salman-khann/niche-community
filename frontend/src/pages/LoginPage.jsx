@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Mail, Lock, LogIn, Sparkles } from 'lucide-react';
+import { ArrowLeft, Mail, Lock, LogIn, Sparkles, ShieldCheck } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
+import { SiApple } from 'react-icons/si';
+import { FaLinkedinIn } from 'react-icons/fa';
 import InputField from '../components/InputField';
 import Button from '../components/Button';
 import CursorFollower from '../components/CursorFollower';
@@ -12,9 +14,13 @@ const LoginPage = () => {
     const [password, setPassword] = useState('');
     const [errors, setErrors] = useState({});
     const [mounted, setMounted] = useState(false);
+    const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+    const [twoFactorToken, setTwoFactorToken] = useState('');
+    const [twoFactorCode, setTwoFactorCode] = useState('');
+    const [twoFactorError, setTwoFactorError] = useState('');
     const navigate = useNavigate();
 
-    const { login, googleLogin, isLoading, error, clearError } = useAuthStore();
+    const { login, googleLogin, startAppleLogin, startLinkedInLogin, verifyTwoFactorLogin, isLoading, error, clearError } = useAuthStore();
     const [googleLoading, setGoogleLoading] = useState(false);
 
     useEffect(() => {
@@ -37,9 +43,31 @@ const LoginPage = () => {
         e.preventDefault();
         if (!validate()) return;
         try {
-            await login(email, password);
+            const data = await login(email, password);
+            if (data?.requiresTwoFactor) {
+                setRequiresTwoFactor(true);
+                setTwoFactorToken(data.twoFactorToken || '');
+                setTwoFactorError('');
+                return;
+            }
             navigate('/feed');
         } catch { /* error is set in store */ }
+    };
+
+    const handleTwoFactorSubmit = async (e) => {
+        e.preventDefault();
+        setTwoFactorError('');
+        if (!twoFactorCode.trim()) {
+            setTwoFactorError('Enter the 6-digit code from your authenticator app');
+            return;
+        }
+
+        try {
+            await verifyTwoFactorLogin(twoFactorToken, twoFactorCode.trim());
+            navigate('/feed');
+        } catch (err) {
+            setTwoFactorError(err.message || 'Invalid verification code');
+        }
     };
 
     return (
@@ -93,7 +121,13 @@ const LoginPage = () => {
                                 {error}
                             </div>
                         )}
+                        {twoFactorError && (
+                            <div className="mb-5 px-4 py-3 bg-discord-yellow/10 border border-discord-yellow/20 rounded-lg text-sm text-discord-yellow font-medium text-center">
+                                {twoFactorError}
+                            </div>
+                        )}
 
+                        {!requiresTwoFactor ? (
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <InputField
                                 id="login-email"
@@ -130,6 +164,31 @@ const LoginPage = () => {
                                 {isLoading ? 'Logging in…' : 'Log In'}
                             </Button>
                         </form>
+                        ) : (
+                        <form onSubmit={handleTwoFactorSubmit} className="space-y-4">
+                            <div className="rounded-xl border border-blurple/30 bg-blurple/10 px-4 py-3 text-sm text-discord-light flex items-start gap-3">
+                                <ShieldCheck className="w-5 h-5 text-blurple shrink-0 mt-0.5" />
+                                <p>Two-factor authentication is enabled on this account. Enter the 6-digit code from your authenticator app.</p>
+                            </div>
+                            <InputField
+                                id="two-factor-code"
+                                label="2FA Code"
+                                type="text"
+                                placeholder="123456"
+                                value={twoFactorCode}
+                                onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                icon={<ShieldCheck className="w-4 h-4" strokeWidth={2} />}
+                                autoComplete="one-time-code"
+                            />
+                            <Button type="submit" variant="primary" size="lg" fullWidth loading={isLoading}
+                                icon={!isLoading && <ShieldCheck className="w-4 h-4" strokeWidth={2} />}>
+                                {isLoading ? 'Verifying…' : 'Verify & Continue'}
+                            </Button>
+                            <Button type="button" variant="secondary" fullWidth onClick={() => { setRequiresTwoFactor(false); setTwoFactorToken(''); setTwoFactorCode(''); setTwoFactorError(''); }}>
+                                Back to Login
+                            </Button>
+                        </form>
+                        )}
 
                         {/* Divider */}
                         <div className="relative flex items-center gap-3 my-5">
@@ -158,6 +217,29 @@ const LoginPage = () => {
                                 text="signin_with"
                                 shape="rectangular"
                             />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                className="bg-[#1d1d1f] border-[#3a3a3c] text-white hover:bg-[#2a2a2d]"
+                                onClick={() => startAppleLogin()}
+                                icon={<SiApple className="w-4 h-4" />}
+                                fullWidth
+                            >
+                                Apple
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                className="bg-[#0A66C2] border-[#0A66C2] text-white hover:bg-[#0959ac] hover:border-[#0959ac]"
+                                onClick={() => startLinkedInLogin()}
+                                icon={<FaLinkedinIn className="w-4 h-4" />}
+                                fullWidth
+                            >
+                                LinkedIn
+                            </Button>
                         </div>
 
                         {/* Divider */}

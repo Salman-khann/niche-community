@@ -48,6 +48,7 @@ app.use(cors({
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Routes
@@ -73,11 +74,13 @@ const PORT = process.env.PORT || 3000;
 // Use the HTTP server (not app.listen) so Socket.io is attached
 server.listen(PORT, () => {
     (async () => {
-        await connectDb();
-        try {
-            await ensureRootUser();
-        } catch (error) {
-            console.log("⚠️  Root user seed failed:", error.message || error);
+        const dbConnected = await connectDb();
+        if (dbConnected) {
+            try {
+                await ensureRootUser();
+            } catch (error) {
+                console.log("⚠️  Root user seed failed:", error.message || error);
+            }
         }
         console.log(`Server is running on port ${PORT}`);
     })();
