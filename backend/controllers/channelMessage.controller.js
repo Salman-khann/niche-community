@@ -4,6 +4,7 @@ import Channel from "../models/channel.model.js";
 import User from "../models/user.model.js";
 import Community from "../models/community.model.js";
 import Notification from "../models/notification.model.js";
+import mongoose from "mongoose";
 import { io } from "../socket.js";
 import { filterBadWords } from "../utils/badWords.js";
 import { trackReputationSignal } from "../utils/reputationSignals.js";
@@ -47,8 +48,31 @@ const isSuspiciousLink = (url) => {
 export const getChannelMessages = async (req, res) => {
     try {
         const { channelId } = req.params;
-        const messages = await ChannelMessage.find({ channelId }).sort({ createdAt: 1 }).lean();
-        res.status(200).json({ success: true, messages });
+        const limit = Math.min(100, Math.max(10, parseInt(req.query.limit, 10) || 50));
+        const before = req.query.before ? String(req.query.before) : null;
+
+        const filter = { channelId };
+        if (before) {
+            if (!mongoose.Types.ObjectId.isValid(before)) {
+                return res.status(400).json({ success: false, message: "Invalid pagination cursor" });
+            }
+            filter._id = { $lt: before };
+        }
+
+        // Query newest first for efficient cursor pagination, then reverse for UI order.
+        const rows = await ChannelMessage.find(filter)
+            .sort({ _id: -1 })
+            .limit(limit + 1)
+            .lean();
+
+        const hasMore = rows.length > limit;
+        const pageRows = hasMore ? rows.slice(0, limit) : rows;
+        const messages = pageRows.reverse();
+        const nextBefore = hasMore && messages.length > 0
+            ? messages[0]._id?.toString?.() || String(messages[0]._id)
+            : null;
+
+        res.status(200).json({ success: true, messages, hasMore, nextBefore });
     } catch (error) {
         console.log("Error in getChannelMessages:", error);
         res.status(500).json({ success: false, message: "Server error" });
@@ -266,15 +290,33 @@ export const reactToChannelMessage = async (req, res) => {
 export const getChannelMessageComments = async (req, res) => {
     try {
         const { channelId, messageId } = req.params;
+        const limit = Math.min(100, Math.max(10, parseInt(req.query.limit, 10) || 50));
+        const before = req.query.before ? String(req.query.before) : null;
         const message = await ChannelMessage.findById(messageId).lean();
         if (!message || message.channelId.toString() !== channelId) {
             return res.status(404).json({ success: false, message: "Message not found" });
         }
 
-        const comments = await ChannelMessageComment.find({ messageId })
-            .sort({ createdAt: 1 })
+        const filter = { messageId };
+        if (before) {
+            if (!mongoose.Types.ObjectId.isValid(before)) {
+                return res.status(400).json({ success: false, message: "Invalid pagination cursor" });
+            }
+            filter._id = { $lt: before };
+        }
+
+        const rows = await ChannelMessageComment.find(filter)
+            .sort({ _id: -1 })
+            .limit(limit + 1)
             .populate("authorId", "name profileId")
             .lean();
+
+        const hasMore = rows.length > limit;
+        const pageRows = hasMore ? rows.slice(0, limit) : rows;
+        const comments = pageRows.reverse();
+        const nextBefore = hasMore && comments.length > 0
+            ? comments[0]._id?.toString?.() || String(comments[0]._id)
+            : null;
 
         const shaped = comments.map((c) => ({
             _id: c._id,
@@ -288,7 +330,7 @@ export const getChannelMessageComments = async (req, res) => {
             },
         }));
 
-        res.status(200).json({ success: true, comments: shaped });
+        res.status(200).json({ success: true, comments: shaped, hasMore, nextBefore });
     } catch (error) {
         console.log("Error in getChannelMessageComments:", error);
         res.status(500).json({ success: false, message: "Server error" });

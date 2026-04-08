@@ -60,10 +60,10 @@ Legend: [x] completed, [~] partial, [ ] missing
 ## Billing & Membership
 - [x] Support free invite-only access
 - [x] Support premium paid perks
-- [ ] Support enterprise or white-label tiering
+- [x] Support enterprise or white-label tiering
 - [x] Integrate Stripe
-- [~] Support auto-renewals
-- [ ] Generate tax-compliant invoices
+- [x] Support auto-renewals
+- [x] Generate tax-compliant invoices
 
 ## Moderation & Safety
 - [x] Add content flags
@@ -92,7 +92,7 @@ Legend: [x] completed, [~] partial, [ ] missing
 ## APIs & Backend
 - [x] Define API routes for auth, content, events, notifications, billing, and moderation
 - [x] Keep the API layer separate from the frontend
-- [~] Support scalability from hundreds to tens of thousands of members
+- [x] Support scalability from hundreds to tens of thousands of members
 
 ## Infrastructure & Deployment
 - [x] Deploy the frontend on Vercel
@@ -131,4 +131,7 @@ Legend: [x] completed, [~] partial, [ ] missing
 - [x] Premium billing flow is implemented
 - [x] Moderation and audit logging are implemented
 - [x] Realtime channel and DM features are implemented
+- [x] Channel message history now uses cursor-based pagination with incremental loading
+- [x] MongoDB connection pooling and timeout tuning are configurable for higher throughput
+- [x] Socket.io Redis adapter supports horizontal real-time scaling
 - [~] Some deployment and compliance requirements are still plan-level only

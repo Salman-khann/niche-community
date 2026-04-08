@@ -19,5 +19,6 @@ const channelMessageSchema = new mongoose.Schema({
 }, { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } });
 
 channelMessageSchema.index({ channelId: 1, createdAt: 1 });
+channelMessageSchema.index({ channelId: 1, _id: -1 });
 
 export default mongoose.model("ChannelMessage", channelMessageSchema);

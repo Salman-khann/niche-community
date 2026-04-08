@@ -136,10 +136,10 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
     const content = (
         <div className="flex flex-col h-full">
             {/* Server header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-discord-darkest/60 shadow-sm relative">
+            <div className="ui-topbar flex items-center justify-between px-4 py-3 shadow-sm relative">
                 <button
-                    className="group flex items-center gap-2 text-sm font-semibold text-discord-white px-2 py-1 rounded-md transition
-                    hover:bg-discord-darkest/70 active:bg-discord-darkest/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blurple/60"
+                    className="group ui-chip ui-chip--active flex items-center gap-2 text-sm font-semibold px-2 py-1 transition
+                    active:bg-discord-darkest/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blurple/60"
                     onClick={() => setShowServerMenu((v) => !v)}
                 >
                     <span className="truncate">{communityName}</span>
@@ -197,17 +197,17 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                     </div>
                 </div>
             )}
-            <div className="px-3 py-3 border-b border-discord-darkest/60 space-y-1 text-sm text-discord-muted">
+            <div className="ui-topbar px-3 py-3 space-y-1 text-sm text-discord-muted">
                 <button
                     onClick={() => setShowEventsModal(true)}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-discord-darkest/80 cursor-pointer"
+                    className="ui-chip w-full flex items-center gap-2 px-2 py-1.5 cursor-pointer"
                 >
                     <Calendar className="w-4 h-4" />
                     Events
                 </button>
                 <button
                     onClick={() => navigate('/upgrade')}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-discord-darkest/80 cursor-pointer"
+                    className="ui-chip w-full flex items-center gap-2 px-2 py-1.5 cursor-pointer"
                 >
                     <Sparkles className="w-4 h-4" />
                     CircleCore Plus

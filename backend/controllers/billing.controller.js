@@ -19,6 +19,45 @@ const resolveStripeClient = async () => {
 
 const PREMIUM_ELIGIBLE_TIERS = new Set(["premium", "enterprise"]);
 
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"]);
+
+const getPriceIdForPlan = (plan) => {
+    if (plan === "enterprise") return process.env.STRIPE_ENTERPRISE_PRICE_ID || "";
+    return process.env.STRIPE_PREMIUM_PRICE_ID || "";
+};
+
+const normalizeRequestedPlan = (value) => (value === "enterprise" ? "enterprise" : "premium");
+
+const resolveTierFromSubscription = (subscription, fallbackTier = "premium") => {
+    const planMeta = subscription?.metadata?.plan || "";
+    if (String(planMeta).toLowerCase().includes("enterprise")) return "enterprise";
+
+    const enterprisePriceId = process.env.STRIPE_ENTERPRISE_PRICE_ID || "";
+    const itemPriceIds = (subscription?.items?.data || []).map((item) => item?.price?.id).filter(Boolean);
+    if (enterprisePriceId && itemPriceIds.includes(enterprisePriceId)) return "enterprise";
+
+    return fallbackTier === "enterprise" ? "enterprise" : "premium";
+};
+
+const getSubscriptionSnapshot = async (stripe, profile) => {
+    if (!profile?.stripeSubscriptionId) return null;
+    try {
+        const subscription = await stripe.subscriptions.retrieve(profile.stripeSubscriptionId);
+        const currentPeriodEndMs = subscription.current_period_end ? subscription.current_period_end * 1000 : null;
+        return {
+            stripeSubscriptionId: subscription.id,
+            stripeCustomerId: subscription.customer || profile.stripeCustomerId || null,
+            status: subscription.status || profile.subscriptionStatus || "inactive",
+            cancelAtPeriodEnd: !!subscription.cancel_at_period_end,
+            currentPeriodEnd: currentPeriodEndMs ? new Date(currentPeriodEndMs).toISOString() : null,
+            tier: resolveTierFromSubscription(subscription, profile.tier),
+            plan: resolveTierFromSubscription(subscription, profile.tier) === "enterprise" ? "enterprise-monthly" : "premium-monthly",
+        };
+    } catch {
+        return null;
+    }
+};
+
 const resolveProfileByStripeEvent = async ({ userId, customerId, subscriptionId }) => {
     if (userId) {
         const profileByUser = await Profile.findOne({ userId });
@@ -49,6 +88,17 @@ export const createCheckoutSession = async (req, res) => {
             return res.status(500).json({
                 success: false,
                 message: "Stripe SDK is unavailable or STRIPE_SECRET_KEY is missing",
+            });
+        }
+
+        const requestedPlan = normalizeRequestedPlan(req.body?.plan);
+        const selectedPriceId = getPriceIdForPlan(requestedPlan);
+        if (!selectedPriceId) {
+            return res.status(400).json({
+                success: false,
+                message: requestedPlan === "enterprise"
+                    ? "Enterprise plan is not configured yet"
+                    : "Premium plan is not configured",
             });
         }
 
@@ -85,7 +135,7 @@ export const createCheckoutSession = async (req, res) => {
             customer: customerId,
             line_items: [
                 {
-                    price: process.env.STRIPE_PREMIUM_PRICE_ID,
+                    price: selectedPriceId,
                     quantity: 1,
                 },
             ],
@@ -94,12 +144,12 @@ export const createCheckoutSession = async (req, res) => {
             cancel_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/upgrade/cancel`,
             metadata: {
                 userId: String(req.userId),
-                plan: "premium-monthly",
+                plan: `${requestedPlan}-monthly`,
             },
             subscription_data: {
                 metadata: {
                     userId: String(req.userId),
-                    plan: "premium-monthly",
+                    plan: `${requestedPlan}-monthly`,
                 },
             },
         });
@@ -146,7 +196,8 @@ export const verifyCheckoutSession = async (req, res) => {
         }
 
         // Upgrade to premium
-        profile.tier = "premium";
+        const planMeta = (session.metadata?.plan || "").toLowerCase();
+        profile.tier = planMeta.includes("enterprise") ? "enterprise" : "premium";
         profile.subscriptionStatus = "active";
         profile.stripeCustomerId = session.customer || profile.stripeCustomerId || null;
         profile.stripeSubscriptionId = session.subscription || profile.stripeSubscriptionId || null;
@@ -208,7 +259,8 @@ export const stripeWebhook = async (req, res) => {
 
                 profile.stripeCustomerId = customerId || profile.stripeCustomerId || null;
                 profile.stripeSubscriptionId = subscriptionId || profile.stripeSubscriptionId || null;
-                profile.tier = "premium";
+                const planMeta = (session.metadata?.plan || "").toLowerCase();
+                profile.tier = planMeta.includes("enterprise") ? "enterprise" : "premium";
                 profile.subscriptionStatus = "active";
                 await profile.save();
                 break;
@@ -229,7 +281,9 @@ export const stripeWebhook = async (req, res) => {
                 profile.stripeCustomerId = customerId || profile.stripeCustomerId || null;
                 profile.stripeSubscriptionId = subscriptionId || profile.stripeSubscriptionId || null;
                 profile.subscriptionStatus = status;
-                profile.tier = ["active", "trialing", "past_due"].includes(status) ? "premium" : "free";
+                profile.tier = ACTIVE_SUBSCRIPTION_STATUSES.has(status)
+                    ? resolveTierFromSubscription(subscription, profile.tier)
+                    : "free";
                 if (profile.tier === "free") profile.stripeSubscriptionId = null;
                 await profile.save();
                 break;
@@ -261,5 +315,151 @@ export const stripeWebhook = async (req, res) => {
     } catch (error) {
         console.log("Error in stripeWebhook handler:", error);
         return res.status(500).send("Webhook handler failed");
+    }
+};
+
+export const getSubscriptionStatus = async (req, res) => {
+    try {
+        const profile = await Profile.findOne({ userId: req.userId }).lean();
+        if (!profile) {
+            return res.status(200).json({
+                success: true,
+                subscription: {
+                    tier: "free",
+                    subscriptionStatus: "inactive",
+                    cancelAtPeriodEnd: false,
+                    currentPeriodEnd: null,
+                    stripeSubscriptionId: null,
+                    stripeCustomerId: null,
+                    plan: "free",
+                },
+            });
+        }
+
+        const stripe = await resolveStripeClient();
+        const snapshot = stripe ? await getSubscriptionSnapshot(stripe, profile) : null;
+        const subscription = snapshot || {
+            tier: profile.tier || "free",
+            subscriptionStatus: profile.subscriptionStatus || "inactive",
+            cancelAtPeriodEnd: false,
+            currentPeriodEnd: null,
+            stripeSubscriptionId: profile.stripeSubscriptionId || null,
+            stripeCustomerId: profile.stripeCustomerId || null,
+            plan: profile.tier === "enterprise" ? "enterprise-monthly" : profile.tier === "premium" ? "premium-monthly" : "free",
+        };
+
+        return res.status(200).json({ success: true, subscription });
+    } catch (error) {
+        console.log("Error in getSubscriptionStatus:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+export const createPortalSession = async (req, res) => {
+    try {
+        const stripe = await resolveStripeClient();
+        if (!stripe) {
+            return res.status(500).json({ success: false, message: "Stripe is not configured" });
+        }
+
+        const profile = await Profile.findOne({ userId: req.userId }).lean();
+        if (!profile?.stripeCustomerId) {
+            return res.status(400).json({ success: false, message: "No billing customer found" });
+        }
+
+        const portal = await stripe.billingPortal.sessions.create({
+            customer: profile.stripeCustomerId,
+            return_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/upgrade`,
+        });
+
+        return res.status(200).json({ success: true, url: portal.url });
+    } catch (error) {
+        console.log("Error in createPortalSession:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+export const setAutoRenewal = async (req, res) => {
+    try {
+        const { enabled } = req.body || {};
+        if (typeof enabled !== "boolean") {
+            return res.status(400).json({ success: false, message: "enabled must be a boolean" });
+        }
+
+        const stripe = await resolveStripeClient();
+        if (!stripe) {
+            return res.status(500).json({ success: false, message: "Stripe is not configured" });
+        }
+
+        const profile = await Profile.findOne({ userId: req.userId });
+        if (!profile?.stripeSubscriptionId) {
+            return res.status(400).json({ success: false, message: "No active subscription found" });
+        }
+
+        const updated = await stripe.subscriptions.update(profile.stripeSubscriptionId, {
+            cancel_at_period_end: !enabled,
+        });
+
+        profile.subscriptionStatus = updated.status || profile.subscriptionStatus;
+        profile.tier = ACTIVE_SUBSCRIPTION_STATUSES.has(updated.status)
+            ? resolveTierFromSubscription(updated, profile.tier)
+            : "free";
+        if (profile.tier === "free") profile.stripeSubscriptionId = null;
+        await profile.save();
+
+        return res.status(200).json({
+            success: true,
+            message: enabled ? "Auto-renew enabled" : "Auto-renew disabled",
+            subscription: {
+                cancelAtPeriodEnd: !!updated.cancel_at_period_end,
+                subscriptionStatus: updated.status,
+                currentPeriodEnd: updated.current_period_end ? new Date(updated.current_period_end * 1000).toISOString() : null,
+                tier: profile.tier,
+            },
+        });
+    } catch (error) {
+        console.log("Error in setAutoRenewal:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+export const getInvoices = async (req, res) => {
+    try {
+        const stripe = await resolveStripeClient();
+        if (!stripe) {
+            return res.status(500).json({ success: false, message: "Stripe is not configured" });
+        }
+
+        const profile = await Profile.findOne({ userId: req.userId }).lean();
+        if (!profile?.stripeCustomerId) {
+            return res.status(200).json({ success: true, invoices: [] });
+        }
+
+        const invoiceList = await stripe.invoices.list({
+            customer: profile.stripeCustomerId,
+            limit: 20,
+        });
+
+        const invoices = (invoiceList.data || []).map((invoice) => ({
+            id: invoice.id,
+            number: invoice.number || invoice.id,
+            status: invoice.status || "open",
+            currency: invoice.currency || "usd",
+            amountDue: invoice.amount_due || 0,
+            amountPaid: invoice.amount_paid || 0,
+            subtotal: invoice.subtotal || 0,
+            tax: invoice.tax || 0,
+            total: invoice.total || 0,
+            hostedInvoiceUrl: invoice.hosted_invoice_url || null,
+            invoicePdf: invoice.invoice_pdf || null,
+            createdAt: invoice.created ? new Date(invoice.created * 1000).toISOString() : null,
+            periodStart: invoice.period_start ? new Date(invoice.period_start * 1000).toISOString() : null,
+            periodEnd: invoice.period_end ? new Date(invoice.period_end * 1000).toISOString() : null,
+        }));
+
+        return res.status(200).json({ success: true, invoices });
+    } catch (error) {
+        console.log("Error in getInvoices:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
     }
 };

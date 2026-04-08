@@ -33,8 +33,10 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     const {
         messages,
         isLoading,
+        isLoadingOlder,
         error,
         fetchMessages,
+        loadOlderMessages,
         clearChannelState,
         sendMessage,
         pushMessage,
@@ -42,7 +44,9 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         handleReaction,
         commentsByMessage,
         commentsLoading,
+        commentsPaging,
         fetchComments,
+        loadOlderComments,
         addComment,
         reactToComment,
         handleComment,
@@ -53,6 +57,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         handlePin,
         scrollToMessageId,
         setScrollTarget,
+        hasMoreMessages,
     } = useChannelMessageStore();
     const { updateChannelName, deleteChannel } = useChannelStore();
     const { uploadFile } = useFeedStore();
@@ -87,6 +92,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     const endRef = useRef(null);
     const messageMenuRef = useRef(null);
     const commentInputRefs = useRef({});
+    const scrollContainerRef = useRef(null);
     const COMMENT_REACTIONS = ['👍', '❤️', '😂', '🔥', '👏'];
 
     const handleCloseEdit = () => {
@@ -381,7 +387,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         setOpenComments((prev) => ({ ...prev, [messageId]: !prev[messageId] }));
         const hasComments = commentsByMessage[messageId];
         if (!hasComments) {
-            await fetchComments(channel._id, messageId);
+            await fetchComments(channel._id, messageId, { limit: 50 });
         }
     };
 
@@ -403,12 +409,20 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         setOpenComments((prev) => ({ ...prev, [messageId]: true }));
         const hasComments = commentsByMessage[messageId];
         if (!hasComments) {
-            await fetchComments(channel._id, messageId);
+            await fetchComments(channel._id, messageId, { limit: 50 });
         }
         requestAnimationFrame(() => {
             commentInputRefs.current[messageId]?.focus?.();
         });
         setOpenMessageMenuId(null);
+    };
+
+    const handleLoadOlderComments = async (messageId) => {
+        try {
+            await loadOlderComments(channel._id, messageId, 50);
+        } catch {
+            // no-op
+        }
     };
 
     const handleForwardMessage = (message, sender) => {
@@ -455,6 +469,22 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         try {
             await reactToComment(channel._id, messageId, commentId, emoji);
         } catch { }
+    };
+
+    const handleLoadOlder = async () => {
+        if (!channel?._id || !hasMoreMessages || isLoadingOlder) return;
+        const container = scrollContainerRef.current;
+        const prevHeight = container?.scrollHeight || 0;
+        try {
+            await loadOlderMessages(channel._id, 50);
+        } catch {
+            return;
+        }
+        requestAnimationFrame(() => {
+            if (!container) return;
+            const nextHeight = container.scrollHeight || 0;
+            container.scrollTop = Math.max(0, nextHeight - prevHeight + container.scrollTop);
+        });
     };
 
     const openReportModal = (message) => {
@@ -594,7 +624,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     return (
         <>
         <div className="flex-1 min-h-0 flex flex-col">
-            <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-6">
+            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-6">
                 {isLoading || isSwitching ? (
                     <div className="text-sm text-discord-faint">Loading messages...</div>
                 ) : error ? (
@@ -629,11 +659,24 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                     </div>
                 ) : (
                     <div className="space-y-6">
+                        {hasMoreMessages && (
+                            <div className="flex justify-center">
+                                <button
+                                    type="button"
+                                    onClick={handleLoadOlder}
+                                    disabled={isLoadingOlder}
+                                    className="px-3 py-1.5 rounded-md border border-discord-border/60 bg-discord-darkest/70 text-xs font-semibold text-discord-light hover:bg-discord-border-light/20 disabled:opacity-60"
+                                >
+                                    {isLoadingOlder ? 'Loading older messages...' : 'Load older messages'}
+                                </button>
+                            </div>
+                        )}
                         {messages.map((m) => {
                             const sender = memberMap.get(m.senderId) || {};
                             const isMe = m.senderId === currentUser?.id;
                             const isLiked = (m.likedBy || []).some((id) => id === currentUser?.id);
                             const messageComments = commentsByMessage[m._id] || [];
+                            const commentPaging = commentsPaging[m._id] || {};
                             const showComments = !!openComments[m._id];
                             return (
                                 <div
@@ -814,6 +857,16 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                         )}
                                         {showComments && (
                                             <div className="mt-4 rounded-lg border border-discord-border/40 bg-discord-darkest/60 p-3 space-y-3">
+                                                {commentPaging.hasMore && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleLoadOlderComments(m._id)}
+                                                        disabled={commentPaging.isLoadingOlder}
+                                                        className="px-2.5 py-1.5 rounded-md border border-discord-border/60 bg-discord-darkest/50 text-[11px] font-semibold text-discord-light hover:bg-discord-border-light/20 disabled:opacity-60"
+                                                    >
+                                                        {commentPaging.isLoadingOlder ? 'Loading older comments...' : 'Load older comments'}
+                                                    </button>
+                                                )}
                                                 {commentsLoading[m._id] ? (
                                                     <div className="text-xs text-discord-faint">Loading comments...</div>
                                                 ) : (

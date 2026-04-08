@@ -1,27 +1,27 @@
 import './App.css'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { useAuthStore } from './stores/authStore'
 import { useProfileStore } from './stores/profileStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
 
-import HomePage from './pages/HomePage'
-import LoginPage from './pages/LoginPage'
-import SignupPage from './pages/SignupPage'
-import EmailVerificationPage from './pages/EmailVerificationPage'
-import ForgotPasswordPage from './pages/ForgotPasswordPage'
-import ResetPasswordPage from './pages/ResetPasswordPage'
-import InviteCodePage from './pages/InviteCodePage'
-import InviteLinkPage from './pages/InviteLinkPage'
-import ProfileOnboardingPage from './pages/ProfileOnboardingPage'
-import FeedPage from './pages/FeedPage'
-import SavedPostsPage from './pages/SavedPostsPage'
-import UpgradePage from './pages/UpgradePage'
-import UpgradeSuccessPage from './pages/UpgradeSuccessPage'
-import UpgradeCancelPage from './pages/UpgradeCancelPage'
-import JoinCommunityPage from './pages/JoinCommunityPage'
-import ServerSettingsPage from './pages/ServerSettingsPage'
-import HelpPage from './pages/HelpPage'
+const HomePage = lazy(() => import('./pages/HomePage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const SignupPage = lazy(() => import('./pages/SignupPage'));
+const EmailVerificationPage = lazy(() => import('./pages/EmailVerificationPage'));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
+const InviteCodePage = lazy(() => import('./pages/InviteCodePage'));
+const InviteLinkPage = lazy(() => import('./pages/InviteLinkPage'));
+const ProfileOnboardingPage = lazy(() => import('./pages/ProfileOnboardingPage'));
+const FeedPage = lazy(() => import('./pages/FeedPage'));
+const SavedPostsPage = lazy(() => import('./pages/SavedPostsPage'));
+const UpgradePage = lazy(() => import('./pages/UpgradePage'));
+const UpgradeSuccessPage = lazy(() => import('./pages/UpgradeSuccessPage'));
+const UpgradeCancelPage = lazy(() => import('./pages/UpgradeCancelPage'));
+const JoinCommunityPage = lazy(() => import('./pages/JoinCommunityPage'));
+const ServerSettingsPage = lazy(() => import('./pages/ServerSettingsPage'));
+const HelpPage = lazy(() => import('./pages/HelpPage'));
 
 // ── Route Guards ───────────────────────────────────────────────────────────
 
@@ -91,6 +91,13 @@ const App = () => {
 
   return (
     <div>
+      <Suspense
+        fallback={(
+          <div className="min-h-screen min-h-[100dvh] bg-discord-darkest flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full border-3 border-blurple border-t-transparent animate-spin" />
+          </div>
+        )}
+      >
       <Routes>
         {/* Public */}
         <Route path='/' element={<HomePage />} />
@@ -128,6 +135,7 @@ const App = () => {
         {/* Catch-all */}
         <Route path='*' element={<Navigate to='/' replace />} />
       </Routes>
+      </Suspense>
     </div>
   )
 }

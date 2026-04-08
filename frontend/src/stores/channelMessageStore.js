@@ -7,19 +7,28 @@ const API_URL = apiUrl('/api/channel-messages');
 export const useChannelMessageStore = create((set) => ({
     messages: [],
     isLoading: false,
+    isLoadingOlder: false,
     error: null,
     commentsByMessage: {},
     commentsLoading: {},
+    commentsPaging: {},
     pinnedMessages: [],
     scrollToMessageId: null,
+    hasMoreMessages: false,
+    nextBefore: null,
 
-    fetchMessages: async (channelId) => {
-        set({ isLoading: true, error: null, messages: [] });
+    fetchMessages: async (channelId, limit = 50) => {
+        set({ isLoading: true, error: null, messages: [], hasMoreMessages: false, nextBefore: null });
         try {
-            const res = await apiFetch(`${API_URL}/${channelId}`, { credentials: 'include' });
+            const res = await apiFetch(`${API_URL}/${channelId}?limit=${limit}`, { credentials: 'include' });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Failed to load messages');
-            set({ messages: data.messages || [], isLoading: false });
+            set({
+                messages: data.messages || [],
+                hasMoreMessages: Boolean(data.hasMore),
+                nextBefore: data.nextBefore || null,
+                isLoading: false,
+            });
             return data.messages || [];
         } catch (error) {
             set({ isLoading: false, error: error.message || 'Failed to load messages' });
@@ -27,14 +36,47 @@ export const useChannelMessageStore = create((set) => ({
         }
     },
 
+    loadOlderMessages: async (channelId, limit = 50) => {
+        const { nextBefore, isLoadingOlder, hasMoreMessages } = useChannelMessageStore.getState();
+        if (!channelId || !nextBefore || isLoadingOlder || !hasMoreMessages) return [];
+
+        set({ isLoadingOlder: true, error: null });
+        try {
+            const encodedBefore = encodeURIComponent(nextBefore);
+            const res = await apiFetch(`${API_URL}/${channelId}?limit=${limit}&before=${encodedBefore}`, { credentials: 'include' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to load older messages');
+
+            const older = data.messages || [];
+            set((state) => {
+                const seen = new Set(state.messages.map((m) => m._id));
+                const uniqueOlder = older.filter((m) => !seen.has(m._id));
+                return {
+                    messages: [...uniqueOlder, ...state.messages],
+                    hasMoreMessages: Boolean(data.hasMore),
+                    nextBefore: data.nextBefore || null,
+                    isLoadingOlder: false,
+                };
+            });
+            return older;
+        } catch (error) {
+            set({ isLoadingOlder: false, error: error.message || 'Failed to load older messages' });
+            throw error;
+        }
+    },
+
     clearChannelState: () => set({
         messages: [],
+        isLoadingOlder: false,
         commentsByMessage: {},
         commentsLoading: {},
+        commentsPaging: {},
         pinnedMessages: [],
         error: null,
         isLoading: false,
         scrollToMessageId: null,
+        hasMoreMessages: false,
+        nextBefore: null,
     }),
 
     sendMessage: async (channelId, payload) => {
@@ -108,18 +150,89 @@ export const useChannelMessageStore = create((set) => ({
         ),
     })),
 
-    fetchComments: async (channelId, messageId) => {
+    fetchComments: async (channelId, messageId, options = {}) => {
         set((state) => ({
             commentsLoading: { ...state.commentsLoading, [messageId]: true },
         }));
-        const res = await apiFetch(`${API_URL}/${channelId}/${messageId}/comments`, { credentials: 'include' });
+        const params = new URLSearchParams();
+        if (options.limit) params.append('limit', String(options.limit));
+        if (options.before) params.append('before', String(options.before));
+        const query = params.toString();
+
+        const res = await apiFetch(`${API_URL}/${channelId}/${messageId}/comments${query ? `?${query}` : ''}`, { credentials: 'include' });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Failed to load comments');
         set((state) => ({
             commentsByMessage: { ...state.commentsByMessage, [messageId]: data.comments || [] },
             commentsLoading: { ...state.commentsLoading, [messageId]: false },
+            commentsPaging: {
+                ...state.commentsPaging,
+                [messageId]: {
+                    hasMore: Boolean(data.hasMore),
+                    nextBefore: data.nextBefore || null,
+                    isLoadingOlder: false,
+                },
+            },
         }));
         return data.comments || [];
+    },
+
+    loadOlderComments: async (channelId, messageId, limit = 50) => {
+        const state = useChannelMessageStore.getState();
+        const paging = state.commentsPaging[messageId] || {};
+        if (!paging.hasMore || !paging.nextBefore || paging.isLoadingOlder) return [];
+
+        set((s) => ({
+            commentsPaging: {
+                ...s.commentsPaging,
+                [messageId]: {
+                    ...(s.commentsPaging[messageId] || {}),
+                    isLoadingOlder: true,
+                },
+            },
+        }));
+
+        try {
+            const encodedBefore = encodeURIComponent(paging.nextBefore);
+            const res = await apiFetch(`${API_URL}/${channelId}/${messageId}/comments?limit=${limit}&before=${encodedBefore}`, { credentials: 'include' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to load older comments');
+
+            const older = data.comments || [];
+            set((s) => {
+                const existing = s.commentsByMessage[messageId] || [];
+                const seen = new Set(existing.map((c) => c._id));
+                const uniqueOlder = older.filter((c) => !seen.has(c._id));
+                return {
+                    commentsByMessage: {
+                        ...s.commentsByMessage,
+                        [messageId]: [...uniqueOlder, ...existing],
+                    },
+                    commentsPaging: {
+                        ...s.commentsPaging,
+                        [messageId]: {
+                            hasMore: Boolean(data.hasMore),
+                            nextBefore: data.nextBefore || null,
+                            isLoadingOlder: false,
+                        },
+                    },
+                };
+            });
+
+            return older;
+        } catch (error) {
+            set((s) => ({
+                commentsPaging: {
+                    ...s.commentsPaging,
+                    [messageId]: {
+                        ...(s.commentsPaging[messageId] || {}),
+                        isLoadingOlder: false,
+                    },
+                },
+                error: error.message || 'Failed to load older comments',
+            }));
+            throw error;
+        }
     },
 
     addComment: async (channelId, messageId, content, mentions = []) => {

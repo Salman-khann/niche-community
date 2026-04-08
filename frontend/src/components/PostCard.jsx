@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, Heart, ChevronDown, ChevronUp, Send, MoreHorizontal, Flag, BarChart3, Check, Crown, Bookmark, Link2, ExternalLink, FileText, Pin, Star } from 'lucide-react';
 import MentionInput from './MentionInput';
 import { useFeedStore } from '../stores/feedStore';
@@ -8,6 +8,9 @@ import { useProfileStore } from '../stores/profileStore';
 const PostCard = ({ post, onHashtagClick }) => {
     const [showComments, setShowComments] = useState(false);
     const [comments, setComments] = useState([]);
+    const [hasMoreComments, setHasMoreComments] = useState(false);
+    const [nextCommentsBefore, setNextCommentsBefore] = useState(null);
+    const [loadingOlderComments, setLoadingOlderComments] = useState(false);
     const [commentText, setCommentText] = useState('');
     const [commentMentions, setCommentMentions] = useState([]);
     const [loadingComments, setLoadingComments] = useState(false);
@@ -130,10 +133,32 @@ const PostCard = ({ post, onHashtagClick }) => {
     const toggleComments = async () => {
         if (!showComments && comments.length === 0) {
             setLoadingComments(true);
-            try { const fetched = await fetchComments(post._id); setComments(fetched); } catch { }
+            try {
+                const data = await fetchComments(post._id, { limit: 50 });
+                setComments(data.comments || []);
+                setHasMoreComments(Boolean(data.hasMore));
+                setNextCommentsBefore(data.nextBefore || null);
+            } catch { }
             setLoadingComments(false);
         }
         setShowComments(!showComments);
+    };
+
+    const loadOlderComments = async () => {
+        if (!hasMoreComments || !nextCommentsBefore || loadingOlderComments) return;
+        setLoadingOlderComments(true);
+        try {
+            const data = await fetchComments(post._id, { limit: 50, before: nextCommentsBefore });
+            const older = data.comments || [];
+            setComments((prev) => {
+                const seen = new Set(prev.map((c) => c._id));
+                const uniqueOlder = older.filter((c) => !seen.has(c._id));
+                return [...uniqueOlder, ...prev];
+            });
+            setHasMoreComments(Boolean(data.hasMore));
+            setNextCommentsBefore(data.nextBefore || null);
+        } catch { }
+        setLoadingOlderComments(false);
     };
 
     const handleCommentChange = useCallback((val, newMentions) => {
@@ -241,7 +266,7 @@ const PostCard = ({ post, onHashtagClick }) => {
             {/* Author row */}
             <div className="flex items-center gap-3 mb-4">
                 {post.author?.avatar ? (
-                    <img src={post.author.avatar} alt="" className={`w-10 h-10 rounded-full object-cover shadow-sm ${isPremiumAuthor ? 'premium-ring' : 'border-2 border-discord-border'}`} />
+                    <img src={post.author.avatar} alt="" loading="lazy" decoding="async" className={`w-10 h-10 rounded-full object-cover shadow-sm ${isPremiumAuthor ? 'premium-ring' : 'border-2 border-discord-border'}`} />
                 ) : (
                     <div className={`w-10 h-10 rounded-full bg-gradient-to-br from-blurple to-indigo-600 flex items-center justify-center text-sm font-bold text-white shadow-sm ${isPremiumAuthor ? 'premium-ring' : ''}`}>
                         {initials}
@@ -494,13 +519,24 @@ const PostCard = ({ post, onHashtagClick }) => {
                             <div className="w-5 h-5 rounded-full border-2 border-blurple border-t-transparent animate-spin" />
                         </div>
                     ) : comments.length > 0 ? (
-                        comments.map((c) => {
+                        <>
+                        {hasMoreComments && (
+                            <button
+                                type="button"
+                                onClick={loadOlderComments}
+                                disabled={loadingOlderComments}
+                                className="px-2.5 py-1.5 rounded-md border border-discord-border/60 bg-discord-darkest/50 text-[11px] font-semibold text-discord-light hover:bg-discord-border-light/20 disabled:opacity-60"
+                            >
+                                {loadingOlderComments ? 'Loading older comments...' : 'Load older comments'}
+                            </button>
+                        )}
+                        {comments.map((c) => {
                             const cInitials = c.author?.name
                                 ? c.author.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) : '?';
                             return (
                                 <div key={c._id} className="flex items-start gap-2.5 pl-2">
                                     {c.author?.avatar ? (
-                                        <img src={c.author.avatar} alt="" className="w-7 h-7 rounded-full object-cover border border-discord-border mt-0.5" />
+                                        <img src={c.author.avatar} alt="" loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover border border-discord-border mt-0.5" />
                                     ) : (
                                         <div className="w-7 h-7 rounded-full bg-discord-darkest flex items-center justify-center text-[10px] font-bold text-discord-muted mt-0.5">
                                             {cInitials}
@@ -546,7 +582,8 @@ const PostCard = ({ post, onHashtagClick }) => {
                                     </div>
                                 </div>
                             );
-                        })
+                        })}
+                        </>
                     ) : (
                         <p className="text-xs text-discord-faint text-center py-2">No comments yet. Be the first!</p>
                     )}
@@ -583,4 +620,4 @@ const PostCard = ({ post, onHashtagClick }) => {
     );
 };
 
-export default PostCard;
+export default memo(PostCard);

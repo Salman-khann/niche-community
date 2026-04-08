@@ -12,20 +12,35 @@ const SearchBar = () => {
     const [isLoading, setIsLoading] = useState(false);
     const containerRef = useRef(null);
     const debounceRef = useRef(null);
+    const abortRef = useRef(null);
 
     useEffect(() => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
+        if (abortRef.current) abortRef.current.abort();
         if (query.trim().length < 2) { setResults(null); setIsOpen(false); return; }
         setIsLoading(true);
         debounceRef.current = setTimeout(async () => {
+            const controller = new AbortController();
+            abortRef.current = controller;
             try {
-                const res = await apiFetch(`${SEARCH_URL}?q=${encodeURIComponent(query.trim())}`, { credentials: 'include' });
+                const params = new URLSearchParams({ q: query.trim(), limit: '10' });
+                const res = await apiFetch(`${SEARCH_URL}?${params.toString()}`, {
+                    credentials: 'include',
+                    signal: controller.signal,
+                });
                 const data = await res.json();
                 if (data.success) { setResults(data); setIsOpen(true); }
-            } catch { /* silently fail */ }
+            } catch (error) {
+                if (error?.name !== 'AbortError') {
+                    // silently fail on non-abort network errors
+                }
+            }
             finally { setIsLoading(false); }
         }, 300);
-        return () => clearTimeout(debounceRef.current);
+        return () => {
+            clearTimeout(debounceRef.current);
+            if (abortRef.current) abortRef.current.abort();
+        };
     }, [query]);
 
     useEffect(() => {

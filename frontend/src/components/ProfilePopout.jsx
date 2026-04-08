@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, ChevronRight, Copy, Moon, Pencil, User, XCircle, Sparkles } from 'lucide-react';
+import { Check, ChevronRight, Copy, Pencil, Sparkles, Smile, X } from 'lucide-react';
 
 const STATUS_OPTIONS = [
     { id: 'online', label: 'Online', dot: 'bg-discord-green' },
@@ -8,20 +8,27 @@ const STATUS_OPTIONS = [
     { id: 'offline', label: 'Invisible', dot: 'bg-discord-faint/60', desc: 'You will appear offline' },
 ];
 
-const ProfilePopout = ({ isOpen, onClose, anchorClassName = '', profile, user, onUpdatePresence, onEditProfile }) => {
+const ProfilePopout = ({ isOpen, onClose, anchorClassName = '', profile, user, onUpdatePresence, onUpdateStatus, onEditProfile }) => {
     const [showStatusMenu, setShowStatusMenu] = useState(false);
+    const [showCustomStatus, setShowCustomStatus] = useState(false);
+    const [customStatusText, setCustomStatusText] = useState('');
     const [copied, setCopied] = useState(false);
     const [isBioExpanded, setIsBioExpanded] = useState(false);
 
     useEffect(() => {
-        if (isOpen) setIsBioExpanded(false);
+        if (isOpen) {
+            setIsBioExpanded(false);
+            setCustomStatusText(profile?.status || '');
+            setShowStatusMenu(false);
+            setShowCustomStatus(false);
+        }
     }, [isOpen, profile?._id, user?._id]);
 
     if (!isOpen) return null;
 
     const displayName = profile?.displayName || user?.name || 'User';
     const username = user?._id || user?.username || (user?.email ? user.email.split('@')[0] : 'user');
-    const statusText = profile?.bio || 'No bio yet';
+    const statusText = (profile?.status || '').trim() || 'Set a custom status';
     const presence = profile?.presence || 'online';
     const isPremium = ['premium', 'enterprise'].includes(profile?.tier || user?.tier || 'free');
     const showBioToggle = statusText.length > 140;
@@ -123,7 +130,16 @@ const ProfilePopout = ({ isOpen, onClose, anchorClassName = '', profile, user, o
                             </div>
                             <ChevronRight className="w-4 h-4 text-discord-faint" />
                         </button>
-                        
+                        <button
+                            onClick={() => setShowCustomStatus(true)}
+                            className="w-full flex items-center justify-between px-4 py-3 hover:bg-discord-border-light/20 cursor-pointer"
+                        >
+                            <div className="flex items-center gap-3">
+                                <Smile className="w-4 h-4 text-discord-faint" />
+                                <span>Set Custom Status</span>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-discord-faint" />
+                        </button>
                     </div>
                 </div>
             </div>
@@ -148,6 +164,51 @@ const ProfilePopout = ({ isOpen, onClose, anchorClassName = '', profile, user, o
                             </button>
                         );
                     })}
+                </div>
+            )}
+
+            {showCustomStatus && (
+                <div className={`absolute bottom-24 left-1/2 -translate-x-1/2 w-[92vw] max-w-[340px] md:w-[320px] md:left-auto md:translate-x-[380px] rounded-2xl bg-discord-darker border border-discord-border shadow-2xl overflow-hidden animate-slide-right ${anchorClassName}`}>
+                    <div className="px-4 py-3 border-b border-discord-border/60 flex items-center justify-between">
+                        <p className="text-sm font-semibold text-white">Custom Status</p>
+                        <button
+                            onClick={() => setShowCustomStatus(false)}
+                            className="w-7 h-7 rounded-md hover:bg-discord-border-light/20 flex items-center justify-center"
+                        >
+                            <X className="w-4 h-4 text-discord-faint" />
+                        </button>
+                    </div>
+                    <div className="p-4 space-y-3">
+                        <input
+                            type="text"
+                            maxLength={120}
+                            value={customStatusText}
+                            onChange={(e) => setCustomStatusText(e.target.value)}
+                            placeholder="What's your status?"
+                            className="w-full rounded-md bg-discord-darkest border border-discord-border/60 text-discord-white text-sm px-3 py-2 outline-none focus:border-blurple"
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                            <button
+                                onClick={async () => {
+                                    await onUpdateStatus?.('');
+                                    setCustomStatusText('');
+                                    setShowCustomStatus(false);
+                                }}
+                                className="px-3 py-1.5 rounded-md text-xs font-semibold text-discord-faint hover:bg-discord-border-light/20"
+                            >
+                                Clear
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    await onUpdateStatus?.(customStatusText.trim());
+                                    setShowCustomStatus(false);
+                                }}
+                                className="px-3 py-1.5 rounded-md text-xs font-semibold bg-blurple text-white hover:bg-blurple-hover"
+                            >
+                                Save
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

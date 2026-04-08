@@ -221,18 +221,18 @@ const DmPanel = ({
     return (
         <div className="flex-1 min-h-0 flex flex-col">
             {!activeCall && (
-                <div className="h-12 border-b border-discord-darkest/80 flex items-center justify-between px-4">
+                <div className="ui-topbar h-12 flex items-center justify-between px-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-discord-light">
                         <button
                             onClick={() => onOpenServers?.()}
-                            className="md:hidden w-8 h-8 rounded-md bg-discord-darkest/70 flex items-center justify-center text-discord-faint hover:text-white"
+                            className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
                             title="Open servers"
                         >
                             <Server className="w-4 h-4" />
                         </button>
                         <button
                             onClick={() => onOpenSidebar?.()}
-                            className="md:hidden w-8 h-8 rounded-md bg-discord-darkest/70 flex items-center justify-center text-discord-faint hover:text-white"
+                            className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
                             title="Open direct messages"
                         >
                             <Menu className="w-4 h-4" />
@@ -250,7 +250,7 @@ const DmPanel = ({
                         {canAddToGroup && (
                             <button
                                 onClick={() => onAddToGroup?.()}
-                                className="w-8 h-8 rounded-md bg-discord-darkest/70 flex items-center justify-center text-discord-faint hover:text-white"
+                                className="ui-icon-btn w-8 h-8 flex items-center justify-center"
                                 title="Add friends to group"
                             >
                                 <UserPlus className="w-4 h-4" />
@@ -259,7 +259,7 @@ const DmPanel = ({
                         {activeDm?.isGroup && (
                             <button
                                 onClick={() => onLeaveGroup?.()}
-                                className="w-8 h-8 rounded-md bg-discord-darkest/70 flex items-center justify-center text-discord-faint hover:text-white"
+                                className="ui-icon-btn w-8 h-8 flex items-center justify-center"
                                 title="Leave group"
                             >
                                 <LogOut className="w-4 h-4" />
@@ -268,7 +268,7 @@ const DmPanel = ({
                         <button
                             onClick={() => (callStatus?.isActive ? onJoinCall?.() : onCall?.())}
                             disabled={callDisabled}
-                            className="w-8 h-8 rounded-md bg-discord-darkest/70 flex items-center justify-center text-discord-faint hover:text-white disabled:opacity-50"
+                            className="ui-icon-btn w-8 h-8 flex items-center justify-center disabled:opacity-50"
                             title={callStatus?.isActive ? 'Join call' : 'Call'}
                         >
                             <Phone className="w-4 h-4" />
@@ -654,7 +654,7 @@ const DmPanel = ({
                                 )}
                                 <button
                                     onClick={() => onRemoveFile?.(f.id)}
-                                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-discord-darkest/80 flex items-center justify-center hover:bg-discord-border/60"
+                                    className="ui-icon-btn absolute top-1 right-1 w-5 h-5 flex items-center justify-center"
                                 >
                                     <X className="w-3 h-3 text-discord-light" />
                                 </button>
@@ -663,7 +663,7 @@ const DmPanel = ({
                     </div>
                 )}
 
-                <div className="relative flex items-center gap-2 bg-discord-darkest/80 border border-discord-border/40 rounded-xl px-3 py-2">
+                <div className="relative flex items-center gap-2 ui-search-input rounded-xl px-3 py-2">
                     <label className="w-8 h-8 rounded-md hover:bg-discord-border-light/20 flex items-center justify-center cursor-pointer">
                         <Plus className="w-4 h-4 text-discord-faint" />
                         <input

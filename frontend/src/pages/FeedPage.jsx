@@ -49,6 +49,8 @@ const FeedPage = () => {
     const [selectedMember, setSelectedMember] = useState(null);
     const [showMemberPopout, setShowMemberPopout] = useState(false);
     const [friendIdInput, setFriendIdInput] = useState('');
+    const [friendSearchQuery, setFriendSearchQuery] = useState('');
+    const [requestFilter, setRequestFilter] = useState('all');
     const [activeFriendMenuId, setActiveFriendMenuId] = useState(null);
     const [showMobileSidebar, setShowMobileSidebar] = useState(false);
     const [showMobileDmList, setShowMobileDmList] = useState(false);
@@ -218,9 +220,9 @@ const FeedPage = () => {
 
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['online', 'all', 'pending', 'invites', 'add'].includes(tab)) {
+        if (tab && ['online', 'all', 'pending', 'requests', 'invites', 'add'].includes(tab)) {
             setViewMode('friends');
-            setActiveTab(tab);
+            setActiveTab(tab === 'pending' ? 'requests' : tab);
         }
     }, [searchParams]);
 
@@ -1429,13 +1431,59 @@ const FeedPage = () => {
     }, [memberList, roles]);
 
     const filteredFriends = useMemo(() => {
-        if (activeTab === 'online') return friends.filter((f) => f.presence === 'online');
-        if (activeTab === 'pending') return [];
+        let base = friends;
+        if (activeTab === 'online') base = friends.filter((f) => f.presence === 'online');
+        if (activeTab === 'requests') return [];
         if (activeTab === 'blocked') return [];
-        return friends;
-    }, [friends, activeTab]);
+        const q = friendSearchQuery.trim().toLowerCase();
+        if (!q) return base;
+        return base.filter((f) => {
+            const name = (f.displayName || '').toLowerCase();
+            const username = (f.username || '').toLowerCase();
+            const status = (f.statusText || '').toLowerCase();
+            return name.includes(q) || username.includes(q) || status.includes(q);
+        });
+    }, [friends, activeTab, friendSearchQuery]);
+
+    const activeNowFriends = useMemo(() => {
+        return (friends || [])
+            .filter((f) => f.presence === 'online' || f.presence === 'dnd' || f.presence === 'idle')
+            .slice(0, 3);
+    }, [friends]);
+
+    const suggestionCount = Math.max(0, (friends || []).length - onlineCount);
 
     const pendingCount = incoming.length + outgoing.length;
+
+    const requestBuckets = useMemo(() => {
+        const q = friendSearchQuery.trim().toLowerCase();
+        const matches = (friend) => {
+            if (!q) return true;
+            const name = (friend.displayName || '').toLowerCase();
+            const username = (friend.username || '').toLowerCase();
+            return name.includes(q) || username.includes(q);
+        };
+        const presenceWeight = { online: 0, idle: 1, dnd: 2, offline: 3 };
+        const sortRequests = (arr) => [...arr].sort((a, b) => {
+            const pA = presenceWeight[a.presence] ?? 9;
+            const pB = presenceWeight[b.presence] ?? 9;
+            if (pA !== pB) return pA - pB;
+            return (a.displayName || '').localeCompare(b.displayName || '');
+        });
+
+        const incomingFiltered = sortRequests((incoming || []).filter(matches));
+        const outgoingFiltered = sortRequests((outgoing || []).filter(matches));
+        const all = [
+            ...incomingFiltered.map((f) => ({ ...f, requestType: 'incoming' })),
+            ...outgoingFiltered.map((f) => ({ ...f, requestType: 'outgoing' })),
+        ];
+
+        return {
+            incoming: incomingFiltered,
+            outgoing: outgoingFiltered,
+            all,
+        };
+    }, [incoming, outgoing, friendSearchQuery]);
 
     const dmThreadEntries = useMemo(() => {
         return (dmThreads || []).map((thread) => buildDmEntry(thread)).filter(Boolean);
@@ -1492,6 +1540,27 @@ const FeedPage = () => {
                 <button className="w-full text-left px-2 py-1.5 rounded-md bg-discord-darkest text-discord-white flex items-center gap-2 cursor-pointer">
                     <User className="w-4 h-4 text-discord-faint" />
                     Friends
+                    {pendingCount > 0 && (
+                        <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-[10px] font-semibold text-white">
+                            {pendingCount}
+                        </span>
+                    )}
+                </button>
+                <button
+                    onClick={() => {
+                        setViewMode('friends');
+                        setActiveTab('requests');
+                        setShowMobileDmList(false);
+                    }}
+                    className="w-full text-left px-2 py-1.5 rounded-md hover:bg-discord-darkest/80 text-discord-muted cursor-pointer flex items-center gap-2"
+                >
+                    <MessageCircle className="w-4 h-4 text-discord-faint" />
+                    Message Requests
+                    {pendingCount > 0 && (
+                        <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-[10px] font-semibold text-white">
+                            {pendingCount}
+                        </span>
+                    )}
                 </button>
                 <button
                     onClick={() => navigate('/upgrade')}
@@ -1652,7 +1721,7 @@ const FeedPage = () => {
     const switchAnimBase = 'transition-all duration-300';
 
     return (
-        <div className="h-screen h-[100dvh] bg-discord-darkest text-discord-white flex overflow-hidden">
+        <div className="ui-shell h-screen h-[100dvh] text-discord-white flex overflow-hidden">
             {/* Left server rail */}
             <WorkspaceSwitcher
                 onHomeClick={() => setViewMode('friends')}
@@ -1792,21 +1861,21 @@ const FeedPage = () => {
                 </>
             )}
 
-            <main className={`flex-1 bg-discord-chat flex flex-col ${switchAnimBase} ${switchAnimClass}`}>
+            <main className={`ui-panel flex-1 flex flex-col ${switchAnimBase} ${switchAnimClass}`}>
                 {viewMode === 'server' ? (
                     <>
-                <div className="h-12 border-b border-discord-darkest/80 flex items-center justify-between px-4">
+                <div className="ui-topbar h-12 flex items-center justify-between px-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-discord-light">
                         <button
                             onClick={() => setShowMobileServers(true)}
-                            className="md:hidden w-8 h-8 rounded-md bg-discord-darkest/70 flex items-center justify-center text-discord-faint hover:text-white"
+                            className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
                             title="Open servers"
                         >
                             <Server className="w-4 h-4" />
                         </button>
                         <button
                             onClick={() => setShowMobileSidebar(true)}
-                            className="md:hidden w-8 h-8 rounded-md bg-discord-darkest/70 flex items-center justify-center text-discord-faint hover:text-white"
+                            className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
                             title="Open channels"
                         >
                             <Menu className="w-4 h-4" />
@@ -1967,65 +2036,65 @@ const FeedPage = () => {
                     </>
                 ) : (
                     <>
-                        <div className="border-b border-discord-darkest/80 px-4 py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                        <div className="ui-topbar px-4 py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                             <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                                 <button
                                     onClick={() => setShowMobileServers(true)}
-                                    className="md:hidden w-8 h-8 rounded-md bg-discord-darkest/70 flex items-center justify-center text-discord-faint hover:text-white"
+                                    className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
                                     title="Open servers"
                                 >
                                     <Server className="w-4 h-4" />
                                 </button>
                                 <button
                                     onClick={() => setShowMobileDmList(true)}
-                                    className="md:hidden w-8 h-8 rounded-md bg-discord-darkest/70 flex items-center justify-center text-discord-faint hover:text-white"
+                                    className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
                                     title="Open direct messages"
                                 >
                                     <Menu className="w-4 h-4" />
                                 </button>
                                 <User className="w-5 h-5 text-discord-faint" />
                                 <span className="text-discord-white">Friends</span>
-                                <span className="text-discord-faint">•</span>
+                                <span className="text-discord-faint">|</span>
                                 <div className="flex items-center gap-1 overflow-x-auto">
                                     <button
                                         onClick={() => setActiveTab('online')}
-                                        className={`px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${
-                                            activeTab === 'online' ? 'bg-discord-darkest text-discord-white' : 'text-discord-faint hover:bg-discord-darkest/60'
+                                        className={`ui-chip px-2 py-1 text-xs font-semibold cursor-pointer ${
+                                            activeTab === 'online' ? 'ui-chip--active' : ''
                                         }`}
                                     >
                                         Online
                                     </button>
                                     <button
                                         onClick={() => setActiveTab('all')}
-                                        className={`px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${
-                                            activeTab === 'all' ? 'bg-discord-darkest text-discord-white' : 'text-discord-faint hover:bg-discord-darkest/60'
+                                        className={`ui-chip px-2 py-1 text-xs font-semibold cursor-pointer ${
+                                            activeTab === 'all' ? 'ui-chip--active' : ''
                                         }`}
                                     >
                                         All
                                     </button>
                                     <button
-                                        onClick={() => setActiveTab('pending')}
-                                        className={`px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${
-                                            activeTab === 'pending' ? 'bg-discord-darkest text-discord-white' : 'text-discord-faint hover:bg-discord-darkest/60'
+                                        onClick={() => setActiveTab('requests')}
+                                        className={`ui-chip px-2 py-1 text-xs font-semibold cursor-pointer ${
+                                            activeTab === 'requests' ? 'ui-chip--active' : ''
                                         }`}
                                     >
-                                        Pending
+                                        Message Requests
                                         {pendingCount > 0 && (
-                                            <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-blurple/80 text-[10px] font-semibold text-white">
+                                            <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-[10px] font-semibold text-white">
                                                 {pendingCount}
                                             </span>
                                         )}
                                     </button>
                                     <button
                                         onClick={() => setActiveTab('invites')}
-                                        className={`px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${
-                                            activeTab === 'invites' ? 'bg-discord-darkest text-discord-white' : 'text-discord-faint hover:bg-discord-darkest/60'
+                                        className={`ui-chip px-2 py-1 text-xs font-semibold cursor-pointer ${
+                                            activeTab === 'invites' ? 'ui-chip--active' : ''
                                         }`}
                                     >
-                                        Invites
-                                        {invites.length > 0 && (
+                                        Suggestions
+                                        {suggestionCount > 0 && (
                                             <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-blurple/80 text-[10px] font-semibold text-white">
-                                                {invites.length}
+                                                {suggestionCount}
                                             </span>
                                         )}
                                     </button>
@@ -2049,8 +2118,10 @@ const FeedPage = () => {
                                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-discord-faint" />
                                     <input
                                         type="text"
+                                        value={friendSearchQuery}
+                                        onChange={(e) => setFriendSearchQuery(e.target.value)}
                                         placeholder="Search"
-                                        className="w-full pl-8 pr-3 py-2 rounded-md bg-discord-darkest text-xs text-discord-white placeholder:text-discord-faint/60 border border-discord-darkest focus:outline-none focus:border-blurple"
+                                        className="ui-search-input w-full pl-8 pr-3 py-2 text-xs placeholder:text-discord-faint/60 focus:outline-none"
                                     />
                                 </div>
                             </div>
@@ -2088,69 +2159,87 @@ const FeedPage = () => {
                             </div>
                         )}
 
-                        {activeTab === 'pending' && (
+                        {activeTab === 'requests' && (
                             <div className="flex-1 overflow-y-auto px-4 py-4">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-discord-faint mb-2">
-                                    Incoming — {incoming.length}
-                                </div>
-                                <div className="space-y-1 mb-6">
-                                    {incoming.length === 0 && (
-                                        <div className="px-3 py-4 text-xs text-discord-faint">No incoming requests.</div>
-                                    )}
-                                    {incoming.map((friend) => (
-                                        <div key={friend._id} className="w-full flex items-center justify-between px-3 py-2 rounded-md bg-discord-darkest/60">
-                                            <div className="flex items-center gap-3">
-                                                <div className="relative w-9 h-9 rounded-full bg-discord-darker flex items-center justify-center text-sm font-semibold text-discord-light">
-                                                    {friend.avatar ? (
-                                                        <img src={friend.avatar} alt="" className="w-9 h-9 rounded-full object-cover" />
-                                                    ) : (
-                                                        friend.displayName.charAt(0).toUpperCase()
-                                                    )}
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-semibold text-discord-white">{friend.displayName}</p>
-                                                    <p className="text-[11px] text-discord-faint">{friend.username}</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={async () => { await acceptRequest(friend._id); fetchFriends(); fetchRequests(); }}
-                                                    className="px-3 py-1.5 rounded-md bg-discord-green text-xs font-semibold text-discord-darkest hover:bg-discord-green/90 cursor-pointer"
-                                                >
-                                                    Accept
-                                                </button>
-                                                <button
-                                                    onClick={async () => { await declineRequest(friend._id); fetchRequests(); }}
-                                                    className="px-3 py-1.5 rounded-md bg-discord-darkest text-xs font-semibold text-discord-faint hover:bg-discord-border-light/40 cursor-pointer"
-                                                >
-                                                    Decline
-                                                </button>
-                                            </div>
-                                        </div>
+                                <div className="flex items-center gap-2 mb-3">
+                                    {[
+                                        { key: 'all', label: `All (${pendingCount})` },
+                                        { key: 'incoming', label: `Incoming (${incoming.length})` },
+                                        { key: 'outgoing', label: `Outgoing (${outgoing.length})` },
+                                    ].map((item) => (
+                                        <button
+                                            key={item.key}
+                                            onClick={() => setRequestFilter(item.key)}
+                                            className={`ui-chip px-2.5 py-1.5 text-xs font-semibold ${requestFilter === item.key ? 'ui-chip--active' : ''}`}
+                                        >
+                                            {item.label}
+                                        </button>
                                     ))}
                                 </div>
 
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-discord-faint mb-2">
-                                    Outgoing — {outgoing.length}
-                                </div>
+                                {requestFilter === 'incoming' && requestBuckets.incoming.length === 0 && (
+                                    <div className="px-3 py-6 text-xs text-discord-faint">No incoming requests.</div>
+                                )}
+                                {requestFilter === 'outgoing' && requestBuckets.outgoing.length === 0 && (
+                                    <div className="px-3 py-6 text-xs text-discord-faint">No outgoing requests.</div>
+                                )}
+                                {requestFilter === 'all' && requestBuckets.all.length === 0 && (
+                                    <div className="px-3 py-6 text-xs text-discord-faint">No message requests right now.</div>
+                                )}
+
                                 <div className="space-y-1">
-                                    {outgoing.length === 0 && (
-                                        <div className="px-3 py-4 text-xs text-discord-faint">No outgoing requests.</div>
-                                    )}
-                                    {outgoing.map((friend) => (
-                                        <div key={friend._id} className="w-full flex items-center justify-between px-3 py-2 rounded-md bg-discord-darkest/60">
-                                            <div className="flex items-center gap-3">
-                                                <div className="relative w-9 h-9 rounded-full bg-discord-darker flex items-center justify-center text-sm font-semibold text-discord-light">
+                                    {(requestFilter === 'incoming'
+                                        ? requestBuckets.incoming.map((f) => ({ ...f, requestType: 'incoming' }))
+                                        : requestFilter === 'outgoing'
+                                            ? requestBuckets.outgoing.map((f) => ({ ...f, requestType: 'outgoing' }))
+                                            : requestBuckets.all
+                                    ).map((friend) => (
+                                        <div key={`${friend.requestType}-${friend._id}`} className="ui-list-row w-full flex items-center justify-between px-3 py-2 bg-discord-darkest/55">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className="relative w-9 h-9 rounded-full bg-discord-darker flex items-center justify-center text-sm font-semibold text-discord-light shrink-0">
                                                     {friend.avatar ? (
                                                         <img src={friend.avatar} alt="" className="w-9 h-9 rounded-full object-cover" />
                                                     ) : (
                                                         friend.displayName.charAt(0).toUpperCase()
                                                     )}
+                                                    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-discord-darkest ${presenceColor(friend.presence)}`} />
                                                 </div>
-                                                <div>
-                                                    <p className="text-sm font-semibold text-discord-white">{friend.displayName}</p>
-                                                    <p className="text-[11px] text-discord-faint">Pending</p>
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-semibold text-discord-white truncate">{friend.displayName}</p>
+                                                    <p className="text-[11px] text-discord-faint truncate">
+                                                        {friend.requestType === 'incoming' ? 'Wants to connect' : 'Request sent'}
+                                                        {friend.username ? ` · ${friend.username}` : ''}
+                                                    </p>
                                                 </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {friend.requestType === 'incoming' ? (
+                                                    <>
+                                                        <button
+                                                            onClick={async () => {
+                                                                await acceptRequest(friend._id);
+                                                                fetchFriends();
+                                                                fetchRequests();
+                                                            }}
+                                                            className="px-3 py-1.5 rounded-md bg-discord-green text-xs font-semibold text-discord-darkest hover:bg-discord-green/90 cursor-pointer"
+                                                        >
+                                                            Accept
+                                                        </button>
+                                                        <button
+                                                            onClick={async () => {
+                                                                await declineRequest(friend._id);
+                                                                fetchRequests();
+                                                            }}
+                                                            className="px-3 py-1.5 rounded-md bg-discord-darkest text-xs font-semibold text-discord-faint hover:bg-discord-border-light/40 cursor-pointer"
+                                                        >
+                                                            Decline
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <span className="px-2 py-1 rounded-md text-[11px] font-semibold text-discord-faint bg-discord-darkest/80 border border-discord-border/60">
+                                                        Pending
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
@@ -2176,7 +2265,7 @@ const FeedPage = () => {
                                 )}
                                 <div className="space-y-1">
                                     {invites.map((invite) => (
-                                        <div key={invite._id} className="w-full flex items-center justify-between px-3 py-2 rounded-md bg-discord-darkest/60">
+                                        <div key={invite._id} className="ui-list-row w-full flex items-center justify-between px-3 py-2 bg-discord-darkest/55">
                                             <div className="flex items-center gap-3">
                                                 <div className="relative w-9 h-9 rounded-full bg-discord-darker flex items-center justify-center text-sm font-semibold text-discord-light">
                                                     {invite.community?.icon ? (
@@ -2214,85 +2303,115 @@ const FeedPage = () => {
                         )}
 
                         {(activeTab === 'online' || activeTab === 'all') && (
-                            <div className="flex-1 overflow-y-auto px-4 py-4">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-discord-faint mb-2">
-                                    Online — {onlineCount}
-                                </div>
-                                <div className="space-y-1">
-                                    {isFriendLoading && (
-                                        <div className="px-3 py-6 text-xs text-discord-faint">Loading friends…</div>
-                                    )}
-                                    {!isFriendLoading && filteredFriends.length === 0 && (
-                                        <div className="px-3 py-6 text-xs text-discord-faint">No friends to show.</div>
-                                    )}
-                                    {activeFriendMenuId && (
-                                        <button
-                                            onClick={() => setActiveFriendMenuId(null)}
-                                            className="fixed inset-0 z-10 cursor-default"
-                                        />
-                                    )}
-                                    {filteredFriends.map((friend) => (
-                                        <div
-                                            key={friend._id}
-                                            className="w-full relative flex items-center justify-between px-3 py-2 rounded-md bg-discord-darkest/60 hover:bg-discord-darkest text-left"
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className="relative w-9 h-9 rounded-full bg-discord-darker flex items-center justify-center text-sm font-semibold text-discord-light">
-                                                    {friend.avatar ? (
-                                                        <img src={friend.avatar} alt="" className="w-9 h-9 rounded-full object-cover" />
-                                                    ) : (
-                                                        friend.displayName.charAt(0).toUpperCase()
-                                                    )}
-                                                    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-discord-darkest ${presenceColor(friend.presence)}`} />
+                            <div className="flex-1 min-h-0 flex">
+                                <div className="flex-1 overflow-y-auto px-4 py-4">
+                                    <div className="ui-section-label text-[11px] font-semibold uppercase mb-2">
+                                        Online — {onlineCount}
+                                    </div>
+                                    <div className="space-y-0">
+                                        {isFriendLoading && (
+                                            <div className="px-3 py-6 text-xs text-discord-faint">Loading friends…</div>
+                                        )}
+                                        {!isFriendLoading && filteredFriends.length === 0 && (
+                                            <div className="px-3 py-6 text-xs text-discord-faint">No friends to show.</div>
+                                        )}
+                                        {activeFriendMenuId && (
+                                            <button
+                                                onClick={() => setActiveFriendMenuId(null)}
+                                                className="fixed inset-0 z-10 cursor-default"
+                                            />
+                                        )}
+                                        {filteredFriends.map((friend) => (
+                                            <div
+                                                key={friend._id}
+                                                className="ui-list-row w-full relative flex items-center justify-between px-3 py-2 text-left"
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className="relative w-9 h-9 rounded-full bg-discord-darker flex items-center justify-center text-sm font-semibold text-discord-light shrink-0">
+                                                        {friend.avatar ? (
+                                                            <img src={friend.avatar} alt="" className="w-9 h-9 rounded-full object-cover" />
+                                                        ) : (
+                                                            friend.displayName.charAt(0).toUpperCase()
+                                                        )}
+                                                        <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-discord-darkest ${presenceColor(friend.presence)}`} />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-semibold text-discord-white truncate">{friend.displayName}</p>
+                                                        <p className="text-[11px] text-discord-faint truncate">{filterStatusText(friend.statusText || friend.status) || (friend.presence === 'online' ? 'Online' : friend.presence === 'idle' ? 'Idle' : friend.presence === 'dnd' ? 'Do Not Disturb' : 'Offline')}</p>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <p className="text-sm font-semibold text-discord-white">{friend.displayName}</p>
-                                                    {filterStatusText(friend.statusText) && (
-                                                        <p className="text-[11px] text-discord-faint">{filterStatusText(friend.statusText)}</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => startCallForFriend(friend)}
-                                                    className="w-7 h-7 rounded-full bg-discord-darkest flex items-center justify-center hover:bg-discord-border-light/40 cursor-pointer"
-                                                    title="Call"
-                                                >
-                                                    <Phone className="w-3.5 h-3.5 text-discord-faint" />
-                                                </button>
-                                                <button
-                                                    onClick={() => openDmForFriend(friend)}
-                                                    className="w-7 h-7 rounded-full bg-discord-darkest flex items-center justify-center hover:bg-discord-border-light/40 cursor-pointer"
-                                                    title="Message"
-                                                >
-                                                    <MessageCircle className="w-3.5 h-3.5 text-discord-faint" />
-                                                </button>
-                                                <button
-                                                    onClick={() => setActiveFriendMenuId((prev) => (prev === friend._id ? null : friend._id))}
-                                                    className="w-7 h-7 rounded-full bg-discord-darkest flex items-center justify-center hover:bg-discord-border-light/40 cursor-pointer"
-                                                    title="More"
-                                                >
-                                                    <MoreVertical className="w-3.5 h-3.5 text-discord-faint" />
-                                                </button>
-                                            </div>
-                                            {activeFriendMenuId === friend._id && (
-                                                <div className="absolute right-2 top-11 z-20 w-44 rounded-lg border border-discord-border/60 bg-discord-darkest shadow-xl p-1">
+                                                <div className="flex items-center gap-2">
                                                     <button
-                                                        onClick={async () => {
-                                                            try {
-                                                                await removeFriend(friend._id);
-                                                            } catch { }
-                                                            setActiveFriendMenuId(null);
-                                                        }}
-                                                        className="w-full text-left px-3 py-2 text-sm text-discord-red hover:bg-discord-border/40 rounded-md"
+                                                        onClick={() => openDmForFriend(friend)}
+                                                        className="ui-icon-btn w-7 h-7 flex items-center justify-center cursor-pointer"
+                                                        title="Message"
                                                     >
-                                                        Remove Friend
+                                                        <MessageCircle className="w-3.5 h-3.5 text-discord-faint" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setActiveFriendMenuId((prev) => (prev === friend._id ? null : friend._id))}
+                                                        className="ui-icon-btn w-7 h-7 flex items-center justify-center cursor-pointer"
+                                                        title="More"
+                                                    >
+                                                        <MoreVertical className="w-3.5 h-3.5 text-discord-faint" />
                                                     </button>
                                                 </div>
-                                            )}
-                                        </div>
-                                    ))}
+                                                {activeFriendMenuId === friend._id && (
+                                                    <div className="absolute right-2 top-11 z-20 w-44 rounded-lg border border-discord-border/60 bg-discord-darkest shadow-xl p-1">
+                                                        <button
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await removeFriend(friend._id);
+                                                                } catch { }
+                                                                setActiveFriendMenuId(null);
+                                                            }}
+                                                            className="w-full text-left px-3 py-2 text-sm text-discord-red hover:bg-discord-border/40 rounded-md"
+                                                        >
+                                                            Remove Friend
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                startCallForFriend(friend);
+                                                                setActiveFriendMenuId(null);
+                                                            }}
+                                                            className="w-full text-left px-3 py-2 text-sm text-discord-light hover:bg-discord-border/40 rounded-md"
+                                                        >
+                                                            Call
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
+                                <aside className="hidden lg:block w-80 border-l border-discord-darkest/80 px-4 py-4 bg-discord-chat/40">
+                                    <h3 className="text-2xl font-bold text-white mb-4">Active Now</h3>
+                                    {activeNowFriends.length === 0 ? (
+                                        <div className="rounded-xl border border-discord-border/60 bg-discord-darkest/40 p-4 text-sm text-discord-faint">
+                                            It's quiet for now. Check back later.
+                                        </div>
+                                    ) : (
+                                        <div className="rounded-xl border border-discord-border/60 bg-discord-darkest/40 divide-y divide-discord-border/40 overflow-hidden">
+                                            {activeNowFriends.map((friend) => (
+                                                <div key={`active-${friend._id}`} className="p-3 flex items-center gap-3">
+                                                    <div className="w-9 h-9 rounded-full bg-discord-darker overflow-hidden flex items-center justify-center text-sm font-semibold text-discord-light shrink-0">
+                                                        {friend.avatar ? (
+                                                            <img src={friend.avatar} alt="" className="w-9 h-9 rounded-full object-cover" />
+                                                        ) : (
+                                                            friend.displayName.charAt(0).toUpperCase()
+                                                        )}
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-semibold text-discord-white truncate">{friend.displayName}</p>
+                                                        <p className="text-xs text-discord-faint truncate">
+                                                            {filterStatusText(friend.statusText || friend.status) || 'In a Voice Channel'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </aside>
                             </div>
                         )}
                     </>
@@ -2324,9 +2443,13 @@ const FeedPage = () => {
                 onClose={() => setShowProfilePopout(false)}
                 profile={profile}
                 user={user}
-                onUpdatePresence={(presence) => {
+                onUpdatePresence={async (presence) => {
                     if (!user?._id) return;
-                    updateProfile(user._id, { presence });
+                    await updateProfile(user._id, { presence });
+                }}
+                onUpdateStatus={async (status) => {
+                    if (!user?._id) return;
+                    await updateProfile(user._id, { status });
                 }}
                 onEditProfile={() => setShowProfileSettings(true)}
                 anchorClassName={viewMode === 'friends' ? 'md:left-[272px]' : 'md:left-[300px]'}

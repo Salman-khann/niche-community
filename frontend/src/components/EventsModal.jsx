@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Calendar, MapPin, MoreHorizontal } from 'lucide-react';
+import { X, Calendar, MapPin, MoreHorizontal, CalendarPlus, Bell } from 'lucide-react';
 import { useEventStore } from '../stores/eventStore';
 import { useAuthStore } from '../stores/authStore';
 
@@ -13,11 +13,58 @@ const formatWhen = (event) => {
 };
 
 const EventsModal = ({ isOpen, onClose, onCreate, canCreate, onDelete, onEdit, onStart, onEnd }) => {
-    const { events, fetchEvents, toggleRsvp, isLoading } = useEventStore();
+    const { events, fetchEvents, toggleRsvp, getCalendarLinks, downloadEventIcs, setEventReminder, isLoading } = useEventStore();
     const { user } = useAuthStore();
     const [openMenuId, setOpenMenuId] = useState(null);
     const [menuPos, setMenuPos] = useState(null);
+    const [settingReminderId, setSettingReminderId] = useState(null);
+    const [reminderFeedback, setReminderFeedback] = useState({});
     const menuRef = useRef(null);
+
+    const openGoogleCalendar = async (event) => {
+        try {
+            const links = event.calendarLinks || await getCalendarLinks(event._id);
+            if (links?.google) window.open(links.google, '_blank', 'noopener,noreferrer');
+        } catch {
+            // no-op
+        }
+    };
+
+    const saveIcsFile = async (event) => {
+        try {
+            const content = await downloadEventIcs(event._id);
+            const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+            const href = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = href;
+            anchor.download = `${(event.title || 'event').replace(/\s+/g, '-').toLowerCase()}.ics`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(href);
+        } catch {
+            // no-op
+        }
+    };
+
+    const applyReminder = async (eventId, minutesBefore) => {
+        if (settingReminderId) return;
+        setSettingReminderId(eventId);
+        setReminderFeedback((prev) => ({ ...prev, [eventId]: '' }));
+        try {
+            const data = await setEventReminder(eventId, minutesBefore);
+            setReminderFeedback((prev) => ({
+                ...prev,
+                [eventId]: data?.message || (minutesBefore === null ? 'Reminder removed' : 'Reminder set'),
+            }));
+        } catch (error) {
+            setReminderFeedback((prev) => ({
+                ...prev,
+                [eventId]: error.message || 'Could not set reminder',
+            }));
+        }
+        setSettingReminderId(null);
+    };
 
     useEffect(() => {
         if (!isOpen) return;
@@ -140,6 +187,53 @@ const EventsModal = ({ isOpen, onClose, onCreate, canCreate, onDelete, onEdit, o
                                             </button>
                                         </div>
                                     </div>
+
+                                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                                        <button
+                                            onClick={() => openGoogleCalendar(event)}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-discord-border text-discord-muted hover:text-discord-light hover:border-discord-border-light"
+                                        >
+                                            <CalendarPlus className="w-3.5 h-3.5" />
+                                            Google Calendar
+                                        </button>
+                                        <button
+                                            onClick={() => saveIcsFile(event)}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-discord-border text-discord-muted hover:text-discord-light hover:border-discord-border-light"
+                                        >
+                                            <Calendar className="w-3.5 h-3.5" />
+                                            Download .ics
+                                        </button>
+                                    </div>
+
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-discord-faint pr-1">
+                                            <Bell className="w-3.5 h-3.5" />
+                                            Reminder
+                                        </div>
+                                        {[10, 30, 60, 1440].map((mins) => (
+                                            <button
+                                                key={mins}
+                                                onClick={() => applyReminder(event._id, mins)}
+                                                disabled={!isInterested || settingReminderId === event._id}
+                                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border ${!isInterested ? 'border-discord-border/40 text-discord-faint/70 cursor-not-allowed' : 'border-discord-border text-discord-muted hover:text-discord-light hover:border-discord-border-light cursor-pointer'}`}
+                                            >
+                                                {mins >= 1440 ? '1d' : mins >= 60 ? `${mins / 60}h` : `${mins}m`}
+                                            </button>
+                                        ))}
+                                        <button
+                                            onClick={() => applyReminder(event._id, null)}
+                                            disabled={!isInterested || settingReminderId === event._id}
+                                            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border ${!isInterested ? 'border-discord-border/40 text-discord-faint/70 cursor-not-allowed' : 'border-discord-border text-discord-faint hover:text-discord-light hover:border-discord-border-light cursor-pointer'}`}
+                                        >
+                                            Off
+                                        </button>
+                                    </div>
+
+                                    {reminderFeedback[event._id] && (
+                                        <div className="text-[11px] text-discord-faint">
+                                            {reminderFeedback[event._id]}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         );

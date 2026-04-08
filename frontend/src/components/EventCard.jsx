@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Calendar, MapPin, Users, Check, UserPlus, Bell, CalendarPlus, ChevronDown } from 'lucide-react';
 import { useEventStore } from '../stores/eventStore';
 import { useAuthStore } from '../stores/authStore';
@@ -175,7 +175,7 @@ const EventCard = ({ event }) => {
                 {/* Creator */}
                 <div className="flex items-center gap-2">
                     {event.creator?.avatar ? (
-                        <img src={event.creator.avatar} alt="" className="w-6 h-6 rounded-full object-cover border border-discord-border shadow-sm" />
+                        <img src={event.creator.avatar} alt="" loading="lazy" decoding="async" className="w-6 h-6 rounded-full object-cover border border-discord-border shadow-sm" />
                     ) : (
                         <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blurple to-indigo-600 flex items-center justify-center text-[9px] font-bold text-white">
                             {initials}
@@ -289,4 +289,4 @@ const EventCard = ({ event }) => {
     );
 };
 
-export default EventCard;
+export default memo(EventCard);

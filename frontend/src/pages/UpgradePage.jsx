@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, Sparkles, Crown, ArrowLeft, ArrowRight, Shield, Zap, Star, Lock, HeartHandshake } from 'lucide-react';
 import { SiStripe } from 'react-icons/si';
@@ -11,17 +11,28 @@ import { useBillingStore } from '../stores/billingStore';
 const UpgradePage = () => {
     const navigate = useNavigate();
     const rootRef = useRef(null);
-    const { profile } = useProfileStore();
-    const { createCheckoutSession, isLoading, error } = useBillingStore();
+    const [actionMessage, setActionMessage] = useState('');
+    const { profile, fetchProfile } = useProfileStore();
+    const {
+        createCheckoutSession,
+        fetchSubscriptionStatus,
+        fetchInvoices,
+        setAutoRenewal,
+        createPortalSession,
+        subscription,
+        invoices,
+        isLoading,
+        error,
+    } = useBillingStore();
 
     const isPremium = useMemo(
         () => ['premium', 'enterprise'].includes(profile?.tier || 'free'),
         [profile?.tier]
     );
 
-    const handleSubscribe = async () => {
+    const handleSubscribe = async (plan = 'premium') => {
         try {
-            const data = await createCheckoutSession();
+            const data = await createCheckoutSession(plan);
             if (data?.url) {
                 window.location.href = data.url;
             }
@@ -29,6 +40,35 @@ const UpgradePage = () => {
             // Store error is shown below.
         }
     };
+
+    const handleOpenBillingPortal = async () => {
+        setActionMessage('');
+        try {
+            const data = await createPortalSession();
+            if (data?.url) window.location.href = data.url;
+        } catch {
+            // Store error is shown below.
+        }
+    };
+
+    const handleAutoRenewToggle = async () => {
+        setActionMessage('');
+        try {
+            const currentlyOn = !subscription?.cancelAtPeriodEnd;
+            const data = await setAutoRenewal(!currentlyOn);
+            setActionMessage(data?.message || 'Subscription updated');
+            await fetchSubscriptionStatus();
+            await fetchInvoices();
+            if (profile?.userId?._id) await fetchProfile(profile.userId._id);
+        } catch {
+            // Store error is shown below.
+        }
+    };
+
+    useEffect(() => {
+        fetchSubscriptionStatus().catch(() => {});
+        fetchInvoices().catch(() => {});
+    }, [fetchSubscriptionStatus, fetchInvoices]);
 
     useEffect(() => {
         const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -106,6 +146,13 @@ const UpgradePage = () => {
         { label: 'Safe communities', value: 'Enhanced moderation' },
     ];
 
+    const hasActiveSubscription = ['active', 'trialing', 'past_due'].includes(subscription?.subscriptionStatus || profile?.subscriptionStatus || 'inactive');
+    const autoRenewEnabled = hasActiveSubscription && !subscription?.cancelAtPeriodEnd;
+    const hasBillingCustomer = Boolean(subscription?.stripeCustomerId);
+    const currentPeriodEndLabel = subscription?.currentPeriodEnd
+        ? new Date(subscription.currentPeriodEnd).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+        : null;
+
     return (
         <div ref={rootRef} className="min-h-screen min-h-[100dvh] bg-discord-darkest text-white relative overflow-x-hidden">
             {/* Ambient background */}
@@ -149,7 +196,7 @@ const UpgradePage = () => {
                                         You are already Premium
                                     </Button>
                                 ) : (
-                                    <Button variant="secondary" onClick={handleSubscribe} loading={isLoading}>
+                                    <Button variant="secondary" onClick={() => handleSubscribe('premium')} loading={isLoading}>
                                         Subscribe now
                                     </Button>
                                 )}
@@ -193,11 +240,18 @@ const UpgradePage = () => {
                                             You Are Already Premium
                                         </Button>
                                     ) : (
-                                        <Button variant="primary" fullWidth onClick={handleSubscribe} loading={isLoading}>
+                                        <Button variant="primary" fullWidth onClick={() => handleSubscribe('premium')} loading={isLoading}>
                                             Subscribe Now
                                         </Button>
                                     )}
                                 </div>
+                                {!isPremium && (
+                                    <div className="mt-3">
+                                        <Button variant="ghost" fullWidth onClick={() => handleSubscribe('enterprise')} loading={isLoading}>
+                                            Start Enterprise Checkout
+                                        </Button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -230,6 +284,72 @@ const UpgradePage = () => {
                                 </div>
                             );
                         })}
+                    </div>
+                </section>
+
+                <section className="reveal max-w-6xl mx-auto px-4 py-14">
+                    <div className="rounded-3xl border border-discord-border/60 bg-[#1f2431]/85 p-8 sm:p-10">
+                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                            <div>
+                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-discord-faint">Billing Management</p>
+                                <h2 className="text-2xl sm:text-3xl font-black mt-2">Manage membership, renewals, and invoices.</h2>
+                                <p className="text-sm text-discord-muted mt-2">
+                                    Subscription: <span className="text-discord-light font-semibold">{subscription?.plan || (profile?.tier || 'free')}</span>
+                                    {' '}• Status: <span className="text-discord-light font-semibold">{subscription?.subscriptionStatus || profile?.subscriptionStatus || 'inactive'}</span>
+                                    {currentPeriodEndLabel ? ` • Current period ends ${currentPeriodEndLabel}` : ''}
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                <Button variant="secondary" onClick={handleOpenBillingPortal} loading={isLoading} disabled={!hasBillingCustomer}>
+                                    Open Stripe Billing Portal
+                                </Button>
+                                {hasActiveSubscription && (
+                                    <Button variant="ghost" onClick={handleAutoRenewToggle} loading={isLoading}>
+                                        {autoRenewEnabled ? 'Turn Off Auto-Renew' : 'Turn On Auto-Renew'}
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+                        {actionMessage && (
+                            <p className="mt-3 text-sm text-discord-light">{actionMessage}</p>
+                        )}
+                        {error && (
+                            <p className="mt-2 text-sm font-semibold text-discord-red">{error}</p>
+                        )}
+
+                        <div className="mt-6">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-discord-faint">Recent Invoices</p>
+                            {invoices.length === 0 ? (
+                                <p className="mt-2 text-sm text-discord-muted">No invoices yet.</p>
+                            ) : (
+                                <div className="mt-3 grid gap-2">
+                                    {invoices.slice(0, 8).map((invoice) => (
+                                        <div key={invoice.id} className="rounded-xl border border-discord-border/60 bg-discord-darkest/60 px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                            <div>
+                                                <p className="text-sm font-semibold text-discord-light">{invoice.number}</p>
+                                                <p className="text-xs text-discord-faint">
+                                                    {invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString() : 'Unknown date'}
+                                                    {' '}• Tax: {((invoice.tax || 0) / 100).toFixed(2)} {(invoice.currency || 'usd').toUpperCase()}
+                                                    {' '}• Total: {((invoice.total || 0) / 100).toFixed(2)} {(invoice.currency || 'usd').toUpperCase()}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {invoice.hostedInvoiceUrl && (
+                                                    <a href={invoice.hostedInvoiceUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blurple hover:text-blurple-hover">
+                                                        View
+                                                    </a>
+                                                )}
+                                                {invoice.invoicePdf && (
+                                                    <a href={invoice.invoicePdf} target="_blank" rel="noreferrer" className="text-xs font-semibold text-discord-light hover:text-white">
+                                                        PDF
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </section>
 
@@ -320,7 +440,7 @@ const UpgradePage = () => {
                                         You Are Already Premium
                                     </Button>
                                 ) : (
-                                    <Button variant="primary" onClick={handleSubscribe} loading={isLoading}>
+                                    <Button variant="primary" onClick={() => handleSubscribe('premium')} loading={isLoading}>
                                         Subscribe with Stripe
                                     </Button>
                                 )}

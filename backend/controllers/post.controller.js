@@ -4,6 +4,7 @@ import Community from "../models/community.model.js";
 import Profile from "../models/profile.model.js";
 import Notification from "../models/notification.model.js";
 import User from "../models/user.model.js";
+import mongoose from "mongoose";
 import { io } from "../socket.js";
 import { trackReputationSignal } from "../utils/reputationSignals.js";
 
@@ -35,6 +36,7 @@ export const getFeed = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
+        const before = req.query.before ? String(req.query.before) : null;
         const tag = req.query.tag || null;
         const hashtag = req.query.hashtag || null;
         const channelId = req.query.channelId || null;
@@ -57,6 +59,13 @@ export const getFeed = async (req, res) => {
             ];
         }
 
+        if (before) {
+            if (!mongoose.Types.ObjectId.isValid(before)) {
+                return res.status(400).json({ success: false, message: "Invalid pagination cursor" });
+            }
+            filter._id = { $lt: before };
+        }
+
         let sortSpec = { createdAt: -1 };
         if (sort === "top") {
             sortSpec = { likesCount: -1, commentsCount: -1, createdAt: -1 };
@@ -66,16 +75,37 @@ export const getFeed = async (req, res) => {
             sortSpec = { pinnedAt: -1, createdAt: -1 };
         }
 
-        const totalPosts = await Post.countDocuments(filter);
-        const totalPages = Math.ceil(totalPosts / limit) || 1;
-        const skip = (page - 1) * limit;
+        let posts = [];
+        let totalPosts = 0;
+        let totalPages = 1;
+        let hasMore = false;
+        let nextBefore = null;
 
-        const posts = await Post.find(filter)
-            .sort(sortSpec)
-            .skip(skip)
-            .limit(limit)
-            .populate("authorId", "name email")
-            .lean();
+        const useCursorMode = sort === "latest" && !!before;
+        if (useCursorMode) {
+            const rows = await Post.find(filter)
+                .sort({ _id: -1 })
+                .limit(limit + 1)
+                .populate("authorId", "name email")
+                .lean();
+            hasMore = rows.length > limit;
+            const pageRows = hasMore ? rows.slice(0, limit) : rows;
+            posts = pageRows;
+            nextBefore = hasMore && posts.length > 0
+                ? posts[posts.length - 1]._id?.toString?.() || String(posts[posts.length - 1]._id)
+                : null;
+        } else {
+            totalPosts = await Post.countDocuments(filter);
+            totalPages = Math.ceil(totalPosts / limit) || 1;
+            const skip = (page - 1) * limit;
+
+            posts = await Post.find(filter)
+                .sort(sortSpec)
+                .skip(skip)
+                .limit(limit)
+                .populate("authorId", "name email")
+                .lean();
+        }
 
         // Fetch community name
         const community = await Community.findById(req.communityId).select("name owner").lean();
@@ -121,6 +151,8 @@ export const getFeed = async (req, res) => {
             currentPage: page,
             totalPages,
             totalPosts,
+            hasMore,
+            nextBefore,
         });
     } catch (error) {
         console.log("Error in getFeed:", error);
@@ -632,11 +664,29 @@ export const markReplyHelpful = async (req, res) => {
 export const getComments = async (req, res) => {
     try {
         const { id: postId } = req.params;
+        const limit = Math.min(100, Math.max(10, parseInt(req.query.limit, 10) || 50));
+        const before = req.query.before ? String(req.query.before) : null;
 
-        const comments = await Comment.find({ postId })
-            .sort({ createdAt: 1 })
+        const filter = { postId };
+        if (before) {
+            if (!mongoose.Types.ObjectId.isValid(before)) {
+                return res.status(400).json({ success: false, message: "Invalid pagination cursor" });
+            }
+            filter._id = { $lt: before };
+        }
+
+        const rows = await Comment.find(filter)
+            .sort({ _id: -1 })
+            .limit(limit + 1)
             .populate("authorId", "name email")
             .lean();
+
+        const hasMore = rows.length > limit;
+        const pageRows = hasMore ? rows.slice(0, limit) : rows;
+        const comments = pageRows.reverse();
+        const nextBefore = hasMore && comments.length > 0
+            ? comments[0]._id?.toString?.() || String(comments[0]._id)
+            : null;
 
         const authorIds = [...new Set(comments.map((c) => c.authorId._id.toString()))];
         const profiles = await Profile.find({ userId: { $in: authorIds } }).lean();
@@ -655,7 +705,7 @@ export const getComments = async (req, res) => {
             },
         }));
 
-        res.status(200).json({ success: true, comments: enriched });
+        res.status(200).json({ success: true, comments: enriched, hasMore, nextBefore });
     } catch (error) {
         console.log("Error in getComments:", error);
         res.status(500).json({ success: false, message: "Server error" });

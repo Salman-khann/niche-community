@@ -39,6 +39,7 @@ const postSchema = new mongoose.Schema({
 
 // Index for efficient feed queries
 postSchema.index({ communityId: 1, createdAt: -1 });
+postSchema.index({ communityId: 1, _id: -1 });
 postSchema.index({ channelId: 1, createdAt: -1 });
 postSchema.index({ tags: 1 });
 postSchema.index({ hashtags: 1 });

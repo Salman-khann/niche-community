@@ -579,6 +579,81 @@ body {
   animation: wsIconIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* ── App Surface System ─────────────────────────────────────────────────── */
+.ui-shell {
+  background:
+    radial-gradient(1200px 700px at 8% -12%, rgba(88, 101, 242, 0.16), transparent 60%),
+    radial-gradient(900px 500px at 92% 110%, rgba(59, 165, 93, 0.08), transparent 55%),
+    var(--color-discord-darkest);
+}
+
+.ui-panel {
+  background: linear-gradient(180deg, rgba(49, 51, 56, 0.96), rgba(42, 44, 49, 0.98));
+}
+
+.ui-topbar {
+  background: linear-gradient(180deg, rgba(54, 57, 63, 0.92), rgba(47, 49, 54, 0.92));
+  border-bottom: 1px solid rgba(21, 23, 26, 0.85);
+  backdrop-filter: blur(6px);
+}
+
+.ui-chip {
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-discord-faint);
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.ui-chip:hover {
+  background: rgba(21, 23, 26, 0.56);
+  color: var(--color-discord-white);
+}
+
+.ui-chip--active {
+  background: rgba(21, 23, 26, 0.88);
+  color: var(--color-discord-white);
+}
+
+.ui-icon-btn {
+  border-radius: 9999px;
+  background: rgba(30, 32, 36, 0.82);
+  color: var(--color-discord-faint);
+  transition: transform 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+}
+
+.ui-icon-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(70, 72, 79, 0.82);
+  color: var(--color-discord-white);
+}
+
+.ui-list-row {
+  border-bottom: 1px solid rgba(21, 23, 26, 0.8);
+  border-radius: 10px;
+  transition: background-color 0.16s ease;
+}
+
+.ui-list-row:hover {
+  background: rgba(21, 23, 26, 0.45);
+}
+
+.ui-search-input {
+  border: 1px solid rgba(21, 23, 26, 0.85);
+  border-radius: 8px;
+  background: rgba(30, 32, 36, 0.9);
+  color: var(--color-discord-white);
+}
+
+.ui-search-input:focus {
+  border-color: rgba(88, 101, 242, 0.9);
+  box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.2);
+}
+
+.ui-section-label {
+  color: rgba(185, 187, 190, 0.9);
+  letter-spacing: 0.11em;
+}
+
 /* Hide scrollbars utility */
 .scrollbar-hide {
   scrollbar-width: none;

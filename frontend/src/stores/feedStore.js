@@ -25,6 +25,7 @@ export const useFeedStore = create((set, get) => ({
             if (options.featured) params.append('featured', 'true');
             if (options.pinned) params.append('pinned', 'true');
             if (options.sort) params.append('sort', options.sort);
+            if (options.before) params.append('before', options.before);
 
             const res = await apiFetch(`${API_URL}/feed?${params}`, {
                 credentials: 'include',
@@ -147,14 +148,23 @@ export const useFeedStore = create((set, get) => ({
         }
     },
 
-    fetchComments: async (postId) => {
+    fetchComments: async (postId, options = {}) => {
         try {
-            const res = await apiFetch(`${API_URL}/${postId}/comments`, {
+            const params = new URLSearchParams();
+            if (options.limit) params.append('limit', String(options.limit));
+            if (options.before) params.append('before', String(options.before));
+            const query = params.toString();
+
+            const res = await apiFetch(`${API_URL}/${postId}/comments${query ? `?${query}` : ''}`, {
                 credentials: 'include',
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Failed to fetch comments');
-            return data.comments;
+            return {
+                comments: data.comments || [],
+                hasMore: Boolean(data.hasMore),
+                nextBefore: data.nextBefore || null,
+            };
         } catch (error) {
             set({ error: error.message });
             throw error;
