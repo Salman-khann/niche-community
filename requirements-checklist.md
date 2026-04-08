@@ -30,22 +30,22 @@ Legend: [x] completed, [~] partial, [ ] missing
 - [x] Support polls
 - [x] Support resource links and file/document uploads
 - [x] Support threaded replies
-- [~] Support comment reactions
+- [x] Support comment reactions
 - [x] Organize content into channels
-- [~] Add search, filters, pinning, featured content, saves, and hashtags
+- [x] Add search, filters, pinning, featured content, saves, and hashtags
 
 ## Real-Time Features
 - [x] Add live reactions and likes
 - [x] Add live comments
 - [x] Add presence and typing indicators
 - [x] Use WebSockets or Socket.IO
-- [~] Use Redis pub/sub for scaling real-time updates
+- [x] Use Redis pub/sub for scaling real-time updates
 
 ## Events & Meetups
 - [x] Support webinars, local meetups, and private online rooms
 - [x] Add RSVP flows
-- [ ] Add calendar sync
-- [ ] Add reminders
+- [x] Add calendar sync
+- [x] Add reminders
 
 ## Notifications
 - [x] Notify on mentions
@@ -54,8 +54,8 @@ Legend: [x] completed, [~] partial, [ ] missing
 - [x] Notify on admin announcements
 - [x] Notify on moderator actions
 - [x] Deliver in-app notifications
-- [ ] Support email digests
-- [ ] Support optional push notifications
+- [x] Support email digests
+- [x] Support optional push notifications
 
 ## Billing & Membership
 - [x] Support free invite-only access

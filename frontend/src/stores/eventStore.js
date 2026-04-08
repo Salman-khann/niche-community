@@ -129,6 +129,51 @@ export const useEventStore = create((set, get) => ({
         return data;
     },
 
+    getCalendarLinks: async (eventId) => {
+        const res = await apiFetch(`${API_URL}/${eventId}/calendar-links`, {
+            credentials: 'include',
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Failed to fetch calendar links');
+        return data.links;
+    },
+
+    downloadEventIcs: async (eventId) => {
+        const res = await apiFetch(`${API_URL}/${eventId}/calendar.ics`, {
+            credentials: 'include',
+        });
+        if (!res.ok) {
+            let message = 'Failed to download event calendar file';
+            try {
+                const data = await res.json();
+                message = data.message || message;
+            } catch {
+                // ignore parse errors for non-json responses
+            }
+            throw new Error(message);
+        }
+        return await res.text();
+    },
+
+    setEventReminder: async (eventId, minutesBefore) => {
+        const res = await apiFetch(`${API_URL}/${eventId}/reminder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ minutesBefore }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Failed to set reminder');
+        set((state) => ({
+            events: state.events.map((event) =>
+                event._id === eventId
+                    ? { ...event, reminderMinutes: data.reminderMinutes }
+                    : event
+            ),
+        }));
+        return data;
+    },
+
     // ── Real-time socket event handlers ──────────────────────────────────────
     handleNewEvent: (event) => {
         set((state) => {

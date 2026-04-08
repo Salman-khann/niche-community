@@ -5,6 +5,43 @@ import User from "../models/user.model.js";
 import Notification from "../models/notification.model.js";
 import { io } from "../socket.js";
 
+const REMINDER_OPTIONS = new Set([10, 30, 60, 24 * 60]);
+
+const getEventWindow = (event) => {
+    const start = new Date(event.startDate || event.date);
+    const end = event.endDate ? new Date(event.endDate) : new Date(start.getTime() + 60 * 60 * 1000);
+    return { start, end };
+};
+
+const formatIcsDate = (value) => new Date(value).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+
+const escapeIcsText = (value = "") => String(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+
+const buildGoogleCalendarUrl = (event) => {
+    const { start, end } = getEventWindow(event);
+    const params = new URLSearchParams({
+        action: "TEMPLATE",
+        text: event.title || "Community Event",
+        details: event.description || "",
+        location: event.location || "",
+        dates: `${formatIcsDate(start)}/${formatIcsDate(end)}`,
+    });
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+};
+
+const buildBaseUrl = (req) => process.env.SERVER_PUBLIC_URL || `${req.protocol}://${req.get("host")}`;
+
+const getUserReminderMinutes = (event, userId) => {
+    const reminder = (event.reminders || []).find(
+        (row) => row.userId?.toString?.() === userId && !row.sentAt
+    );
+    return reminder ? reminder.minutesBefore : null;
+};
+
 const resolveRolePermissions = async (req) => {
     const roleIds = req.communityMembership?.roles || [];
     if (!roleIds.length) return {};
@@ -48,8 +85,17 @@ export const getEvents = async (req, res) => {
             .lean();
 
         const enriched = await enrichEvents(events);
+        const baseUrl = buildBaseUrl(req);
+        const withCalendarAndReminder = enriched.map((event) => ({
+            ...event,
+            calendarLinks: {
+                google: buildGoogleCalendarUrl(event),
+                ics: `${baseUrl}/api/events/${event._id}/calendar.ics`,
+            },
+            reminderMinutes: getUserReminderMinutes(event, req.userId),
+        }));
 
-        res.status(200).json({ success: true, events: enriched });
+        res.status(200).json({ success: true, events: withCalendarAndReminder });
     } catch (error) {
         console.log("Error in getEvents:", error);
         res.status(500).json({ success: false, message: "Server error" });
@@ -352,5 +398,118 @@ export const updateEvent = async (req, res) => {
     } catch (error) {
         console.log("Error in updateEvent:", error);
         res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── Calendar Links ──────────────────────────────────────────────────────────
+export const getCalendarLinks = async (req, res) => {
+    try {
+        const event = await Event.findById(req.params.id).lean();
+        if (!event) return res.status(404).json({ success: false, message: "Event not found" });
+        if (event.communityId?.toString?.() !== req.communityId) {
+            return res.status(403).json({ success: false, message: "Community mismatch" });
+        }
+        const baseUrl = buildBaseUrl(req);
+        return res.status(200).json({
+            success: true,
+            links: {
+                google: buildGoogleCalendarUrl(event),
+                ics: `${baseUrl}/api/events/${event._id}/calendar.ics`,
+            },
+        });
+    } catch (error) {
+        console.log("Error in getCalendarLinks:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── ICS Download ────────────────────────────────────────────────────────────
+export const downloadEventIcs = async (req, res) => {
+    try {
+        const event = await Event.findById(req.params.id).lean();
+        if (!event) return res.status(404).json({ success: false, message: "Event not found" });
+        if (event.communityId?.toString?.() !== req.communityId) {
+            return res.status(403).json({ success: false, message: "Community mismatch" });
+        }
+
+        const { start, end } = getEventWindow(event);
+        const uid = `${event._id}@circlecore`;
+        const nowStamp = formatIcsDate(new Date());
+
+        const ics = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//CircleCore//Events//EN",
+            "CALSCALE:GREGORIAN",
+            "METHOD:PUBLISH",
+            "BEGIN:VEVENT",
+            `UID:${uid}`,
+            `DTSTAMP:${nowStamp}`,
+            `DTSTART:${formatIcsDate(start)}`,
+            `DTEND:${formatIcsDate(end)}`,
+            `SUMMARY:${escapeIcsText(event.title || "Community Event")}`,
+            `DESCRIPTION:${escapeIcsText(event.description || "")}`,
+            `LOCATION:${escapeIcsText(event.location || "")}`,
+            "END:VEVENT",
+            "END:VCALENDAR",
+            "",
+        ].join("\r\n");
+
+        res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename=event-${event._id}.ics`);
+        return res.status(200).send(ics);
+    } catch (error) {
+        console.log("Error in downloadEventIcs:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── Set Reminder ────────────────────────────────────────────────────────────
+export const setEventReminder = async (req, res) => {
+    try {
+        const { id: eventId } = req.params;
+        const { minutesBefore } = req.body || {};
+        const event = await Event.findById(eventId);
+        if (!event) return res.status(404).json({ success: false, message: "Event not found" });
+        if (event.communityId.toString() !== req.communityId) {
+            return res.status(403).json({ success: false, message: "Community mismatch" });
+        }
+
+        const userId = req.userId;
+        const isRsvped = event.rsvpList.some((id) => id.toString() === userId);
+        if (!isRsvped) {
+            return res.status(400).json({ success: false, message: "RSVP to an event before setting reminders" });
+        }
+
+        event.reminders = (event.reminders || []).filter((row) => row.userId.toString() !== userId);
+
+        if (minutesBefore !== null && minutesBefore !== undefined && minutesBefore !== "") {
+            const parsed = Number(minutesBefore);
+            if (!Number.isFinite(parsed) || !REMINDER_OPTIONS.has(parsed)) {
+                return res.status(400).json({ success: false, message: "Invalid reminder value" });
+            }
+            const startDate = new Date(event.startDate || event.date);
+            const remindAt = new Date(startDate.getTime() - parsed * 60 * 1000);
+            if (remindAt.getTime() <= Date.now()) {
+                return res.status(400).json({ success: false, message: "Reminder time already passed" });
+            }
+            event.reminders.push({
+                userId,
+                minutesBefore: parsed,
+                remindAt,
+                sentAt: null,
+            });
+        }
+
+        await event.save();
+
+        return res.status(200).json({
+            success: true,
+            eventId,
+            reminderMinutes: getUserReminderMinutes(event, userId),
+        });
+    } catch (error) {
+        console.log("Error in setEventReminder:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
     }
 };

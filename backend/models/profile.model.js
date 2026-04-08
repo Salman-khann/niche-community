@@ -16,6 +16,12 @@ const profileSchema = new mongoose.Schema({
     personalizeExperience: { type: Boolean, default: true },
     voiceClips: { type: Boolean, default: true },
   },
+  notificationPrefs: {
+    emailDigestEnabled: { type: Boolean, default: false },
+    digestFrequency: { type: String, enum: ["daily", "weekly"], default: "daily" },
+    lastDigestSentAt: { type: Date, default: null },
+    pushEnabled: { type: Boolean, default: false },
+  },
   skills: { type: [String], default: [] },
   interests: { type: [String], default: [] },
   reputation: { type: Number, default: 0 },

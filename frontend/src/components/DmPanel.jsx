@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Phone, Smile, Send, Plus, Image as ImageIcon, X, Menu, Server, Mic, MicOff, ScreenShare, Video, VideoOff, UserPlus, LogOut } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Phone, Smile, Send, Plus, Image as ImageIcon, X, Menu, Server, Mic, MicOff, ScreenShare, Video, VideoOff, UserPlus, LogOut, MoreHorizontal, Reply, Forward, Copy, Link2, ChevronRight, Bell, Volume2 } from 'lucide-react';
 import VoiceVideoPlayer from './VoiceVideoPlayer';
 import EmojiPicker from './EmojiPicker';
 import AttachmentPreviewCard from './AttachmentPreviewCard';
@@ -58,6 +58,10 @@ const DmPanel = ({
     const headerTitle = activeDm?.displayName || 'Direct Messages';
     const username = activeDm?.subtitle || activeDm?.username || '';
     const [showEmoji, setShowEmoji] = useState(false);
+    const [hoveredMessageId, setHoveredMessageId] = useState(null);
+    const [openMessageMenuId, setOpenMessageMenuId] = useState(null);
+    const [copiedMessageId, setCopiedMessageId] = useState(null);
+    const dmMenuRef = useRef(null);
     const hasLocalCamera = !!localCameraStream;
     const hasRemoteCamera = !!remoteCameraStream;
     const cameraStreamMap = useMemo(() => {
@@ -155,6 +159,63 @@ const DmPanel = ({
         onChange?.(`${value || ''}${emoji}`);
         setShowEmoji(false);
         onTyping?.();
+    };
+
+    useEffect(() => {
+        if (!openMessageMenuId) return;
+        const onOutside = (e) => {
+            if (dmMenuRef.current && !dmMenuRef.current.contains(e.target)) {
+                setOpenMessageMenuId(null);
+            }
+        };
+        document.addEventListener('mousedown', onOutside);
+        return () => document.removeEventListener('mousedown', onOutside);
+    }, [openMessageMenuId]);
+
+    const handleReply = (message, senderName) => {
+        const replyText = `> ${senderName}: ${message?.content || ''}\n`;
+        onChange?.(`${value || ''}${replyText}`);
+        onTyping?.();
+        setOpenMessageMenuId(null);
+    };
+
+    const handleForward = (message, senderName) => {
+        const forwardText = `Fwd from ${senderName}: ${message?.content || ''}`;
+        onChange?.(`${value || ''}${forwardText}\n`);
+        onTyping?.();
+        setOpenMessageMenuId(null);
+    };
+
+    const copyText = async (messageId, text) => {
+        if (!text) return;
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopiedMessageId(messageId);
+            setTimeout(() => setCopiedMessageId((prev) => (prev === messageId ? null : prev)), 1200);
+            setOpenMessageMenuId(null);
+        } catch {
+            // ignore clipboard failures
+        }
+    };
+
+    const copyLink = async (messageId) => {
+        try {
+            const link = `${window.location.origin}/feed?dm=${activeDm?._id}&message=${messageId}`;
+            await navigator.clipboard.writeText(link);
+            setCopiedMessageId(messageId);
+            setTimeout(() => setCopiedMessageId((prev) => (prev === messageId ? null : prev)), 1200);
+            setOpenMessageMenuId(null);
+        } catch {
+            // ignore clipboard failures
+        }
+    };
+
+    const speakMessage = (content) => {
+        if (!content || typeof window === 'undefined' || !window.speechSynthesis) return;
+        const utterance = new SpeechSynthesisUtterance(content);
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+        setOpenMessageMenuId(null);
     };
 
     return (
@@ -420,7 +481,116 @@ const DmPanel = ({
                             ? (selfProfile?.avatar || '')
                             : (sender?.avatar || activeDm?.avatar || '');
                         return (
-                            <div key={m._id} className="flex items-start gap-3">
+                            <div
+                                key={m._id}
+                                className="group relative flex items-start gap-3"
+                                onMouseEnter={() => setHoveredMessageId(m._id)}
+                                onMouseLeave={() => {
+                                    if (openMessageMenuId !== m._id) setHoveredMessageId((prev) => (prev === m._id ? null : prev));
+                                }}
+                            >
+                                {(hoveredMessageId === m._id || openMessageMenuId === m._id) && (
+                                    <div className="absolute -top-4 right-0 z-20 flex items-center gap-1 rounded-lg border border-[#1f2024] bg-[#2b2d31] p-1 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                                        {['😂', '❤️', '✅', '🏠'].map((emoji) => (
+                                            <button
+                                                key={`${m._id}-${emoji}`}
+                                                type="button"
+                                                onClick={() => {
+                                                    onChange?.(`${value || ''}${emoji}`);
+                                                    onTyping?.();
+                                                }}
+                                                className="h-8 w-8 rounded-md text-sm bg-[#3a3c43] hover:bg-[#4a4d57] transition-colors"
+                                                title={`React ${emoji}`}
+                                            >
+                                                {emoji}
+                                            </button>
+                                        ))}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleReply(m, senderName)}
+                                            className="w-8 h-8 rounded-md flex items-center justify-center bg-[#3a3c43] hover:bg-[#4a4d57] text-discord-faint hover:text-discord-light"
+                                            title="Reply"
+                                        >
+                                            <Reply className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleForward(m, senderName)}
+                                            className="w-8 h-8 rounded-md flex items-center justify-center bg-[#3a3c43] hover:bg-[#4a4d57] text-discord-faint hover:text-discord-light"
+                                            title="Forward"
+                                        >
+                                            <Forward className="w-4 h-4" />
+                                        </button>
+                                        <div className="relative" ref={openMessageMenuId === m._id ? dmMenuRef : null}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setOpenMessageMenuId((prev) => (prev === m._id ? null : m._id))}
+                                                className="w-8 h-8 rounded-md flex items-center justify-center bg-[#3a3c43] hover:bg-[#4a4d57] text-discord-faint hover:text-discord-light"
+                                                title="More"
+                                            >
+                                                <MoreHorizontal className="w-4 h-4" />
+                                            </button>
+                                            {openMessageMenuId === m._id && (
+                                                <div className="absolute right-0 top-10 w-64 rounded-lg border border-[#141518] bg-[#1e1f22] shadow-2xl p-1.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            onChange?.(`${value || ''}❤️`);
+                                                            onTyping?.();
+                                                            setOpenMessageMenuId(null);
+                                                        }}
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                    >
+                                                        Add Reaction <ChevronRight className="w-4 h-4 text-discord-faint" />
+                                                    </button>
+                                                    <div className="my-1 h-px bg-[#2b2d31]" />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleReply(m, senderName)}
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                    >
+                                                        Reply <Reply className="w-4 h-4 text-discord-faint" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleForward(m, senderName)}
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                    >
+                                                        Forward <Forward className="w-4 h-4 text-discord-faint" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => copyText(m._id, m.content || '')}
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                    >
+                                                        Copy Text <Copy className="w-4 h-4 text-discord-faint" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOpenMessageMenuId(null)}
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                    >
+                                                        Mark Unread <Bell className="w-4 h-4 text-discord-faint" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => copyLink(m._id)}
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                    >
+                                                        Copy Message Link <Link2 className="w-4 h-4 text-discord-faint" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => speakMessage(m.content || '')}
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                    >
+                                                        Speak Message <Volume2 className="w-4 h-4 text-discord-faint" />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="w-9 h-9 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-semibold text-discord-light">
                                     {isMe ? (
                                         senderAvatar
@@ -438,6 +608,9 @@ const DmPanel = ({
                                         <span className="text-[11px] text-discord-faint">{formatTime(m.createdAt)}</span>
                                     </div>
                                     <p className="text-sm text-discord-light">{m.content}</p>
+                                    {copiedMessageId === m._id && (
+                                        <div className="mt-1 text-[11px] text-emerald-300">Copied</div>
+                                    )}
                                     {m.mediaURLs?.length > 0 && (
                                         <div className="mt-2 grid grid-cols-1 gap-2 max-w-md">
                                             {m.mediaURLs.map((url) => {

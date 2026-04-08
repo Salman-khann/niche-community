@@ -14,12 +14,17 @@ export const useFeedStore = create((set, get) => ({
     isLoading: false,
     error: null,
 
-    fetchFeed: async (page = 1, tag = null, channelId = null) => {
+    fetchFeed: async (page = 1, tag = null, channelId = null, options = {}) => {
         set({ isLoading: true, error: null });
         try {
             const params = new URLSearchParams({ page, limit: 10 });
             if (tag) params.append('tag', tag);
             if (channelId) params.append('channelId', channelId);
+            if (options.q) params.append('q', options.q);
+            if (options.hashtag) params.append('hashtag', options.hashtag);
+            if (options.featured) params.append('featured', 'true');
+            if (options.pinned) params.append('pinned', 'true');
+            if (options.sort) params.append('sort', options.sort);
 
             const res = await apiFetch(`${API_URL}/feed?${params}`, {
                 credentials: 'include',
@@ -118,6 +123,23 @@ export const useFeedStore = create((set, get) => ({
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Failed to add comment');
             // Socket event will update the comments count
+            return data;
+        } catch (error) {
+            set({ error: error.message });
+            throw error;
+        }
+    },
+
+    reactToComment: async (postId, commentId, emoji) => {
+        try {
+            const res = await apiFetch(`${API_URL}/${postId}/replies/${commentId}/react`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ emoji }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to react to comment');
             return data;
         } catch (error) {
             set({ error: error.message });
@@ -237,6 +259,62 @@ export const useFeedStore = create((set, get) => ({
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Failed to save post');
             return data;
+        } catch (error) {
+            set({ error: error.message });
+            throw error;
+        }
+    },
+
+    togglePinPost: async (postId) => {
+        try {
+            const res = await apiFetch(`${API_URL}/${postId}/pin`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to pin post');
+            set((state) => ({
+                posts: state.posts.map((p) =>
+                    p._id === postId
+                        ? { ...p, pinnedAt: data.pinnedAt || null, pinnedBy: data.pinnedBy || [] }
+                        : p
+                ),
+            }));
+            return data;
+        } catch (error) {
+            set({ error: error.message });
+            throw error;
+        }
+    },
+
+    toggleFeaturePost: async (postId) => {
+        try {
+            const res = await apiFetch(`${API_URL}/${postId}/feature`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to feature post');
+            set((state) => ({
+                posts: state.posts.map((p) =>
+                    p._id === postId
+                        ? { ...p, featuredAt: data.featuredAt || null, featuredBy: data.featuredBy || [] }
+                        : p
+                ),
+            }));
+            return data;
+        } catch (error) {
+            set({ error: error.message });
+            throw error;
+        }
+    },
+
+    fetchTrendingHashtags: async () => {
+        try {
+            const res = await apiFetch(`${API_URL}/hashtags/trending`, { credentials: 'include' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to fetch hashtags');
+            return data.hashtags || [];
         } catch (error) {
             set({ error: error.message });
             throw error;

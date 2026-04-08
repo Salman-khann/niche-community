@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Hash, Plus, Send, Smile, Image as ImageIcon, X, Heart, MessageCircle, Pin, Flag, FileText } from 'lucide-react';
+import { Hash, Plus, Send, Smile, Image as ImageIcon, X, Heart, MessageCircle, Pin, Flag, FileText, MoreHorizontal, Reply, Forward, Copy, Link2, ChevronRight, Volume2, Bell } from 'lucide-react';
 import { useChannelMessageStore } from '../stores/channelMessageStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -44,7 +44,9 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         commentsLoading,
         fetchComments,
         addComment,
+        reactToComment,
         handleComment,
+        handleCommentReaction: applyCommentReactionFromSocket,
         fetchPinned,
         pinnedMessages,
         togglePin,
@@ -65,6 +67,9 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     const [commentDrafts, setCommentDrafts] = useState({});
     const [showEmoji, setShowEmoji] = useState(false);
     const [isSwitching, setIsSwitching] = useState(false);
+    const [hoveredMessageId, setHoveredMessageId] = useState(null);
+    const [openMessageMenuId, setOpenMessageMenuId] = useState(null);
+    const [copiedMessageId, setCopiedMessageId] = useState(null);
     const [pinsLoading, setPinsLoading] = useState(false);
     const [showReportModal, setShowReportModal] = useState(false);
     const [reportTarget, setReportTarget] = useState(null);
@@ -80,6 +85,9 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     const typingTimeoutRef = useRef(null);
     const inputRef = useRef(null);
     const endRef = useRef(null);
+    const messageMenuRef = useRef(null);
+    const commentInputRefs = useRef({});
+    const COMMENT_REACTIONS = ['👍', '❤️', '😂', '🔥', '👏'];
 
     const handleCloseEdit = () => {
         setShowEditModal(false);
@@ -197,23 +205,40 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
             if (!payload?.messageId) return;
             handlePin(payload);
         };
+        const handleCommentReactionSocket = (payload) => {
+            if (!payload?.messageId || !payload?.commentId) return;
+            applyCommentReactionFromSocket(payload);
+        };
         socket.on('channel:message', handleMessage);
         socket.on('channel:reaction', handleReactionSocket);
         socket.on('channel:comment', handleCommentSocket);
         socket.on('channel:pin', handlePinSocket);
+        socket.on('channel:comment-reaction', handleCommentReactionSocket);
         socket.on('channel:typing', handleTyping);
         return () => {
             socket.off('channel:message', handleMessage);
             socket.off('channel:reaction', handleReactionSocket);
             socket.off('channel:comment', handleCommentSocket);
             socket.off('channel:pin', handlePinSocket);
+            socket.off('channel:comment-reaction', handleCommentReactionSocket);
             socket.off('channel:typing', handleTyping);
         };
-    }, [socket, channel?._id, pushMessage, currentUser?.id, handleReaction, handleComment, handlePin]);
+    }, [socket, channel?._id, pushMessage, currentUser?.id, handleReaction, handleComment, handlePin, applyCommentReactionFromSocket]);
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }, [messages]);
+
+    useEffect(() => {
+        if (!openMessageMenuId) return;
+        const onOutside = (e) => {
+            if (messageMenuRef.current && !messageMenuRef.current.contains(e.target)) {
+                setOpenMessageMenuId(null);
+            }
+        };
+        document.addEventListener('mousedown', onOutside);
+        return () => document.removeEventListener('mousedown', onOutside);
+    }, [openMessageMenuId]);
 
     const emitTyping = () => {
         if (!channel?._id || !socket) return;
@@ -372,6 +397,64 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         });
         await addComment(channel._id, messageId, textValue, mentionIds);
         setCommentDrafts((prev) => ({ ...prev, [messageId]: '' }));
+    };
+
+    const handleReplyToMessage = async (messageId) => {
+        setOpenComments((prev) => ({ ...prev, [messageId]: true }));
+        const hasComments = commentsByMessage[messageId];
+        if (!hasComments) {
+            await fetchComments(channel._id, messageId);
+        }
+        requestAnimationFrame(() => {
+            commentInputRefs.current[messageId]?.focus?.();
+        });
+        setOpenMessageMenuId(null);
+    };
+
+    const handleForwardMessage = (message, sender) => {
+        const senderName = sender?.displayName || 'Member';
+        const next = `Fwd from ${senderName}: ${message?.content || ''}`.trim();
+        setText((prev) => (prev ? `${prev}\n${next}` : next));
+        requestAnimationFrame(() => inputRef.current?.focus?.());
+        setOpenMessageMenuId(null);
+    };
+
+    const copyMessageText = async (messageId, content) => {
+        if (!content) return;
+        try {
+            await navigator.clipboard.writeText(content);
+            setCopiedMessageId(messageId);
+            setTimeout(() => setCopiedMessageId((prev) => (prev === messageId ? null : prev)), 1200);
+            setOpenMessageMenuId(null);
+        } catch {
+            // ignore clipboard errors
+        }
+    };
+
+    const copyMessageLink = async (messageId) => {
+        try {
+            const link = `${window.location.origin}/feed?channel=${channel?._id}&message=${messageId}`;
+            await navigator.clipboard.writeText(link);
+            setCopiedMessageId(messageId);
+            setTimeout(() => setCopiedMessageId((prev) => (prev === messageId ? null : prev)), 1200);
+            setOpenMessageMenuId(null);
+        } catch {
+            // ignore clipboard errors
+        }
+    };
+
+    const speakMessage = (content) => {
+        if (!content || typeof window === 'undefined' || !window.speechSynthesis) return;
+        const utterance = new SpeechSynthesisUtterance(content);
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+        setOpenMessageMenuId(null);
+    };
+
+    const handleCommentReaction = async (messageId, commentId, emoji) => {
+        try {
+            await reactToComment(channel._id, messageId, commentId, emoji);
+        } catch { }
     };
 
     const openReportModal = (message) => {
@@ -553,7 +636,125 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                             const messageComments = commentsByMessage[m._id] || [];
                             const showComments = !!openComments[m._id];
                             return (
-                                <div key={m._id} id={`message-${m._id}`} className="flex gap-3">
+                                <div
+                                    key={m._id}
+                                    id={`message-${m._id}`}
+                                    className="group relative flex gap-3"
+                                    onMouseEnter={() => setHoveredMessageId(m._id)}
+                                    onMouseLeave={() => {
+                                        if (openMessageMenuId !== m._id) setHoveredMessageId((prev) => (prev === m._id ? null : prev));
+                                    }}
+                                >
+                                    {(hoveredMessageId === m._id || openMessageMenuId === m._id) && (
+                                        <div className="absolute -top-4 right-0 z-20 flex items-center gap-1 rounded-lg border border-[#1f2024] bg-[#2b2d31] p-1 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                                            {['😂', '❤️', '✅', '🏠'].map((emoji) => (
+                                                <button
+                                                    key={`${m._id}-${emoji}`}
+                                                    type="button"
+                                                    onClick={() => toggleReaction(channel._id, m._id)}
+                                                    className="h-8 w-8 rounded-md text-sm bg-[#3a3c43] hover:bg-[#4a4d57] transition-colors"
+                                                    title={`React ${emoji}`}
+                                                >
+                                                    {emoji}
+                                                </button>
+                                            ))}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleReplyToMessage(m._id)}
+                                                className="w-8 h-8 rounded-md flex items-center justify-center bg-[#3a3c43] hover:bg-[#4a4d57] text-discord-faint hover:text-discord-light"
+                                                title="Reply"
+                                            >
+                                                <Reply className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleForwardMessage(m, sender)}
+                                                className="w-8 h-8 rounded-md flex items-center justify-center bg-[#3a3c43] hover:bg-[#4a4d57] text-discord-faint hover:text-discord-light"
+                                                title="Forward"
+                                            >
+                                                <Forward className="w-4 h-4" />
+                                            </button>
+                                            <div className="relative" ref={openMessageMenuId === m._id ? messageMenuRef : null}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setOpenMessageMenuId((prev) => (prev === m._id ? null : m._id))}
+                                                    className="w-8 h-8 rounded-md flex items-center justify-center bg-[#3a3c43] hover:bg-[#4a4d57] text-discord-faint hover:text-discord-light"
+                                                    title="More"
+                                                >
+                                                    <MoreHorizontal className="w-4 h-4" />
+                                                </button>
+                                                {openMessageMenuId === m._id && (
+                                                    <div className="absolute right-0 top-10 w-64 rounded-lg border border-[#141518] bg-[#1e1f22] shadow-2xl p-1.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleReaction(channel._id, m._id)}
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        >
+                                                            Add Reaction <ChevronRight className="w-4 h-4 text-discord-faint" />
+                                                        </button>
+                                                        <div className="my-1 h-px bg-[#2b2d31]" />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleReplyToMessage(m._id)}
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        >
+                                                            Reply <Reply className="w-4 h-4 text-discord-faint" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleForwardMessage(m, sender)}
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        >
+                                                            Forward <Forward className="w-4 h-4 text-discord-faint" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => copyMessageText(m._id, m.content || '')}
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        >
+                                                            Copy Text <Copy className="w-4 h-4 text-discord-faint" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => togglePin(channel._id, m._id)}
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        >
+                                                            Pin Message <Pin className="w-4 h-4 text-discord-faint" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setOpenMessageMenuId(null)}
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        >
+                                                            Mark Unread <Bell className="w-4 h-4 text-discord-faint" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => copyMessageLink(m._id)}
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        >
+                                                            Copy Message Link <Link2 className="w-4 h-4 text-discord-faint" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => speakMessage(m.content || '')}
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        >
+                                                            Speak Message <Volume2 className="w-4 h-4 text-discord-faint" />
+                                                        </button>
+                                                        <div className="my-1 h-px bg-[#2b2d31]" />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => openReportModal(m)}
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-red-300 hover:bg-red-500/10 flex items-center justify-between"
+                                                        >
+                                                            Report Message <Flag className="w-4 h-4 text-red-300" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                     <div className="w-10 h-10 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-semibold text-discord-light overflow-hidden">
                                         {sender.avatar ? (
                                             <img src={sender.avatar} alt="" className="w-full h-full object-cover" />
@@ -571,36 +772,28 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                         <div className="text-sm text-discord-white mt-1 leading-relaxed">
                                             {renderContent(m.content)}
                                         </div>
-                                        <div className="mt-2 flex items-center gap-4 text-xs text-discord-faint">
-                                            <button
-                                                onClick={() => toggleReaction(channel._id, m._id)}
-                                                className={`flex items-center gap-1.5 hover:text-discord-light active:scale-90 transition-transform duration-150 ${isLiked ? 'text-rose-400' : ''}`}
-                                            >
-                                                <Heart className={`w-3.5 h-3.5 transition-transform duration-200 ${isLiked ? 'fill-rose-400 text-rose-400 scale-110' : ''}`} />
-                                                <span>{m.likesCount || 0}</span>
-                                            </button>
-                                            <button
-                                                onClick={() => togglePin(channel._id, m._id)}
-                                                className={`flex items-center gap-1.5 hover:text-discord-light active:scale-90 transition-transform duration-150 ${
-                                                    (m.pinnedBy || []).includes(currentUser?.id) ? 'text-amber-400' : ''
-                                                }`}
-                                            >
-                                                <Pin className={`w-3.5 h-3.5 transition-transform duration-200 ${(m.pinnedBy || []).includes(currentUser?.id) ? 'fill-amber-400 text-amber-400 scale-110' : ''}`} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleToggleComment(m._id)}
-                                                className="flex items-center gap-1.5 hover:text-discord-light active:scale-90 transition-transform duration-150"
-                                            >
-                                                <MessageCircle className={`w-3.5 h-3.5 transition-transform duration-200 ${showComments ? 'text-blurple scale-110' : ''}`} />
-                                                <span>{m.commentsCount || 0}</span>
-                                            </button>
-                                            <button
-                                                onClick={() => openReportModal(m)}
-                                                className="flex items-center gap-1.5 hover:text-amber-300 active:scale-90 transition-transform duration-150"
-                                            >
-                                                <Flag className="w-3.5 h-3.5 transition-transform duration-200" />
-                                                <span>Report</span>
-                                            </button>
+                                        {copiedMessageId === m._id && (
+                                            <div className="mt-1 text-[11px] text-emerald-300">Copied</div>
+                                        )}
+                                        <div className="mt-2 text-xs text-discord-faint">
+                                            {(isLiked || (m.likesCount || 0) > 0 || showComments || (m.commentsCount || 0) > 0) && (
+                                                <div className="flex items-center gap-3">
+                                                    <button
+                                                        onClick={() => toggleReaction(channel._id, m._id)}
+                                                        className={`flex items-center gap-1 hover:text-discord-light ${isLiked ? 'text-rose-400' : ''}`}
+                                                    >
+                                                        <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-rose-400 text-rose-400' : ''}`} />
+                                                        <span>{m.likesCount || 0}</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleToggleComment(m._id)}
+                                                        className={`flex items-center gap-1 hover:text-discord-light ${showComments ? 'text-blurple' : ''}`}
+                                                    >
+                                                        <MessageCircle className="w-3.5 h-3.5" />
+                                                        <span>{m.commentsCount || 0}</span>
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                         {m.mediaURLs?.length > 0 && (
                                             <div className="mt-3 grid grid-cols-1 gap-3 max-w-md">
@@ -640,6 +833,32 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                                                 <div>
                                                                     <div className="text-xs font-semibold text-discord-light">{c.author?.displayName || 'Member'}</div>
                                                                     <div className="text-xs text-discord-white/90">{c.content}</div>
+                                                                    <div className="mt-1 flex items-center gap-1 flex-wrap">
+                                                                        {(c.reactions || []).map((r) => (
+                                                                            <button
+                                                                                key={`${c._id}-${r.emoji}`}
+                                                                                type="button"
+                                                                                onClick={() => handleCommentReaction(m._id, c._id, r.emoji)}
+                                                                                className={`px-2 py-0.5 rounded-full text-[10px] border transition-colors ${r.reacted ? 'bg-blurple/20 border-blurple/40 text-discord-white' : 'bg-discord-darkest border-discord-border text-discord-muted hover:text-discord-light'}`}
+                                                                            >
+                                                                                {r.emoji} {r.count}
+                                                                            </button>
+                                                                        ))}
+                                                                        {COMMENT_REACTIONS.map((emoji) => {
+                                                                            const existing = (c.reactions || []).find((r) => r.emoji === emoji);
+                                                                            if (existing) return null;
+                                                                            return (
+                                                                                <button
+                                                                                    key={`${c._id}-add-${emoji}`}
+                                                                                    type="button"
+                                                                                    onClick={() => handleCommentReaction(m._id, c._id, emoji)}
+                                                                                    className="px-2 py-0.5 rounded-full text-[10px] border bg-discord-darkest border-discord-border text-discord-faint hover:text-discord-light transition-colors"
+                                                                                >
+                                                                                    {emoji}
+                                                                                </button>
+                                                                            );
+                                                                        })}
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         ))}
@@ -647,6 +866,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                                 )}
                                                 <div className="flex items-center gap-2">
                                                     <input
+                                                        ref={(node) => { commentInputRefs.current[m._id] = node; }}
                                                         type="text"
                                                         value={commentDrafts[m._id] || ''}
                                                         onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [m._id]: e.target.value }))}

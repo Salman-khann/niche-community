@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Heart, ChevronDown, ChevronUp, Send, MoreHorizontal, Flag, BarChart3, Check, Crown, Bookmark, Link2, ExternalLink, FileText } from 'lucide-react';
+import { MessageCircle, Heart, ChevronDown, ChevronUp, Send, MoreHorizontal, Flag, BarChart3, Check, Crown, Bookmark, Link2, ExternalLink, FileText, Pin, Star } from 'lucide-react';
 import MentionInput from './MentionInput';
 import { useFeedStore } from '../stores/feedStore';
 import { useAuthStore } from '../stores/authStore';
 import { useProfileStore } from '../stores/profileStore';
 
-const PostCard = ({ post }) => {
+const PostCard = ({ post, onHashtagClick }) => {
     const [showComments, setShowComments] = useState(false);
     const [comments, setComments] = useState([]);
     const [commentText, setCommentText] = useState('');
@@ -18,10 +18,14 @@ const PostCard = ({ post }) => {
     const [flagged, setFlagged] = useState(false);
     const [saving, setSaving] = useState(false);
     const [voting, setVoting] = useState(false);
+    const [pinning, setPinning] = useState(false);
+    const [featuring, setFeaturing] = useState(false);
+    const [isPinned, setIsPinned] = useState(!!post.pinnedAt);
+    const [isFeatured, setIsFeatured] = useState(!!post.featuredAt);
     const [lightboxImg, setLightboxImg] = useState(null);
     const menuRef = useRef(null);
 
-    const { fetchComments, addComment, reactToPost, flagPost, voteOnPoll, toggleSavePost } = useFeedStore();
+    const { fetchComments, addComment, reactToPost, reactToComment, flagPost, voteOnPoll, toggleSavePost, togglePinPost, toggleFeaturePost } = useFeedStore();
     const { user } = useAuthStore();
     const { profile } = useProfileStore();
 
@@ -29,6 +33,15 @@ const PostCard = ({ post }) => {
     const [localSaved, setLocalSaved] = useState(isSaved);
 
     useEffect(() => { setLocalSaved(isSaved); }, [isSaved]);
+    useEffect(() => { setIsPinned(!!post.pinnedAt); }, [post.pinnedAt]);
+    useEffect(() => { setIsFeatured(!!post.featuredAt); }, [post.featuredAt]);
+
+    const postCommunityId = typeof post.communityId === 'object' ? post.communityId?._id : post.communityId;
+    const communityRole = (user?.memberships || []).find((m) => {
+        const id = m.communityId?._id || m.communityId;
+        return id?.toString?.() === postCommunityId?.toString?.();
+    })?.role;
+    const canModeratePost = ['admin', 'moderator'].includes(communityRole);
 
     const handleSave = async () => {
         if (saving) return; setSaving(true);
@@ -47,6 +60,36 @@ const PostCard = ({ post }) => {
             }
         } catch { setLocalSaved(isSaved); }
         setSaving(false);
+    };
+
+    const handleTogglePin = async () => {
+        if (!canModeratePost || pinning) return;
+        setPinning(true);
+        const previous = isPinned;
+        setIsPinned(!previous);
+        try {
+            const data = await togglePinPost(post._id);
+            setIsPinned(!!data.pinned);
+            setShowMenu(false);
+        } catch {
+            setIsPinned(previous);
+        }
+        setPinning(false);
+    };
+
+    const handleToggleFeature = async () => {
+        if (!canModeratePost || featuring) return;
+        setFeaturing(true);
+        const previous = isFeatured;
+        setIsFeatured(!previous);
+        try {
+            const data = await toggleFeaturePost(post._id);
+            setIsFeatured(!!data.featured);
+            setShowMenu(false);
+        } catch {
+            setIsFeatured(previous);
+        }
+        setFeaturing(false);
     };
 
     const isLiked = post.likedBy?.includes(user?._id);
@@ -110,6 +153,17 @@ const PostCard = ({ post }) => {
             setCommentMentions([]);
             if (!showComments) setShowComments(true);
         } catch { } setSubmitting(false);
+    };
+
+    const REACTION_EMOJIS = ['👍', '❤️', '😂', '🔥', '👏'];
+
+    const handleCommentReaction = async (commentId, emoji) => {
+        try {
+            const data = await reactToComment(post._id, commentId, emoji);
+            setComments((prev) => prev.map((c) => (
+                c._id === commentId ? { ...c, reactions: data.reactions || [] } : c
+            )));
+        } catch { }
     };
 
     const handleFlag = async () => {
@@ -213,6 +267,16 @@ const PostCard = ({ post }) => {
                                 <span className="text-[10px] font-bold text-discord-light">{post.author.reputation}</span>
                             </div>
                         )}
+                        {isPinned && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/12 text-[10px] font-black uppercase tracking-wider text-amber-300 border border-amber-500/25">
+                                <Pin className="w-3 h-3" strokeWidth={2.4} /> Pinned
+                            </span>
+                        )}
+                        {isFeatured && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-sky-500/12 text-[10px] font-black uppercase tracking-wider text-sky-300 border border-sky-500/25">
+                                <Star className="w-3 h-3" strokeWidth={2.4} /> Featured
+                            </span>
+                        )}
                     </div>
                     <div className="flex items-center gap-1.5">
                         <p className="text-xs text-discord-faint">{timeAgo(post.createdAt)}</p>
@@ -230,6 +294,26 @@ const PostCard = ({ post }) => {
                     </button>
                     {showMenu && (
                         <div className="absolute right-0 top-[calc(100%+4px)] w-44 bg-discord-darkest rounded-lg shadow-xl border border-discord-border overflow-hidden z-30 animate-slide-down">
+                            {canModeratePost && (
+                                <>
+                                    <button
+                                        onClick={handleTogglePin}
+                                        disabled={pinning}
+                                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-discord-border-light/15 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <Pin className={`w-3.5 h-3.5 ${isPinned ? 'text-amber-300' : 'text-discord-muted'}`} strokeWidth={2} />
+                                        <span className={isPinned ? 'text-amber-300' : 'text-discord-light'}>{isPinned ? 'Unpin post' : 'Pin post'}</span>
+                                    </button>
+                                    <button
+                                        onClick={handleToggleFeature}
+                                        disabled={featuring}
+                                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-discord-border-light/15 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <Star className={`w-3.5 h-3.5 ${isFeatured ? 'text-sky-300' : 'text-discord-muted'}`} strokeWidth={2} />
+                                        <span className={isFeatured ? 'text-sky-300' : 'text-discord-light'}>{isFeatured ? 'Remove featured' : 'Feature post'}</span>
+                                    </button>
+                                </>
+                            )}
                             <button onClick={handleFlag} disabled={flagging || flagged}
                                 className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-discord-border-light/15 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                                 <Flag className={`w-3.5 h-3.5 ${flagged ? 'text-discord-red' : 'text-discord-muted'}`} strokeWidth={2} />
@@ -361,6 +445,21 @@ const PostCard = ({ post }) => {
                 </div>
             )}
 
+            {post.hashtags?.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-4">
+                    {post.hashtags.map((tag) => (
+                        <button
+                            key={tag}
+                            type="button"
+                            onClick={() => onHashtagClick?.(tag)}
+                            className="px-2.5 py-1 rounded-lg bg-sky-500/10 text-[11px] font-semibold text-sky-300 border border-sky-500/20 hover:bg-sky-500/15 transition-colors cursor-pointer"
+                        >
+                            #{tag}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {/* Actions bar */}
             <div className="flex items-center gap-5 pt-3 border-t border-discord-border/50">
                 <button onClick={handleLike} disabled={liking}
@@ -418,6 +517,32 @@ const PostCard = ({ post }) => {
                                             <span className="text-[10px] text-discord-faint">{timeAgo(c.createdAt)}</span>
                                         </div>
                                         <p className="text-xs text-discord-light leading-relaxed mt-0.5">{renderWithMentions(c.content)}</p>
+                                        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                                            {(c.reactions || []).map((r) => (
+                                                <button
+                                                    key={`${c._id}-${r.emoji}`}
+                                                    type="button"
+                                                    onClick={() => handleCommentReaction(c._id, r.emoji)}
+                                                    className={`px-2 py-0.5 rounded-full text-[11px] border transition-colors ${r.reacted ? 'bg-blurple/20 border-blurple/40 text-discord-white' : 'bg-discord-darkest border-discord-border text-discord-muted hover:text-discord-light'}`}
+                                                >
+                                                    {r.emoji} {r.count}
+                                                </button>
+                                            ))}
+                                            {REACTION_EMOJIS.map((emoji) => {
+                                                const existing = (c.reactions || []).find((r) => r.emoji === emoji);
+                                                if (existing) return null;
+                                                return (
+                                                    <button
+                                                        key={`${c._id}-add-${emoji}`}
+                                                        type="button"
+                                                        onClick={() => handleCommentReaction(c._id, emoji)}
+                                                        className="px-2 py-0.5 rounded-full text-[11px] border bg-discord-darkest border-discord-border text-discord-faint hover:text-discord-light transition-colors"
+                                                    >
+                                                        {emoji}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
                             );

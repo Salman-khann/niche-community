@@ -153,6 +153,30 @@ export const useChannelMessageStore = create((set) => ({
         return data.comment;
     },
 
+    reactToComment: async (channelId, messageId, commentId, emoji) => {
+        const res = await apiFetch(`${API_URL}/${channelId}/${messageId}/comments/${commentId}/react`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ emoji }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Failed to react to comment');
+
+        set((state) => {
+            const existing = state.commentsByMessage[messageId] || [];
+            return {
+                commentsByMessage: {
+                    ...state.commentsByMessage,
+                    [messageId]: existing.map((c) =>
+                        c._id === commentId ? { ...c, reactions: data.reactions || [] } : c
+                    ),
+                },
+            };
+        });
+        return data;
+    },
+
     handleComment: ({ messageId, comment, commentsCount }) => set((state) => {
         const existing = state.commentsByMessage[messageId] || [];
         if (existing.some((c) => c._id === comment._id)) {
@@ -170,6 +194,18 @@ export const useChannelMessageStore = create((set) => ({
             messages: state.messages.map((m) =>
                 m._id === messageId ? { ...m, commentsCount } : m
             ),
+        };
+    }),
+
+    handleCommentReaction: ({ messageId, commentId, reactions }) => set((state) => {
+        const existing = state.commentsByMessage[messageId] || [];
+        return {
+            commentsByMessage: {
+                ...state.commentsByMessage,
+                [messageId]: existing.map((c) =>
+                    c._id === commentId ? { ...c, reactions: reactions || [] } : c
+                ),
+            },
         };
     }),
 

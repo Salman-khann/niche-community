@@ -19,7 +19,15 @@ const eventSchema = new mongoose.Schema({
     d1h: { type: Boolean, default: false },
     d10m: { type: Boolean, default: false },
   },
+  reminders: [{
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    minutesBefore: { type: Number, required: true },
+    remindAt: { type: Date, required: true },
+    sentAt: { type: Date, default: null },
+  }],
   rsvpList: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 }, { timestamps: true });
+
+eventSchema.index({ communityId: 1, "reminders.remindAt": 1, "reminders.sentAt": 1 });
 
 export default mongoose.model("Event", eventSchema);

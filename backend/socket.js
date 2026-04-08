@@ -24,6 +24,7 @@ const io = new Server(server, {
 
 const ROOM_EMPTY_TTL_MS = 30000;
 const MAX_CALL_PARTICIPANTS = 5;
+let redisStateClient = null;
 
 // ── Redis Adapter (optional — graceful fallback for dev) ─────────────────────
 async function attachRedisAdapter() {
@@ -55,6 +56,7 @@ async function attachRedisAdapter() {
         ]);
 
         io.adapter(createAdapter(pubClient, subClient));
+        redisStateClient = pubClient;
         console.log("✅ Socket.io Redis adapter connected");
     } catch (error) {
         console.log("⚠️  Redis not available — running Socket.io in-memory (fine for dev)");
@@ -69,13 +71,37 @@ io.on("connection", (socket) => {
     console.log(`🔌 Client connected: ${socket.id}`);
 
     // Join a community room for scoped broadcasts
-    socket.on("join_community_room", (communityId) => {
+    socket.on("join_community_room", async (communityId) => {
         if (communityId) {
             socket.join(`community:${communityId}`);
             socket.data.activeCommunityId = communityId;
             console.log(`   → ${socket.id} joined room community:${communityId}`);
 
-            if (io.voiceState?.channels && io.voiceState?.channelCommunity) {
+            const useRedisVoice = !!redisStateClient && redisStateClient.status === "ready";
+            if (useRedisVoice) {
+                try {
+                    const communityValue = communityId?.toString?.() || String(communityId);
+                    const keys = await redisStateClient.keys("voice:channel:*:community");
+                    for (const key of keys) {
+                        const value = await redisStateClient.get(key);
+                        if (!value || value.toString() !== communityValue) continue;
+                        const channelId = key.split(":")[2];
+                        const memberMap = await redisStateClient.hgetall(`voice:channel:${channelId}:members`);
+                        const members = Object.entries(memberMap || {}).map(([sid, raw]) => {
+                            try {
+                                return { socketId: sid, ...JSON.parse(raw) };
+                            } catch {
+                                return null;
+                            }
+                        }).filter(Boolean);
+                        socket.emit("voice:members", { channelId, members });
+                    }
+                } catch {
+                    // fall back to process-local state below
+                }
+            }
+
+            if (!useRedisVoice && io.voiceState?.channels && io.voiceState?.channelCommunity) {
                 const targetId = communityId?.toString?.() || String(communityId);
                 io.voiceState.channelCommunity.forEach((communityForChannel, channelId) => {
                     const channelCommunityId = communityForChannel?.toString?.() || String(communityForChannel);
@@ -303,25 +329,44 @@ io.on("connection", (socket) => {
         io.voiceState.cleanupTimers.set(channelKey, timeout);
     };
 
-    const emitVoiceMembers = (channelId, communityOverride) => {
-        const channelKey = channelId?.toString?.() || String(channelId);
+    const useRedisVoiceState = () => !!redisStateClient && redisStateClient.status === "ready";
+
+    const readVoiceMembers = async (channelKey) => {
+        if (useRedisVoiceState()) {
+            const map = await redisStateClient.hgetall(`voice:channel:${channelKey}:members`);
+            return Object.entries(map || {}).map(([sid, raw]) => {
+                try {
+                    return { socketId: sid, ...JSON.parse(raw) };
+                } catch {
+                    return null;
+                }
+            }).filter(Boolean);
+        }
         const channelMap = io.voiceState.channels.get(channelKey);
-        const members = channelMap
-            ? Array.from(channelMap.entries()).map(([sid, info]) => ({
-                  socketId: sid,
-                  ...info,
-              }))
+        return channelMap
+            ? Array.from(channelMap.entries()).map(([sid, info]) => ({ socketId: sid, ...info }))
             : [];
+    };
+
+    const emitVoiceMembers = async (channelId, communityOverride) => {
+        const channelKey = channelId?.toString?.() || String(channelId);
+        const members = await readVoiceMembers(channelKey);
         io.to(`voice:${channelKey}`).emit("voice:members", { channelId: channelKey, members });
         io.to(`voicewatch:${channelKey}`).emit("voice:members", { channelId: channelKey, members });
-        const communityId = communityOverride || io.voiceState.channelCommunity.get(channelKey);
+        let communityId = communityOverride || io.voiceState.channelCommunity.get(channelKey);
+        if (!communityId && useRedisVoiceState()) {
+            communityId = await redisStateClient.get(`voice:channel:${channelKey}:community`);
+        }
         if (communityId) {
             io.to(`community:${communityId}`).emit("voice:members", { channelId: channelKey, members });
         }
     };
 
-    const leaveVoiceChannel = () => {
-        const currentChannel = io.voiceState.socketToChannel.get(socket.id);
+    const leaveVoiceChannel = async () => {
+        let currentChannel = io.voiceState.socketToChannel.get(socket.id);
+        if (!currentChannel && useRedisVoiceState()) {
+            currentChannel = await redisStateClient.get(`voice:socket:${socket.id}:channel`);
+        }
         if (!currentChannel) return;
         const channelMap = io.voiceState.channels.get(currentChannel);
         const communityId = io.voiceState.channelCommunity.get(currentChannel);
@@ -332,12 +377,20 @@ io.on("connection", (socket) => {
             }
         }
         io.voiceState.socketToChannel.delete(socket.id);
+        if (useRedisVoiceState()) {
+            await redisStateClient.hdel(`voice:channel:${currentChannel}:members`, socket.id);
+            await redisStateClient.del(`voice:socket:${socket.id}:channel`);
+            const leftCount = await redisStateClient.hlen(`voice:channel:${currentChannel}:members`);
+            if (leftCount === 0) {
+                await redisStateClient.del(`voice:channel:${currentChannel}:community`);
+            }
+        }
         socket.leave(`voice:${currentChannel}`);
         socket.to(`voice:${currentChannel}`).emit("voice:peer-left", { socketId: socket.id });
-        emitVoiceMembers(currentChannel, communityId);
+        await emitVoiceMembers(currentChannel, communityId);
     };
 
-    socket.on("voice:join", ({ channelId, user, communityId }) => {
+    socket.on("voice:join", async ({ channelId, user, communityId }) => {
         if (!channelId) return;
         const channelKey = channelId?.toString?.() || String(channelId);
         if (user?.userId) {
@@ -352,11 +405,11 @@ io.on("connection", (socket) => {
             return;
         }
         clearRoomCleanup(channelKey);
-        leaveVoiceChannel();
+        await leaveVoiceChannel();
         socket.join(`voice:${channelKey}`);
 
         const channelMap = io.voiceState.channels.get(channelKey) || new Map();
-        channelMap.set(socket.id, {
+        const voiceInfo = {
             userId: user?.userId || null,
             displayName: user?.displayName || "Member",
             avatar: user?.avatar || "",
@@ -364,12 +417,20 @@ io.on("connection", (socket) => {
             isSharing: false,
             isCameraOn: false,
             screenStreamId: null,
-        });
+        };
+        channelMap.set(socket.id, voiceInfo);
         io.voiceState.channels.set(channelKey, channelMap);
         io.voiceState.socketToChannel.set(socket.id, channelKey);
         const resolvedCommunityId = communityId || socket.data.activeCommunityId;
         if (resolvedCommunityId) {
             io.voiceState.channelCommunity.set(channelKey, resolvedCommunityId);
+        }
+        if (useRedisVoiceState()) {
+            await redisStateClient.hset(`voice:channel:${channelKey}:members`, socket.id, JSON.stringify(voiceInfo));
+            await redisStateClient.set(`voice:socket:${socket.id}:channel`, channelKey, "EX", 60 * 60 * 12);
+            if (resolvedCommunityId) {
+                await redisStateClient.set(`voice:channel:${channelKey}:community`, `${resolvedCommunityId}`);
+            }
         }
 
         const peers = Array.from(channelMap.entries())
@@ -384,11 +445,11 @@ io.on("connection", (socket) => {
             avatar: user?.avatar || "",
             isMuted: false,
         });
-        emitVoiceMembers(channelKey);
+        await emitVoiceMembers(channelKey);
     });
 
-    socket.on("voice:leave", () => {
-        leaveVoiceChannel();
+    socket.on("voice:leave", async () => {
+        await leaveVoiceChannel();
     });
 
     // ── Call Room Invites ─────────────────────────────────────────────────
@@ -491,11 +552,11 @@ io.on("connection", (socket) => {
         io.to(to).emit("signal", { from: socket.id, fromUserId: socket.data.userId || null, data });
     });
 
-    socket.on("voice:watch", ({ channelId }) => {
+    socket.on("voice:watch", async ({ channelId }) => {
         if (!channelId) return;
         const channelKey = channelId?.toString?.() || String(channelId);
         socket.join(`voicewatch:${channelKey}`);
-        emitVoiceMembers(channelKey);
+        await emitVoiceMembers(channelKey);
     });
 
     socket.on("voice:unwatch", ({ channelId }) => {
@@ -504,16 +565,10 @@ io.on("connection", (socket) => {
         socket.leave(`voicewatch:${channelKey}`);
     });
 
-    socket.on("voice:peek", ({ channelId }) => {
+    socket.on("voice:peek", async ({ channelId }) => {
         if (!channelId) return;
         const channelKey = channelId?.toString?.() || String(channelId);
-        const channelMap = io.voiceState.channels.get(channelKey);
-        const members = channelMap
-            ? Array.from(channelMap.entries()).map(([sid, info]) => ({
-                  socketId: sid,
-                  ...info,
-              }))
-            : [];
+        const members = await readVoiceMembers(channelKey);
         socket.emit("voice:room-status", { roomId: channelKey, members });
     });
 
@@ -522,64 +577,84 @@ io.on("connection", (socket) => {
         io.to(to).emit("voice:signal", { from: socket.id, data });
     });
 
-    socket.on("voice:share-stop", ({ channelId }) => {
+    socket.on("voice:share-stop", async ({ channelId }) => {
         if (!channelId) return;
         const channelKey = channelId?.toString?.() || String(channelId);
         const channelMap = io.voiceState?.channels?.get(channelKey);
         if (channelMap?.has(socket.id)) {
             const current = channelMap.get(socket.id);
-            channelMap.set(socket.id, { ...current, isSharing: false, screenStreamId: null });
-            emitVoiceMembers(channelKey);
+            const updated = { ...current, isSharing: false, screenStreamId: null };
+            channelMap.set(socket.id, updated);
+            if (useRedisVoiceState()) {
+                await redisStateClient.hset(`voice:channel:${channelKey}:members`, socket.id, JSON.stringify(updated));
+            }
+            await emitVoiceMembers(channelKey);
         }
         socket.to(`voice:${channelId}`).emit("voice:share-stopped", { socketId: socket.id });
     });
 
-    socket.on("voice:share-start", ({ channelId, streamId }) => {
+    socket.on("voice:share-start", async ({ channelId, streamId }) => {
         if (!channelId) return;
         const channelKey = channelId?.toString?.() || String(channelId);
         const channelMap = io.voiceState?.channels?.get(channelKey);
         if (channelMap?.has(socket.id)) {
             const current = channelMap.get(socket.id);
-            channelMap.set(socket.id, { ...current, isSharing: true, screenStreamId: streamId || null });
-            emitVoiceMembers(channelKey);
+            const updated = { ...current, isSharing: true, screenStreamId: streamId || null };
+            channelMap.set(socket.id, updated);
+            if (useRedisVoiceState()) {
+                await redisStateClient.hset(`voice:channel:${channelKey}:members`, socket.id, JSON.stringify(updated));
+            }
+            await emitVoiceMembers(channelKey);
         }
         socket.to(`voice:${channelId}`).emit("voice:share-started", { socketId: socket.id, streamId: streamId || null });
     });
 
-    socket.on("voice:camera-stop", ({ channelId }) => {
+    socket.on("voice:camera-stop", async ({ channelId }) => {
         if (!channelId) return;
         const channelKey = channelId?.toString?.() || String(channelId);
         const channelMap = io.voiceState?.channels?.get(channelKey);
         if (channelMap?.has(socket.id)) {
             const current = channelMap.get(socket.id);
-            channelMap.set(socket.id, { ...current, isCameraOn: false });
-            emitVoiceMembers(channelKey);
+            const updated = { ...current, isCameraOn: false };
+            channelMap.set(socket.id, updated);
+            if (useRedisVoiceState()) {
+                await redisStateClient.hset(`voice:channel:${channelKey}:members`, socket.id, JSON.stringify(updated));
+            }
+            await emitVoiceMembers(channelKey);
         }
         socket.to(`voice:${channelId}`).emit("voice:camera-stopped", { socketId: socket.id });
     });
 
-    socket.on("voice:camera-start", ({ channelId }) => {
+    socket.on("voice:camera-start", async ({ channelId }) => {
         if (!channelId) return;
         const channelKey = channelId?.toString?.() || String(channelId);
         const channelMap = io.voiceState?.channels?.get(channelKey);
         if (channelMap?.has(socket.id)) {
             const current = channelMap.get(socket.id);
-            channelMap.set(socket.id, { ...current, isCameraOn: true });
-            emitVoiceMembers(channelKey);
+            const updated = { ...current, isCameraOn: true };
+            channelMap.set(socket.id, updated);
+            if (useRedisVoiceState()) {
+                await redisStateClient.hset(`voice:channel:${channelKey}:members`, socket.id, JSON.stringify(updated));
+            }
+            await emitVoiceMembers(channelKey);
         }
     });
 
-    socket.on("voice:mute", ({ channelId, isMuted }) => {
+    socket.on("voice:mute", async ({ channelId, isMuted }) => {
         const channelKey = channelId?.toString?.() || String(channelId);
         const channelMap = io.voiceState?.channels?.get(channelKey);
         if (!channelMap) return;
         const userInfo = channelMap.get(socket.id);
         if (!userInfo) return;
-        channelMap.set(socket.id, { ...userInfo, isMuted: !!isMuted });
-        emitVoiceMembers(channelKey);
+        const updated = { ...userInfo, isMuted: !!isMuted };
+        channelMap.set(socket.id, updated);
+        if (useRedisVoiceState()) {
+            await redisStateClient.hset(`voice:channel:${channelKey}:members`, socket.id, JSON.stringify(updated));
+        }
+        await emitVoiceMembers(channelKey);
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
         if (socket.data.activeCallRoom) {
             const roomId = socket.data.activeCallRoom;
             const result = leaveCallRoom(socket, roomId);
@@ -587,7 +662,7 @@ io.on("connection", (socket) => {
                 socket.to(`callroom:${roomId}`).emit("user-left", { roomId, userId: result.userId, socketId: socket.id });
             }
         }
-        leaveVoiceChannel();
+        await leaveVoiceChannel();
         console.log(`🔌 Client disconnected: ${socket.id}`);
     });
 });

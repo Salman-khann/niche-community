@@ -18,10 +18,15 @@ const postSchema = new mongoose.Schema({
   mediaURLs: { type: [String], default: [] },
   resourceLinks: { type: [resourceLinkSchema], default: [] },
   tags: { type: [String], default: [] },
+  hashtags: { type: [String], default: [] },
   poll: {
     question: { type: String },
     options: [pollOptionSchema],
   },
+  pinnedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  pinnedAt: { type: Date, default: null },
+  featuredBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  featuredAt: { type: Date, default: null },
   likesCount: { type: Number, default: 0 },
   likedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   commentsCount: { type: Number, default: 0 },
@@ -36,5 +41,7 @@ const postSchema = new mongoose.Schema({
 postSchema.index({ communityId: 1, createdAt: -1 });
 postSchema.index({ channelId: 1, createdAt: -1 });
 postSchema.index({ tags: 1 });
+postSchema.index({ hashtags: 1 });
+postSchema.index({ communityId: 1, featuredAt: -1, pinnedAt: -1, createdAt: -1 });
 
 export default mongoose.model("Post", postSchema);

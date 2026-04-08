@@ -6,6 +6,11 @@ const API_URL = apiUrl('/api/notifications');
 export const useNotificationStore = create((set, get) => ({
     notifications: [],
     unreadCount: 0,
+    prefs: {
+        emailDigestEnabled: false,
+        digestFrequency: 'daily',
+        pushEnabled: false,
+    },
     isLoading: false,
     error: null,
 
@@ -69,6 +74,37 @@ export const useNotificationStore = create((set, get) => ({
                 })),
                 unreadCount: 0,
             }));
+        } catch (error) {
+            set({ error: error.message });
+            throw error;
+        }
+    },
+
+    fetchPrefs: async () => {
+        try {
+            const res = await fetch(`${API_URL}/prefs`, { credentials: 'include' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to fetch preferences');
+            set({ prefs: data.prefs || get().prefs });
+            return data.prefs;
+        } catch (error) {
+            set({ error: error.message });
+            throw error;
+        }
+    },
+
+    updatePrefs: async (partial) => {
+        try {
+            const res = await fetch(`${API_URL}/prefs`, {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(partial || {}),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to update preferences');
+            set({ prefs: data.prefs || get().prefs });
+            return data.prefs;
         } catch (error) {
             set({ error: error.message });
             throw error;

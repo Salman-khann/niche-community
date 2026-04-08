@@ -9,6 +9,19 @@ import { filterBadWords } from "../utils/badWords.js";
 import { trackReputationSignal } from "../utils/reputationSignals.js";
 import { tryHandleBotCommand } from "../utils/leaderboardBot.js";
 
+const shapeCommentReactions = (comment, viewerUserId) => (
+    (comment?.reactions || [])
+        .map((entry) => {
+            const users = entry?.users || [];
+            return {
+                emoji: entry.emoji,
+                count: users.length,
+                reacted: users.some((id) => id?.toString?.() === viewerUserId),
+            };
+        })
+        .filter((entry) => entry.count > 0)
+);
+
 const SUSPICIOUS_TLDS = new Set(['zip', 'mov', 'xyz', 'top', 'gq', 'tk', 'ml', 'cf', 'ru']);
 const SUSPICIOUS_DOMAINS = new Set(['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'is.gd', 'cutt.ly', 'ow.ly', 'rb.gy']);
 
@@ -267,6 +280,7 @@ export const getChannelMessageComments = async (req, res) => {
             _id: c._id,
             content: c.content,
             createdAt: c.createdAt,
+            reactions: shapeCommentReactions(c, req.userId),
             author: {
                 _id: c.authorId?._id,
                 displayName: c.authorId?.profileId?.displayName || c.authorId?.name || "Member",
@@ -325,6 +339,7 @@ export const addChannelMessageComment = async (req, res) => {
             _id: comment._id,
             content: comment.content,
             createdAt: comment.createdAt,
+            reactions: [],
             author: {
                 _id: author?._id,
                 displayName: author?.profileId?.displayName || author?.name || "Member",
@@ -399,6 +414,67 @@ export const addChannelMessageComment = async (req, res) => {
     } catch (error) {
         console.log("Error in addChannelMessageComment:", error);
         res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── Toggle reaction on channel message comment ─────────────────────────────
+export const reactToChannelMessageComment = async (req, res) => {
+    try {
+        const { channelId, messageId, commentId } = req.params;
+        const { emoji } = req.body || {};
+        const userId = req.userId;
+
+        if (!emoji || typeof emoji !== "string" || emoji.trim().length === 0) {
+            return res.status(400).json({ success: false, message: "Emoji is required" });
+        }
+
+        const normalizedEmoji = emoji.trim().slice(0, 16);
+
+        const message = await ChannelMessage.findById(messageId).lean();
+        if (!message || message.channelId.toString() !== channelId) {
+            return res.status(404).json({ success: false, message: "Message not found" });
+        }
+
+        const comment = await ChannelMessageComment.findOne({ _id: commentId, messageId });
+        if (!comment) {
+            return res.status(404).json({ success: false, message: "Comment not found" });
+        }
+
+        const existing = comment.reactions.find((entry) => entry.emoji === normalizedEmoji);
+        let reacted = false;
+
+        if (!existing) {
+            comment.reactions.push({ emoji: normalizedEmoji, users: [userId] });
+            reacted = true;
+        } else {
+            const alreadyReacted = existing.users.some((id) => id.toString() === userId);
+            if (alreadyReacted) {
+                existing.users = existing.users.filter((id) => id.toString() !== userId);
+                reacted = false;
+            } else {
+                existing.users.push(userId);
+                reacted = true;
+            }
+            comment.reactions = comment.reactions.filter((entry) => (entry.users || []).length > 0);
+        }
+
+        await comment.save();
+
+        const reactions = shapeCommentReactions(comment.toObject(), userId);
+
+        const payload = {
+            messageId,
+            commentId: comment._id,
+            emoji: normalizedEmoji,
+            reacted,
+            reactions,
+        };
+
+        io.to(`channel:${channelId}`).emit("channel:comment-reaction", payload);
+        return res.status(200).json({ success: true, ...payload });
+    } catch (error) {
+        console.log("Error in reactToChannelMessageComment:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
     }
 };
 

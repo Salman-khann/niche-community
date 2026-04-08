@@ -70,7 +70,23 @@ const useSocket = (userId, communityId) => {
 
         const handleNotification = (notification) => {
             if (!notification?._id) return;
-            useNotificationStore.getState().addNotification(notification);
+            const store = useNotificationStore.getState();
+            store.addNotification(notification);
+
+            const prefs = store.prefs || {};
+            const canBrowserNotify = typeof window !== 'undefined' && 'Notification' in window;
+            if (!prefs.pushEnabled || !canBrowserNotify) return;
+            if (document.visibilityState === 'visible') return;
+            if (Notification.permission !== 'granted') return;
+
+            const meta = notification.meta || {};
+            const title = meta.eventTitle || meta.communityName || 'CircleCore';
+            const body = meta.commentSnippet || meta.postSnippet || meta.messageSnippet || 'You have a new notification';
+            try {
+                new Notification(title, { body, tag: `notif-${notification._id}` });
+            } catch {
+                // ignore browser notification errors
+            }
         };
         newSocket.on('new_notification', handleNotification);
 

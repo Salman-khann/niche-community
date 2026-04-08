@@ -11,12 +11,37 @@ const NotificationBell = () => {
     const dropdownRef = useRef(null);
 
     const navigate = useNavigate();
-    const { notifications, unreadCount, isLoading, fetchNotifications, markAsRead, markAllAsRead } = useNotificationStore();
+    const { notifications, unreadCount, isLoading, prefs, fetchNotifications, markAsRead, markAllAsRead, fetchPrefs, updatePrefs } = useNotificationStore();
     const { setActiveCommunity } = useWorkspaceStore();
     const { setActiveChannel } = useChannelStore();
     const { setScrollTarget } = useChannelMessageStore();
 
-    useEffect(() => { fetchNotifications().catch(() => { }); }, []);
+    useEffect(() => {
+        fetchNotifications().catch(() => { });
+        fetchPrefs().catch(() => { });
+    }, []);
+
+    const toggleEmailDigest = async () => {
+        try {
+            await updatePrefs({ emailDigestEnabled: !prefs.emailDigestEnabled });
+        } catch { }
+    };
+
+    const togglePush = async () => {
+        try {
+            if (!prefs.pushEnabled && typeof window !== 'undefined' && 'Notification' in window) {
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') return;
+            }
+            await updatePrefs({ pushEnabled: !prefs.pushEnabled });
+        } catch { }
+    };
+
+    const setDigestFrequency = async (value) => {
+        try {
+            await updatePrefs({ digestFrequency: value });
+        } catch { }
+    };
 
     useEffect(() => {
         const handleClickOutside = (e) => {
@@ -209,6 +234,41 @@ const NotificationBell = () => {
                     </div>
 
                     <div className="max-h-80 overflow-y-auto">
+                        <div className="px-4 py-3 border-b border-discord-border/50 bg-discord-darkest/40">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-semibold text-discord-light">Email digest</span>
+                                <button
+                                    onClick={toggleEmailDigest}
+                                    className={`w-10 h-5 rounded-full transition-colors ${prefs.emailDigestEnabled ? 'bg-blurple' : 'bg-discord-border'}`}
+                                >
+                                    <span className={`block w-4 h-4 bg-white rounded-full transition-transform ${prefs.emailDigestEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setDigestFrequency('daily')}
+                                    className={`px-2 py-1 rounded text-[11px] ${prefs.digestFrequency === 'daily' ? 'bg-blurple/20 text-blurple' : 'bg-discord-darkest text-discord-faint'}`}
+                                >
+                                    Daily
+                                </button>
+                                <button
+                                    onClick={() => setDigestFrequency('weekly')}
+                                    className={`px-2 py-1 rounded text-[11px] ${prefs.digestFrequency === 'weekly' ? 'bg-blurple/20 text-blurple' : 'bg-discord-darkest text-discord-faint'}`}
+                                >
+                                    Weekly
+                                </button>
+                            </div>
+
+                            <div className="flex items-center justify-between mt-3">
+                                <span className="text-xs font-semibold text-discord-light">Push notifications</span>
+                                <button
+                                    onClick={togglePush}
+                                    className={`w-10 h-5 rounded-full transition-colors ${prefs.pushEnabled ? 'bg-emerald-500' : 'bg-discord-border'}`}
+                                >
+                                    <span className={`block w-4 h-4 bg-white rounded-full transition-transform ${prefs.pushEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                                </button>
+                            </div>
+                        </div>
                         {isLoading ? (
                             <div className="flex items-center justify-center py-8">
                                 <div className="w-5 h-5 rounded-full border-2 border-blurple border-t-transparent animate-spin" />

@@ -7,24 +7,71 @@ import User from "../models/user.model.js";
 import { io } from "../socket.js";
 import { trackReputationSignal } from "../utils/reputationSignals.js";
 
+const extractHashtags = (content = "", tags = []) => {
+    const fromContent = (content.match(/#([\w-]+)/g) || [])
+        .map((h) => h.replace(/^#/, "").toLowerCase().trim())
+        .filter(Boolean);
+    const fromTags = (Array.isArray(tags) ? tags : [])
+        .map((t) => String(t || "").toLowerCase().replace(/\s+/g, "-").trim())
+        .filter(Boolean);
+    return [...new Set([...fromContent, ...fromTags])].slice(0, 20);
+};
+
+const shapeCommentReactions = (comment, viewerUserId) => (
+    (comment?.reactions || [])
+        .map((entry) => {
+            const users = entry?.users || [];
+            return {
+                emoji: entry.emoji,
+                count: users.length,
+                reacted: users.some((id) => id?.toString?.() === viewerUserId),
+            };
+        })
+        .filter((entry) => entry.count > 0)
+);
+
 // ── Get Feed ────────────────────────────────────────────────────────────────
 export const getFeed = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
         const tag = req.query.tag || null;
+        const hashtag = req.query.hashtag || null;
         const channelId = req.query.channelId || null;
+        const q = (req.query.q || "").trim();
+        const featuredOnly = String(req.query.featured || "").toLowerCase() === "true";
+        const pinnedOnly = String(req.query.pinned || "").toLowerCase() === "true";
+        const sort = String(req.query.sort || "latest").toLowerCase();
 
         const filter = { communityId: req.communityId };
         if (tag) filter.tags = tag;
+        if (hashtag) filter.hashtags = hashtag.toLowerCase();
         if (channelId) filter.channelId = channelId;
+        if (featuredOnly) filter.featuredAt = { $ne: null };
+        if (pinnedOnly) filter.pinnedAt = { $ne: null };
+        if (q) {
+            filter.$or = [
+                { content: { $regex: q, $options: "i" } },
+                { tags: { $regex: q, $options: "i" } },
+                { hashtags: { $regex: q, $options: "i" } },
+            ];
+        }
+
+        let sortSpec = { createdAt: -1 };
+        if (sort === "top") {
+            sortSpec = { likesCount: -1, commentsCount: -1, createdAt: -1 };
+        } else if (sort === "featured") {
+            sortSpec = { featuredAt: -1, pinnedAt: -1, createdAt: -1 };
+        } else if (sort === "pinned") {
+            sortSpec = { pinnedAt: -1, createdAt: -1 };
+        }
 
         const totalPosts = await Post.countDocuments(filter);
         const totalPages = Math.ceil(totalPosts / limit) || 1;
         const skip = (page - 1) * limit;
 
         const posts = await Post.find(filter)
-            .sort({ createdAt: -1 })
+            .sort(sortSpec)
             .skip(skip)
             .limit(limit)
             .populate("authorId", "name email")
@@ -125,6 +172,7 @@ export const createPost = async (req, res) => {
             mediaURLs: mediaURLs || [],
             resourceLinks: normalizedResourceLinks,
             tags: tags || [],
+            hashtags: extractHashtags(content || "", tags || []),
             mentions: Array.isArray(mentions) ? mentions : [],
         };
 
@@ -208,6 +256,99 @@ export const createPost = async (req, res) => {
     } catch (error) {
         console.log("Error in createPost:", error);
         res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── Toggle pin / unpin post ────────────────────────────────────────────────
+export const togglePinPost = async (req, res) => {
+    try {
+        const { id: postId } = req.params;
+        const userId = req.userId;
+
+        if (!["admin", "moderator"].includes(req.communityRole)) {
+            return res.status(403).json({ success: false, message: "Only admins or moderators can pin posts" });
+        }
+
+        const post = await Post.findOne({ _id: postId, communityId: req.communityId });
+        if (!post) return res.status(404).json({ success: false, message: "Post not found" });
+
+        const alreadyPinned = (post.pinnedBy || []).some((id) => id.toString() === userId);
+        if (alreadyPinned) {
+            post.pinnedBy.pull(userId);
+            if ((post.pinnedBy || []).length === 0) post.pinnedAt = null;
+        } else {
+            post.pinnedBy.push(userId);
+            post.pinnedAt = new Date();
+        }
+        await post.save();
+
+        return res.status(200).json({
+            success: true,
+            postId,
+            pinned: !alreadyPinned,
+            pinnedAt: post.pinnedAt,
+            pinnedBy: post.pinnedBy,
+        });
+    } catch (error) {
+        console.log("Error in togglePinPost:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── Toggle feature / unfeature post ────────────────────────────────────────
+export const toggleFeaturePost = async (req, res) => {
+    try {
+        const { id: postId } = req.params;
+        const userId = req.userId;
+
+        if (!["admin", "moderator"].includes(req.communityRole)) {
+            return res.status(403).json({ success: false, message: "Only admins or moderators can feature posts" });
+        }
+
+        const post = await Post.findOne({ _id: postId, communityId: req.communityId });
+        if (!post) return res.status(404).json({ success: false, message: "Post not found" });
+
+        const alreadyFeatured = (post.featuredBy || []).some((id) => id.toString() === userId);
+        if (alreadyFeatured) {
+            post.featuredBy.pull(userId);
+            if ((post.featuredBy || []).length === 0) post.featuredAt = null;
+        } else {
+            post.featuredBy.push(userId);
+            post.featuredAt = new Date();
+        }
+        await post.save();
+
+        return res.status(200).json({
+            success: true,
+            postId,
+            featured: !alreadyFeatured,
+            featuredAt: post.featuredAt,
+            featuredBy: post.featuredBy,
+        });
+    } catch (error) {
+        console.log("Error in toggleFeaturePost:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── Trending hashtags ───────────────────────────────────────────────────────
+export const getTrendingHashtags = async (req, res) => {
+    try {
+        const rows = await Post.aggregate([
+            { $match: { communityId: req.communityId, hashtags: { $exists: true, $ne: [] } } },
+            { $unwind: "$hashtags" },
+            { $group: { _id: "$hashtags", count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: 20 },
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            hashtags: rows.map((r) => ({ tag: r._id, count: r.count })),
+        });
+    } catch (error) {
+        console.log("Error in getTrendingHashtags:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
     }
 };
 
@@ -330,6 +471,7 @@ export const addComment = async (req, res) => {
 
         const enrichedComment = {
             ...populated,
+            reactions: shapeCommentReactions(populated, req.userId),
             author: {
                 _id: populated.authorId._id,
                 name: populated.authorId.name,
@@ -503,6 +645,7 @@ export const getComments = async (req, res) => {
 
         const enriched = comments.map((c) => ({
             ...c,
+            reactions: shapeCommentReactions(c, req.userId),
             author: {
                 _id: c.authorId._id,
                 name: c.authorId.name,
@@ -516,6 +659,66 @@ export const getComments = async (req, res) => {
     } catch (error) {
         console.log("Error in getComments:", error);
         res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── Toggle Reaction on a Post Comment ───────────────────────────────────────
+export const reactToComment = async (req, res) => {
+    try {
+        const { postId, replyId } = req.params;
+        const { emoji } = req.body || {};
+        const userId = req.userId;
+
+        if (!emoji || typeof emoji !== "string" || emoji.trim().length === 0) {
+            return res.status(400).json({ success: false, message: "Emoji is required" });
+        }
+
+        const normalizedEmoji = emoji.trim().slice(0, 16);
+
+        const comment = await Comment.findOne({ _id: replyId, postId });
+        if (!comment) {
+            return res.status(404).json({ success: false, message: "Comment not found" });
+        }
+
+        const existing = comment.reactions.find((entry) => entry.emoji === normalizedEmoji);
+        let reacted = false;
+
+        if (!existing) {
+            comment.reactions.push({ emoji: normalizedEmoji, users: [userId] });
+            reacted = true;
+        } else {
+            const alreadyReacted = existing.users.some((id) => id.toString() === userId);
+            if (alreadyReacted) {
+                existing.users = existing.users.filter((id) => id.toString() !== userId);
+                reacted = false;
+            } else {
+                existing.users.push(userId);
+                reacted = true;
+            }
+            comment.reactions = comment.reactions.filter((entry) => (entry.users || []).length > 0);
+        }
+
+        await comment.save();
+
+        const reactions = shapeCommentReactions(comment.toObject(), userId);
+
+        io.to("feed").emit("comment_reaction", {
+            postId,
+            commentId: comment._id,
+            reactions,
+        });
+
+        return res.status(200).json({
+            success: true,
+            postId,
+            commentId: comment._id,
+            emoji: normalizedEmoji,
+            reacted,
+            reactions,
+        });
+    } catch (error) {
+        console.log("Error in reactToComment:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
     }
 };
 

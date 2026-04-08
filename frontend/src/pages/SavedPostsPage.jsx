@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bookmark, Sparkles, ArrowLeft, LogOut } from 'lucide-react';
+import { Bookmark, Sparkles, ArrowLeft, LogOut, Search, Hash, Pin, Star } from 'lucide-react';
 import Button from '../components/Button';
 import PostCard from '../components/PostCard';
 import NotificationBell from '../components/NotificationBell';
@@ -11,9 +11,15 @@ const SavedPostsPage = () => {
     const [mounted, setMounted] = useState(false);
     const [savedPosts, setSavedPosts] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [query, setQuery] = useState('');
+    const [selectedHashtag, setSelectedHashtag] = useState('');
+    const [onlyPinned, setOnlyPinned] = useState(false);
+    const [onlyFeatured, setOnlyFeatured] = useState(false);
+    const [sortBy, setSortBy] = useState('latest');
+    const [trendingHashtags, setTrendingHashtags] = useState([]);
     const navigate = useNavigate();
 
-    const { fetchSavedPosts } = useFeedStore();
+    const { fetchSavedPosts, fetchTrendingHashtags } = useFeedStore();
     const { user, logout } = useAuthStore();
 
     useEffect(() => { const t = setTimeout(() => setMounted(true), 80); return () => clearTimeout(t); }, []);
@@ -27,6 +33,56 @@ const SavedPostsPage = () => {
             setLoading(false);
         })();
     }, []);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const tags = await fetchTrendingHashtags();
+                setTrendingHashtags(tags);
+            } catch {
+                setTrendingHashtags([]);
+            }
+        })();
+    }, [fetchTrendingHashtags]);
+
+    const filteredPosts = useMemo(() => {
+        const text = query.trim().toLowerCase();
+        let next = [...savedPosts];
+
+        if (text) {
+            next = next.filter((post) => {
+                const content = (post.content || '').toLowerCase();
+                const tags = (post.tags || []).join(' ').toLowerCase();
+                const hashtags = (post.hashtags || []).join(' ').toLowerCase();
+                const author = (post.author?.name || '').toLowerCase();
+                return content.includes(text) || tags.includes(text) || hashtags.includes(text) || author.includes(text);
+            });
+        }
+
+        if (selectedHashtag) {
+            next = next.filter((post) => (post.hashtags || []).includes(selectedHashtag));
+        }
+
+        if (onlyPinned) next = next.filter((post) => !!post.pinnedAt);
+        if (onlyFeatured) next = next.filter((post) => !!post.featuredAt);
+
+        next.sort((a, b) => {
+            if (sortBy === 'top') {
+                const aScore = (a.likesCount || 0) + (a.commentsCount || 0);
+                const bScore = (b.likesCount || 0) + (b.commentsCount || 0);
+                return bScore - aScore;
+            }
+            if (sortBy === 'featured') {
+                return new Date(b.featuredAt || 0) - new Date(a.featuredAt || 0) || new Date(b.createdAt) - new Date(a.createdAt);
+            }
+            if (sortBy === 'pinned') {
+                return new Date(b.pinnedAt || 0) - new Date(a.pinnedAt || 0) || new Date(b.createdAt) - new Date(a.createdAt);
+            }
+            return new Date(b.createdAt) - new Date(a.createdAt);
+        });
+
+        return next;
+    }, [savedPosts, query, selectedHashtag, onlyPinned, onlyFeatured, sortBy]);
 
     const handleLogout = async () => { await logout(); navigate('/login'); };
 
@@ -73,11 +129,80 @@ const SavedPostsPage = () => {
                         <div>
                             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Saved Posts</h1>
                             <p className="text-sm text-discord-muted font-medium">
-                                {loading ? 'Loading…' : `${savedPosts.length} saved post${savedPosts.length !== 1 ? 's' : ''}`}
+                                {loading ? 'Loading…' : `${filteredPosts.length} result${filteredPosts.length !== 1 ? 's' : ''} from ${savedPosts.length} saved`}
                             </p>
                         </div>
                     </div>
                 </div>
+
+                {!loading && (
+                    <div className="mb-5 rounded-2xl border border-discord-border/50 bg-discord-darker/70 p-3.5 sm:p-4 space-y-3">
+                        <div className="flex items-center gap-2 rounded-xl border border-discord-border/60 bg-discord-darkest/50 px-3 py-2.5">
+                            <Search className="w-4 h-4 text-discord-faint shrink-0" />
+                            <input
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                placeholder="Search saved posts, tags, hashtags..."
+                                className="bg-transparent text-sm text-discord-light placeholder:text-discord-faint w-full outline-none"
+                            />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setOnlyPinned((v) => !v)}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${onlyPinned ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-discord-darkest/60 text-discord-muted border-discord-border hover:text-discord-light'}`}
+                            >
+                                <Pin className="w-3.5 h-3.5" /> Pinned
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setOnlyFeatured((v) => !v)}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${onlyFeatured ? 'bg-sky-500/15 text-sky-300 border-sky-500/30' : 'bg-discord-darkest/60 text-discord-muted border-discord-border hover:text-discord-light'}`}
+                            >
+                                <Star className="w-3.5 h-3.5" /> Featured
+                            </button>
+
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                className="ml-auto min-w-[140px] rounded-lg border border-discord-border bg-discord-darkest/60 px-2.5 py-1.5 text-xs font-semibold text-discord-light outline-none"
+                            >
+                                <option value="latest">Latest</option>
+                                <option value="top">Top</option>
+                                <option value="featured">Featured first</option>
+                                <option value="pinned">Pinned first</option>
+                            </select>
+                        </div>
+
+                        {trendingHashtags.length > 0 && (
+                            <div className="space-y-1.5">
+                                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-discord-faint">
+                                    <Hash className="w-3.5 h-3.5" /> Trending hashtags
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedHashtag('')}
+                                        className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${!selectedHashtag ? 'bg-blurple/15 text-blurple border-blurple/35' : 'bg-discord-darkest/60 text-discord-muted border-discord-border'}`}
+                                    >
+                                        All
+                                    </button>
+                                    {trendingHashtags.slice(0, 8).map((row) => (
+                                        <button
+                                            key={row.tag}
+                                            type="button"
+                                            onClick={() => setSelectedHashtag((prev) => prev === row.tag ? '' : row.tag)}
+                                            className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${selectedHashtag === row.tag ? 'bg-sky-500/15 text-sky-300 border-sky-500/35' : 'bg-discord-darkest/60 text-discord-muted border-discord-border hover:text-discord-light'}`}
+                                        >
+                                            #{row.tag} <span className="text-discord-faint">{row.count}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Loading */}
                 {loading && (
@@ -87,15 +212,15 @@ const SavedPostsPage = () => {
                 )}
 
                 {/* Empty state */}
-                {!loading && savedPosts.length === 0 && (
+                {!loading && filteredPosts.length === 0 && (
                     <div className={`transition-all duration-700 delay-200 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
                         <div className="bg-discord-darker rounded-2xl border border-discord-border/50 p-10 text-center">
                             <div className="w-16 h-16 rounded-2xl bg-amber-500/10 flex items-center justify-center mx-auto mb-5">
                                 <Bookmark className="w-7 h-7 text-amber-400" strokeWidth={1.5} />
                             </div>
-                            <h2 className="text-lg font-bold text-white mb-2">No saved posts yet</h2>
+                            <h2 className="text-lg font-bold text-white mb-2">No posts match this view</h2>
                             <p className="text-sm text-discord-faint max-w-xs mx-auto mb-6">
-                                Click the bookmark icon on any post to save it here for later.
+                                Try clearing filters or save more posts from the feed.
                             </p>
                             <Button variant="primary" onClick={() => navigate('/feed')}>Browse Feed</Button>
                         </div>
@@ -103,9 +228,9 @@ const SavedPostsPage = () => {
                 )}
 
                 {/* Posts */}
-                {!loading && savedPosts.length > 0 && (
+                {!loading && filteredPosts.length > 0 && (
                     <div className="space-y-4">
-                        {savedPosts.map((post, i) => (
+                        {filteredPosts.map((post, i) => (
                             <div key={post._id}
                                 className={`transition-all duration-500 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
                                 style={{ transitionDelay: `${200 + i * 60}ms` }}>
@@ -114,7 +239,7 @@ const SavedPostsPage = () => {
                                         from {post.communityName}
                                     </p>
                                 )}
-                                <PostCard post={post} />
+                                <PostCard post={post} onHashtagClick={setSelectedHashtag} />
                             </div>
                         ))}
                     </div>

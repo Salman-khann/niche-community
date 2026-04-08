@@ -29,6 +29,8 @@ import serverInviteRoutes from './routes/serverInvite.route.js';
 import { stripeWebhook } from './controllers/billing.controller.js';
 import { ensureRootUser } from './utils/ensureRootUser.js';
 import { startLeaderboardBotScheduler } from './utils/leaderboardBot.js';
+import { startEventReminderScheduler } from './utils/eventReminderScheduler.js';
+import { startNotificationDigestScheduler } from './utils/notificationDigestScheduler.js';
 
 const allowedOrigins = (process.env.CLIENT_URL || '')
     .split(',')
@@ -87,6 +89,18 @@ server.listen(PORT, () => {
                 await startLeaderboardBotScheduler();
             } catch (error) {
                 console.log("⚠️  Leaderboard bot startup failed:", error.message || error);
+            }
+
+            try {
+                await startEventReminderScheduler();
+            } catch (error) {
+                console.log("⚠️  Event reminder scheduler startup failed:", error.message || error);
+            }
+
+            try {
+                await startNotificationDigestScheduler();
+            } catch (error) {
+                console.log("⚠️  Notification digest scheduler startup failed:", error.message || error);
             }
         }
         console.log(`Server is running on port ${PORT}`);
