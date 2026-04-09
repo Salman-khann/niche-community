@@ -9,6 +9,8 @@ import EmojiPicker from './EmojiPicker';
 import PinnedMessagesModal from './PinnedMessagesModal';
 import ChannelEditModal from './ChannelEditModal';
 import AttachmentPreviewCard from './AttachmentPreviewCard';
+import EmojiArt from './EmojiArt';
+import { CHAT_REACTION_EMOJIS, normalizeEmojiShortcodes } from '../utils/emojiShortcodes';
 
 const isImageUrl = (url) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(url) || url.includes('image/upload');
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -74,6 +76,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     const [isSwitching, setIsSwitching] = useState(false);
     const [hoveredMessageId, setHoveredMessageId] = useState(null);
     const [openMessageMenuId, setOpenMessageMenuId] = useState(null);
+    const [reactionPickerMessageId, setReactionPickerMessageId] = useState(null);
     const [copiedMessageId, setCopiedMessageId] = useState(null);
     const [pinsLoading, setPinsLoading] = useState(false);
     const [showReportModal, setShowReportModal] = useState(false);
@@ -94,7 +97,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     const commentInputRefs = useRef({});
     const scrollContainerRef = useRef(null);
     const sendLockRef = useRef(false);
-    const COMMENT_REACTIONS = ['👍', '❤️', '😂', '🔥', '👏'];
+    const COMMENT_REACTIONS = CHAT_REACTION_EMOJIS;
 
     const handleCloseEdit = () => {
         setShowEditModal(false);
@@ -235,6 +238,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         const onOutside = (e) => {
             if (messageMenuRef.current && !messageMenuRef.current.contains(e.target)) {
                 setOpenMessageMenuId(null);
+                setReactionPickerMessageId(null);
             }
         };
         document.addEventListener('mousedown', onOutside);
@@ -348,7 +352,8 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     const handleSend = async () => {
         if (sendLockRef.current || isUploading) return;
         if (!channel?._id) return;
-        const trimmed = text.trim();
+        const normalizedText = normalizeEmojiShortcodes(text);
+        const trimmed = normalizedText.trim();
         if (!trimmed && files.length === 0) return;
         sendLockRef.current = true;
         setIsUploading(true);
@@ -390,7 +395,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     };
 
     const handleCommentSend = async (messageId) => {
-        const textValue = (commentDrafts[messageId] || '').trim();
+        const textValue = normalizeEmojiShortcodes(commentDrafts[messageId] || '').trim();
         if (!textValue) return;
         const mentionIds = [];
         const tokens = textValue.match(/@([\w.-]+)/g) || [];
@@ -621,12 +626,12 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
 
     return (
         <>
-        <div className="flex-1 min-h-0 flex flex-col bg-[#181b24]">
-            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-6 bg-[#181b24]">
+        <div className="flex-1 min-h-0 flex flex-col bg-[#1a1a1e]">
+            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-6 bg-[#1a1a1e]">
                 {isLoading || isSwitching ? (
                     <div className="text-sm text-discord-faint">Loading messages...</div>
                 ) : error ? (
-                    <div className="max-w-2xl rounded-xl border border-discord-border/50 bg-discord-darkest/70 p-5">
+                    <div className="max-w-2xl rounded-xl border border-[#29292d]/55 bg-discord-darkest/70 p-5">
                         <p className="text-sm text-discord-light">{error}</p>
                         {canEditChannel && (
                             <button
@@ -656,14 +661,14 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                         )}
                     </div>
                 ) : (
-                    <div className="space-y-6">
+                    <div className="space-y-0">
                         {hasMoreMessages && (
                             <div className="flex justify-center">
                                 <button
                                     type="button"
                                     onClick={handleLoadOlder}
                                     disabled={isLoadingOlder}
-                                    className="px-3 py-1.5 rounded-md border border-discord-border/60 bg-discord-darkest/70 text-xs font-semibold text-discord-light hover:bg-discord-border-light/20 disabled:opacity-60"
+                                    className="px-3 py-1.5 rounded-md border border-[#29292d]/55 bg-discord-darkest/70 text-xs font-semibold text-discord-light hover:bg-discord-border-light/20 disabled:opacity-60"
                                 >
                                     {isLoadingOlder ? 'Loading older messages...' : 'Load older messages'}
                                 </button>
@@ -680,7 +685,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                 <div
                                     key={m._id}
                                     id={`message-${m._id}`}
-                                    className="group relative flex gap-3"
+                                    className="group relative flex gap-3 px-2 py-2 -mx-2 border-t border-[#29292d]/45 hover:bg-[#242428] transition-colors"
                                     onMouseEnter={() => setHoveredMessageId(m._id)}
                                     onMouseLeave={() => {
                                         if (openMessageMenuId !== m._id) setHoveredMessageId((prev) => (prev === m._id ? null : prev));
@@ -688,15 +693,15 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                 >
                                     {(hoveredMessageId === m._id || openMessageMenuId === m._id) && (
                                             <div className="absolute -top-4 right-0 z-20 flex items-center gap-1 rounded-lg border border-discord-border/70 bg-discord-darker p-1 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
-                                            {['😂', '❤️', '✅', '🏠'].map((emoji) => (
+                                            {CHAT_REACTION_EMOJIS.map((emoji) => (
                                                 <button
                                                     key={`${m._id}-${emoji}`}
                                                     type="button"
-                                                    onClick={() => toggleReaction(channel._id, m._id)}
-                                                    className="h-8 w-8 rounded-md text-sm bg-discord-dark hover:bg-discord-border-light/60 transition-colors"
+                                                    onClick={() => toggleReaction(channel._id, m._id, emoji)}
+                                                    className="h-8 w-8 rounded-md bg-discord-dark hover:bg-discord-border-light/60 transition-colors flex items-center justify-center"
                                                     title={`React ${emoji}`}
                                                 >
-                                                    {emoji}
+                                                    <EmojiArt emoji={emoji} className="w-[18px] h-[18px]" />
                                                 </button>
                                             ))}
                                             <button
@@ -728,7 +733,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                                     <div className="absolute right-0 top-10 w-64 rounded-lg border border-discord-border/80 bg-discord-darkest shadow-2xl p-1.5">
                                                         <button
                                                             type="button"
-                                                            onClick={() => toggleReaction(channel._id, m._id)}
+                                                            onClick={() => setReactionPickerMessageId((prev) => (prev === m._id ? null : m._id))}
                                                             className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
                                                         >
                                                             Add Reaction <ChevronRight className="w-4 h-4 text-discord-faint" />
@@ -793,6 +798,16 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                                         </button>
                                                     </div>
                                                 )}
+                                                {reactionPickerMessageId === m._id && (
+                                                    <EmojiPicker
+                                                        onSelect={(emoji) => {
+                                                            toggleReaction(channel._id, m._id, emoji);
+                                                            setReactionPickerMessageId(null);
+                                                            setOpenMessageMenuId(null);
+                                                        }}
+                                                        onClose={() => setReactionPickerMessageId(null)}
+                                                    />
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -816,11 +831,29 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                         {copiedMessageId === m._id && (
                                             <div className="mt-1 text-[11px] text-emerald-300">Copied</div>
                                         )}
+                                        {(m.reactions || []).length > 0 && (
+                                            <div className="mt-2 flex items-center gap-1 flex-wrap">
+                                                {(m.reactions || []).map((reaction) => {
+                                                    const reacted = !!reaction.reacted;
+                                                    return (
+                                                        <button
+                                                            key={`${m._id}-${reaction.emoji}`}
+                                                            type="button"
+                                                            onClick={() => toggleReaction(channel._id, m._id, reaction.emoji)}
+                                                            className={`px-2 py-0.5 rounded-full text-[10px] border transition-colors inline-flex items-center gap-1 ${reacted ? 'bg-blurple/20 border-blurple/40 text-discord-white' : 'bg-discord-darkest border-discord-border text-discord-muted hover:text-discord-light'}`}
+                                                        >
+                                                            <EmojiArt emoji={reaction.emoji} className="w-3.5 h-3.5" />
+                                                            <span>{reaction.count}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                         <div className="mt-2 text-xs text-discord-faint">
                                             {(isLiked || (m.likesCount || 0) > 0 || showComments || (m.commentsCount || 0) > 0) && (
                                                 <div className="flex items-center gap-3">
                                                     <button
-                                                        onClick={() => toggleReaction(channel._id, m._id)}
+                                                        onClick={() => toggleReaction(channel._id, m._id, '❤️')}
                                                         className={`flex items-center gap-1 hover:text-discord-light ${isLiked ? 'text-rose-400' : ''}`}
                                                     >
                                                         <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-rose-400 text-rose-400' : ''}`} />
@@ -854,13 +887,13 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                             </div>
                                         )}
                                         {showComments && (
-                                            <div className="mt-4 rounded-lg border border-discord-border/40 bg-discord-darkest/60 p-3 space-y-3">
+                                            <div className="mt-4 rounded-lg border border-[#29292d]/55 bg-discord-darkest/60 p-3 space-y-3">
                                                 {commentPaging.hasMore && (
                                                     <button
                                                         type="button"
                                                         onClick={() => handleLoadOlderComments(m._id)}
                                                         disabled={commentPaging.isLoadingOlder}
-                                                        className="px-2.5 py-1.5 rounded-md border border-discord-border/60 bg-discord-darkest/50 text-[11px] font-semibold text-discord-light hover:bg-discord-border-light/20 disabled:opacity-60"
+                                                        className="px-2.5 py-1.5 rounded-md border border-[#29292d]/55 bg-discord-darkest/50 text-[11px] font-semibold text-discord-light hover:bg-discord-border-light/20 disabled:opacity-60"
                                                     >
                                                         {commentPaging.isLoadingOlder ? 'Loading older comments...' : 'Load older comments'}
                                                     </button>
@@ -890,9 +923,10 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                                                                 key={`${c._id}-${r.emoji}`}
                                                                                 type="button"
                                                                                 onClick={() => handleCommentReaction(m._id, c._id, r.emoji)}
-                                                                                className={`px-2 py-0.5 rounded-full text-[10px] border transition-colors ${r.reacted ? 'bg-blurple/20 border-blurple/40 text-discord-white' : 'bg-discord-darkest border-discord-border text-discord-muted hover:text-discord-light'}`}
+                                                                                className={`px-2 py-0.5 rounded-full text-[10px] border transition-colors inline-flex items-center gap-1 ${r.reacted ? 'bg-blurple/20 border-blurple/40 text-discord-white' : 'bg-discord-darkest border-discord-border text-discord-muted hover:text-discord-light'}`}
                                                                             >
-                                                                                {r.emoji} {r.count}
+                                                                                <EmojiArt emoji={r.emoji} className="w-3.5 h-3.5" />
+                                                                                <span>{r.count}</span>
                                                                             </button>
                                                                         ))}
                                                                         {COMMENT_REACTIONS.map((emoji) => {
@@ -903,9 +937,9 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                                                                     key={`${c._id}-add-${emoji}`}
                                                                                     type="button"
                                                                                     onClick={() => handleCommentReaction(m._id, c._id, emoji)}
-                                                                                    className="px-2 py-0.5 rounded-full text-[10px] border bg-discord-darkest border-discord-border text-discord-faint hover:text-discord-light transition-colors"
+                                                                                    className="px-2 py-0.5 rounded-full text-[10px] border bg-discord-darkest border-discord-border text-discord-faint hover:text-discord-light transition-colors inline-flex items-center"
                                                                                 >
-                                                                                    {emoji}
+                                                                                    <EmojiArt emoji={emoji} className="w-3.5 h-3.5" />
                                                                                 </button>
                                                                             );
                                                                         })}
@@ -923,7 +957,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                                         onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [m._id]: e.target.value }))}
                                                         placeholder={canPost ? 'Add a comment' : 'Comments are restricted'}
                                                         disabled={!canPost}
-                                                        className="flex-1 bg-discord-darkest/80 border border-discord-border/50 rounded-md px-2.5 py-1.5 text-xs text-discord-white placeholder:text-discord-faint/60 outline-none disabled:opacity-50"
+                                                        className="flex-1 bg-discord-darkest/80 border border-[#29292d]/55 rounded-md px-2.5 py-1.5 text-xs text-discord-white placeholder:text-discord-faint/60 outline-none disabled:opacity-50"
                                                     />
                                                     <button
                                                         onClick={() => handleCommentSend(m._id)}
@@ -944,19 +978,19 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                 )}
             </div>
 
-            <div className="px-4 pb-4 border-t border-white/5 bg-[#171a22]">
+            <div className="px-4 pt-3 pb-3 border-t border-[#29292d]/45 bg-[#1a1a1e]">
                 {typingLabel && (
                     <div className="text-xs text-discord-faint mb-2">{typingLabel}</div>
                 )}
 
                 {sendError && (
-                    <div className="mb-2 rounded-lg border border-discord-red/30 bg-discord-red/10 px-3 py-2 text-xs text-discord-red">
+                    <div className="mb-2 rounded-lg border border-[#29292d]/55 bg-discord-red/10 px-3 py-2 text-xs text-discord-red">
                         {sendError}
                     </div>
                 )}
 
                 {!canPost && isAnnouncement && (
-                    <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                    <div className="mb-3 rounded-lg border border-[#29292d]/55 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
                         Announcements are read-only. Only admins and moderators can post here.
                     </div>
                 )}
@@ -964,7 +998,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                 {files.length > 0 && (
                     <div className="mb-3 flex flex-wrap gap-2">
                         {files.map((f) => (
-                            <div key={f.id} className="relative w-20 h-20 rounded-lg border border-discord-border/40 bg-discord-darkest overflow-hidden">
+                            <div key={f.id} className="relative w-20 h-20 rounded-lg border border-[#29292d]/55 bg-discord-darkest overflow-hidden">
                                 {f.preview ? (
                                     <img src={f.preview} alt="" className="w-full h-full object-cover" />
                                 ) : (
@@ -985,9 +1019,9 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                     </div>
                 )}
 
-                <div className="relative flex items-center gap-2 bg-[#11141b] border border-[#2a3040] rounded-xl px-3 py-2">
-                    <label className={`w-8 h-8 rounded-md flex items-center justify-center ${canPost ? 'hover:bg-discord-border-light/20 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
-                        <Plus className="w-4 h-4 text-discord-faint" />
+                <div className="relative flex items-center gap-2 h-12 bg-[#1f2229] border border-[#2b2e35] rounded-md px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                    <label className={`w-8 h-8 rounded-md flex items-center justify-center ${canPost ? 'hover:bg-[#2a2d35] cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
+                        <Plus className="w-4 h-4 text-discord-muted" />
                         <input
                             type="file"
                             multiple
@@ -1020,27 +1054,27 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                         }}
                         placeholder={canPost ? `Message #${channel?.name || 'general'}` : 'Only admins and moderators can post here'}
                         disabled={!canPost}
-                        className="flex-1 bg-transparent text-sm text-discord-white placeholder:text-discord-faint/60 outline-none"
+                        className="flex-1 bg-transparent text-sm text-discord-white placeholder:text-discord-muted/80 outline-none"
                     />
-                    <div className="flex items-center gap-1.5 text-discord-faint">
+                    <div className="flex items-center gap-2 text-discord-faint">
                         <button
                             onClick={() => setShowEmoji((s) => !s)}
                             disabled={!canPost}
-                            className={`w-8 h-8 rounded-md flex items-center justify-center ${canPost ? 'hover:bg-discord-border-light/20 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
+                            className={`w-8 h-8 rounded-md flex items-center justify-center ${canPost ? 'hover:bg-[#2a2d35] cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
                         >
                             <Smile className="w-4 h-4" />
                         </button>
                         <button
                             disabled={isUploading || !canPost}
                             onClick={handleSend}
-                            className="w-8 h-8 rounded-md hover:bg-discord-border-light/20 flex items-center justify-center cursor-pointer disabled:opacity-50"
+                            className="w-8 h-8 rounded-md hover:bg-[#2a2d35] flex items-center justify-center cursor-pointer disabled:opacity-50"
                         >
                             <Send className="w-4 h-4" />
                         </button>
                     </div>
 
                     {showMentions && filteredMentions.length > 0 && (
-                        <div className="absolute left-3 bottom-14 w-64 rounded-lg bg-discord-darkest border border-discord-border/60 shadow-lg p-2 z-30">
+                        <div className="absolute left-3 bottom-14 w-64 rounded-lg bg-discord-darkest border border-[#29292d]/55 shadow-lg p-2 z-30">
                             <div className="text-[11px] text-discord-faint font-semibold px-2 py-1">Members</div>
                             <div className="space-y-1">
                                 {filteredMentions.map((m) => (

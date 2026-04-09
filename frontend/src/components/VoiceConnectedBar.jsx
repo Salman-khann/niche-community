@@ -28,7 +28,7 @@ const VoiceConnectedBar = ({
     }
 
     return (
-        <div className="relative z-40 -ml-16 mr-0 mb-1 w-[calc(100%+4rem)] rounded-xl border border-white/10 bg-[#23262f] pl-10 pr-3.5 py-3 shadow-[0_10px_24px_rgba(0,0,0,0.46)] flex flex-col gap-3">
+        <div className="relative z-40 -ml-16 mr-0 mb-1 w-[calc(100%+4rem)] rounded-xl border border-white/10 bg-[#202024] pl-10 pr-3.5 py-3 shadow-[0_10px_24px_rgba(0,0,0,0.46)] flex flex-col gap-3">
             <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-discord-green/10 border border-discord-green/20 flex items-center justify-center text-discord-green">
                     <Radio className="w-4 h-4" />

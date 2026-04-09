@@ -2,11 +2,12 @@ import express from "express";
 import { verifyToken } from "../middleware/verifyToken.js";
 import { verifyCommunityAccess } from "../middleware/verifyCommunityAccess.js";
 import { requirePremiumForChannel } from "../middleware/verifyPremium.js";
-import { getChannelMessages, createChannelMessage, reactToChannelMessage, getChannelMessageComments, addChannelMessageComment, reactToChannelMessageComment, togglePin, getPinnedMessages } from "../controllers/channelMessage.controller.js";
+import { getChannelMessages, createChannelMessage, reactToChannelMessage, getChannelMessageComments, addChannelMessageComment, reactToChannelMessageComment, togglePin, getPinnedMessages, searchChannelMessages } from "../controllers/channelMessage.controller.js";
 
 const router = express.Router();
 
 router.get("/:channelId", verifyToken, verifyCommunityAccess, requirePremiumForChannel, getChannelMessages);
+router.get("/:channelId/search", verifyToken, verifyCommunityAccess, requirePremiumForChannel, searchChannelMessages);
 router.post("/:channelId", verifyToken, verifyCommunityAccess, requirePremiumForChannel, createChannelMessage);
 router.post("/:channelId/:messageId/react", verifyToken, verifyCommunityAccess, requirePremiumForChannel, reactToChannelMessage);
 router.get("/:channelId/:messageId/comments", verifyToken, verifyCommunityAccess, requirePremiumForChannel, getChannelMessageComments);

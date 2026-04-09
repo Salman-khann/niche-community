@@ -4,6 +4,7 @@ import MentionInput from './MentionInput';
 import { useFeedStore } from '../stores/feedStore';
 import { useAuthStore } from '../stores/authStore';
 import { useProfileStore } from '../stores/profileStore';
+import { CHAT_REACTION_EMOJIS } from '../utils/emojiShortcodes';
 
 const PostCard = ({ post, onHashtagClick }) => {
     const [showComments, setShowComments] = useState(false);
@@ -180,7 +181,7 @@ const PostCard = ({ post, onHashtagClick }) => {
         } catch { } setSubmitting(false);
     };
 
-    const REACTION_EMOJIS = ['👍', '❤️', '😂', '🔥', '👏'];
+    const REACTION_EMOJIS = CHAT_REACTION_EMOJIS;
 
     const handleCommentReaction = async (commentId, emoji) => {
         try {

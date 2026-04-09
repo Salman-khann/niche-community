@@ -3,6 +3,8 @@ import { Phone, Smile, Send, Plus, Image as ImageIcon, X, Menu, Server, Mic, Mic
 import VoiceVideoPlayer from './VoiceVideoPlayer';
 import EmojiPicker from './EmojiPicker';
 import AttachmentPreviewCard from './AttachmentPreviewCard';
+import EmojiArt from './EmojiArt';
+import { CHAT_REACTION_EMOJIS } from '../utils/emojiShortcodes';
 
 const formatTime = (value) => {
     if (!value) return '';
@@ -235,8 +237,7 @@ const DmPanel = ({
 
     return (
         <div className="flex-1 min-h-0 flex flex-col">
-            {!activeCall && (
-                <div className="ui-topbar h-12 flex items-center justify-between px-4">
+            <div className="ui-topbar h-12 flex items-center justify-between px-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-discord-light">
                         <button
                             onClick={() => onOpenServers?.()}
@@ -290,7 +291,6 @@ const DmPanel = ({
                         </button>
                     </div>
                 </div>
-            )}
 
             <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-6">
                 {!activeCall && callStatus?.isActive && !callStatus?.isInCall && (
@@ -478,7 +478,7 @@ const DmPanel = ({
                                         className="w-10 h-10 rounded-xl border border-discord-border/60 bg-gradient-to-b from-discord-border-light/45 to-discord-darkest text-white hover:from-discord-border-light/60 hover:to-discord-border-light/20 flex items-center justify-center shadow-md transition-all hover:-translate-y-0.5"
                                         title={`React ${emoji}`}
                                     >
-                                        <span className="text-lg leading-none">{emoji}</span>
+                                        <EmojiArt emoji={emoji} className="w-5 h-5" />
                                     </button>
                                     ))}
                                 </div>
@@ -524,7 +524,7 @@ const DmPanel = ({
                             >
                                 {(hoveredMessageId === m._id || openMessageMenuId === m._id) && (
                                     <div className="absolute -top-4 right-0 z-20 flex items-center gap-1 rounded-lg border border-[#1f2024] bg-[#2b2d31] p-1 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
-                                        {['😂', '❤️', '✅', '🏠'].map((emoji) => (
+                                        {CHAT_REACTION_EMOJIS.map((emoji) => (
                                             <button
                                                 key={`${m._id}-${emoji}`}
                                                 type="button"
@@ -532,10 +532,10 @@ const DmPanel = ({
                                                     onChange?.(`${value || ''}${emoji}`);
                                                     onTyping?.();
                                                 }}
-                                                className="h-8 w-8 rounded-md text-sm bg-[#3a3c43] hover:bg-[#4a4d57] transition-colors"
+                                                className="h-8 w-8 rounded-md bg-[#3a3c43] hover:bg-[#4a4d57] transition-colors flex items-center justify-center"
                                                 title={`React ${emoji}`}
                                             >
-                                                {emoji}
+                                                <EmojiArt emoji={emoji} className="w-[18px] h-[18px]" />
                                             </button>
                                         ))}
                                         <button
@@ -568,7 +568,7 @@ const DmPanel = ({
                                                     <button
                                                         type="button"
                                                         onClick={() => {
-                                                            onChange?.(`${value || ''}❤️`);
+                                                            onChange?.(`${value || ''}${CHAT_REACTION_EMOJIS[0]}`);
                                                             onTyping?.();
                                                             setOpenMessageMenuId(null);
                                                         }}

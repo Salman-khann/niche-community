@@ -83,12 +83,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: var(--color-discord-darkest);
+  background-color: #666770;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-discord-border-light);
+  background-color: #666770;
 }
 
 /* Keyframes */

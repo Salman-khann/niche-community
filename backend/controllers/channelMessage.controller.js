@@ -2,6 +2,7 @@ import ChannelMessage from "../models/channelMessage.model.js";
 import ChannelMessageComment from "../models/channelMessageComment.model.js";
 import Channel from "../models/channel.model.js";
 import User from "../models/user.model.js";
+import Profile from "../models/profile.model.js";
 import Community from "../models/community.model.js";
 import Notification from "../models/notification.model.js";
 import mongoose from "mongoose";
@@ -23,12 +24,95 @@ const shapeCommentReactions = (comment, viewerUserId) => (
         .filter((entry) => entry.count > 0)
 );
 
+const HEART_EMOJI = '❤️';
+
+const shapeMessageReactions = (message, viewerUserId) => (
+    (message?.reactions || [])
+        .map((entry) => {
+            const users = entry?.users || [];
+            return {
+                emoji: entry.emoji,
+                count: users.length,
+                reacted: users.some((id) => id?.toString?.() === viewerUserId),
+            };
+        })
+        .filter((entry) => entry.count > 0)
+);
+
 const SUSPICIOUS_TLDS = new Set(['zip', 'mov', 'xyz', 'top', 'gq', 'tk', 'ml', 'cf', 'ru']);
 const SUSPICIOUS_DOMAINS = new Set(['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'is.gd', 'cutt.ly', 'ow.ly', 'rb.gy']);
 
 const extractUrls = (text = '') => {
     if (!text) return [];
     return text.match(/https?:\/\/[^\s<>()]+/gi) || [];
+};
+
+const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const tokenizeSearch = (raw = '') => {
+    const tokens = String(raw || '').match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+    return tokens.map((token) => {
+        if (token.startsWith('"') && token.endsWith('"')) {
+            return token.slice(1, -1).trim();
+        }
+        return token.trim();
+    }).filter(Boolean);
+};
+
+const parseDateToken = (value, type) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+
+    const dayOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+    if (!dayOnly) return parsed;
+
+    const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
+    if (type === 'before') {
+        return new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0, 0));
+    }
+    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+};
+
+const parseMessageSearchQuery = (raw = '') => {
+    const tokens = tokenizeSearch(raw);
+    const parsed = {
+        freeText: '',
+        from: '',
+        hasLink: false,
+        hasFile: false,
+        beforeDate: null,
+        afterDate: null,
+    };
+
+    const freeTextChunks = [];
+    for (const token of tokens) {
+        const lowered = token.toLowerCase();
+        if (lowered.startsWith('from:')) {
+            parsed.from = token.slice(5).trim();
+            continue;
+        }
+        if (lowered === 'has:link') {
+            parsed.hasLink = true;
+            continue;
+        }
+        if (lowered === 'has:file' || lowered === 'has:attachment') {
+            parsed.hasFile = true;
+            continue;
+        }
+        if (lowered.startsWith('before:')) {
+            parsed.beforeDate = parseDateToken(token.slice(7).trim(), 'before');
+            continue;
+        }
+        if (lowered.startsWith('after:')) {
+            parsed.afterDate = parseDateToken(token.slice(6).trim(), 'after');
+            continue;
+        }
+        freeTextChunks.push(token);
+    }
+
+    parsed.freeText = freeTextChunks.join(' ').trim();
+    return parsed;
 };
 
 const isSuspiciousLink = (url) => {
@@ -67,7 +151,10 @@ export const getChannelMessages = async (req, res) => {
 
         const hasMore = rows.length > limit;
         const pageRows = hasMore ? rows.slice(0, limit) : rows;
-        const messages = pageRows.reverse();
+        const messages = pageRows.reverse().map((row) => ({
+            ...row,
+            reactions: shapeMessageReactions(row, req.userId),
+        }));
         const nextBefore = hasMore && messages.length > 0
             ? messages[0]._id?.toString?.() || String(messages[0]._id)
             : null;
@@ -76,6 +163,143 @@ export const getChannelMessages = async (req, res) => {
     } catch (error) {
         console.log("Error in getChannelMessages:", error);
         res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+export const searchChannelMessages = async (req, res) => {
+    try {
+        const { channelId } = req.params;
+        const rawQuery = String(req.query.q || '').trim();
+        const limit = Math.min(50, Math.max(5, parseInt(req.query.limit, 10) || 20));
+        const beforeId = req.query.beforeId ? String(req.query.beforeId) : null;
+
+        const parsed = parseMessageSearchQuery(rawQuery);
+        const hasAnyFilter = Boolean(
+            parsed.freeText || parsed.from || parsed.hasLink || parsed.hasFile || parsed.beforeDate || parsed.afterDate
+        );
+
+        if (!hasAnyFilter) {
+            return res.status(400).json({
+                success: false,
+                message: 'Add a search term or filter (for example: from:name, has:link, before:2026-01-01)',
+            });
+        }
+
+        if (parsed.freeText && parsed.freeText.length < 2) {
+            return res.status(400).json({ success: false, message: 'Search text must be at least 2 characters' });
+        }
+
+        const filter = { channelId };
+
+        if (beforeId) {
+            if (!mongoose.Types.ObjectId.isValid(beforeId)) {
+                return res.status(400).json({ success: false, message: 'Invalid search cursor' });
+            }
+            filter._id = { $lt: beforeId };
+        }
+
+        const andClauses = [];
+        if (parsed.freeText) {
+            andClauses.push({ content: { $regex: escapeRegex(parsed.freeText), $options: 'i' } });
+        }
+
+        if (parsed.hasLink) {
+            andClauses.push({ content: { $regex: 'https?:\\/\\/', $options: 'i' } });
+        }
+
+        if (parsed.hasFile) {
+            filter['mediaURLs.0'] = { $exists: true };
+        }
+
+        if (andClauses.length > 0) {
+            filter.$and = andClauses;
+        }
+
+        if (parsed.beforeDate || parsed.afterDate) {
+            filter.createdAt = {};
+            if (parsed.beforeDate) filter.createdAt.$lt = parsed.beforeDate;
+            if (parsed.afterDate) filter.createdAt.$gte = parsed.afterDate;
+        }
+
+        if (parsed.from) {
+            const fromRegex = new RegExp(escapeRegex(parsed.from), 'i');
+            const profileRows = await Profile.find({ displayName: fromRegex }).select('userId').lean();
+            const profileUserIds = profileRows
+                .map((row) => row?.userId)
+                .filter(Boolean);
+
+            const senderRows = await User.find({
+                $or: [
+                    { name: fromRegex },
+                    { _id: { $in: profileUserIds } },
+                ],
+            }).select('_id').lean();
+
+            const senderIds = senderRows.map((row) => row._id);
+            if (senderIds.length === 0) {
+                return res.status(200).json({
+                    success: true,
+                    results: [],
+                    hasMore: false,
+                    nextBeforeId: null,
+                    parsed,
+                });
+            }
+            filter.senderId = { $in: senderIds };
+        }
+
+        const rows = await ChannelMessage.find(filter)
+            .sort({ _id: -1 })
+            .limit(limit + 1)
+            .populate({
+                path: 'senderId',
+                select: 'name profileId',
+                populate: { path: 'profileId', select: 'displayName avatar' },
+            })
+            .lean();
+
+        const hasMore = rows.length > limit;
+        const page = hasMore ? rows.slice(0, limit) : rows;
+        const nextBeforeId = hasMore && page.length > 0
+            ? page[page.length - 1]._id?.toString?.() || String(page[page.length - 1]._id)
+            : null;
+
+        const results = page.map((row) => {
+            const sender = row.senderId || {};
+            const profile = sender.profileId || {};
+            const content = row.content || '';
+            const hasMedia = Array.isArray(row.mediaURLs) && row.mediaURLs.length > 0;
+            return {
+                _id: row._id,
+                channelId: row.channelId,
+                createdAt: row.createdAt,
+                updatedAt: row.updatedAt,
+                content,
+                mediaURLs: row.mediaURLs || [],
+                likesCount: row.likesCount || 0,
+                commentsCount: row.commentsCount || 0,
+                sender: {
+                    _id: sender._id,
+                    displayName: profile.displayName || sender.name || 'Member',
+                    avatar: profile.avatar || '',
+                },
+                matchSummary: {
+                    hasMedia,
+                    hasLink: /https?:\/\//i.test(content),
+                },
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            results,
+            hasMore,
+            nextBeforeId,
+            parsed,
+        });
+    } catch (error) {
+        console.log('Error in searchChannelMessages:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 };
 
@@ -229,30 +453,57 @@ export const createChannelMessage = async (req, res) => {
     }
 };
 
-// ── React to a channel message (like toggle) ────────────────────────────────
+// ── React to a channel message (emoji toggle) ───────────────────────────────
 export const reactToChannelMessage = async (req, res) => {
     try {
         const { channelId, messageId } = req.params;
+        const { emoji } = req.body || {};
         const userId = req.userId;
+        const normalizedEmoji = (typeof emoji === 'string' && emoji.trim()) ? emoji.trim().slice(0, 16) : HEART_EMOJI;
 
         const message = await ChannelMessage.findById(messageId);
         if (!message || message.channelId.toString() !== channelId) {
             return res.status(404).json({ success: false, message: "Message not found" });
         }
 
-        const alreadyLiked = message.likedBy.some((id) => id.toString() === userId);
-        if (alreadyLiked) {
-            message.likedBy.pull(userId);
-            message.likesCount = Math.max(0, message.likesCount - 1);
-        } else {
-            message.likedBy.push(userId);
-            message.likesCount += 1;
+        if (!Array.isArray(message.reactions)) {
+            message.reactions = [];
         }
+
+        // Backfill legacy likes into heart reactions once for older messages.
+        if ((message.likedBy || []).length > 0) {
+            const hasHeart = message.reactions.some((entry) => entry.emoji === HEART_EMOJI);
+            if (!hasHeart) {
+                message.reactions.push({ emoji: HEART_EMOJI, users: [...message.likedBy] });
+            }
+        }
+
+        const existing = message.reactions.find((entry) => entry.emoji === normalizedEmoji);
+        let reacted = false;
+        if (!existing) {
+            message.reactions.push({ emoji: normalizedEmoji, users: [userId] });
+            reacted = true;
+        } else {
+            const alreadyReacted = existing.users.some((id) => id.toString() === userId);
+            if (alreadyReacted) {
+                existing.users = existing.users.filter((id) => id.toString() !== userId);
+                reacted = false;
+            } else {
+                existing.users.push(userId);
+                reacted = true;
+            }
+            message.reactions = message.reactions.filter((entry) => (entry.users || []).length > 0);
+        }
+
+        const heartReaction = message.reactions.find((entry) => entry.emoji === HEART_EMOJI);
+        const heartUsers = heartReaction?.users || [];
+        message.likedBy = heartUsers;
+        message.likesCount = heartUsers.length;
 
         await message.save();
 
         if (message.senderId.toString() !== userId) {
-            const likeMultiplier = alreadyLiked ? -1 : 1;
+            const likeMultiplier = reacted ? 1 : -1;
             await trackReputationSignal({
                 userId: message.senderId,
                 communityId: req.communityId,
@@ -267,11 +518,16 @@ export const reactToChannelMessage = async (req, res) => {
             });
         }
 
+        const reactions = shapeMessageReactions(message.toObject(), userId);
+
         const payload = {
             messageId: message._id,
+            emoji: normalizedEmoji,
+            reacted,
+            reactions,
             likesCount: message.likesCount,
             likedBy: message.likedBy,
-            action: alreadyLiked ? "unlike" : "like",
+            action: reacted ? "react" : "unreact",
         };
 
         res.status(200).json({ success: true, ...payload });

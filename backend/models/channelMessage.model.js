@@ -6,6 +6,13 @@ const channelMessageSchema = new mongoose.Schema({
   content: { type: String, default: "" },
   mediaURLs: { type: [String], default: [] },
   mentions: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  reactions: {
+    type: [{
+      emoji: { type: String, required: true },
+      users: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    }],
+    default: [],
+  },
   likesCount: { type: Number, default: 0 },
   likedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   commentsCount: { type: Number, default: 0 },

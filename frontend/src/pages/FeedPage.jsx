@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Hash, Search, Users, Pin, HelpCircle, User, MessageCircle, Phone, MoreVertical, Settings, Menu, X, Server, Compass, Maximize2, MoreHorizontal, MonitorUp, UserPlus, MoveHorizontal } from 'lucide-react';
+import { Hash, Search, Users, Pin, HelpCircle, User, MessageCircle, Phone, MoreVertical, Settings, Menu, X, Server, Compass, Maximize2, MoreHorizontal, MonitorUp, UserPlus, MoveHorizontal, Lock } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useProfileStore } from '../stores/profileStore';
@@ -9,6 +9,7 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import WorkspaceSwitcher from '../components/WorkspaceSwitcher';
 import Sidebar from '../components/Sidebar';
 import { useChannelStore } from '../stores/channelStore';
+import { useChannelMessageStore } from '../stores/channelMessageStore';
 import { useFriendStore } from '../stores/friendStore';
 import { useServerInviteStore } from '../stores/serverInviteStore';
 import ProfilePopout from '../components/ProfilePopout';
@@ -24,6 +25,7 @@ import VoiceAudioPlayer from '../components/VoiceAudioPlayer';
 import VoiceVideoPlayer from '../components/VoiceVideoPlayer';
 import { useEventStore } from '../stores/eventStore';
 import { apiFetch } from '../stores/apiFetch';
+import { normalizeEmojiShortcodes } from '../utils/emojiShortcodes';
 
 const presenceColor = (presence) => {
     if (presence === 'dnd') return 'bg-red-500';
@@ -77,6 +79,16 @@ const FeedPage = () => {
     const { activeCommunityId, setActiveCommunity } = useWorkspaceStore();
     const { friends: rosterFriends, fetchRoster, updatePresence: updateRosterPresence } = useRosterStore();
     const { channels, activeChannelId, fetchChannels, setActiveChannel, clearChannels } = useChannelStore();
+    const {
+        searchResults: channelSearchResults,
+        searchLoading: channelSearchLoading,
+        searchError: channelSearchError,
+        searchHasMore: channelSearchHasMore,
+        searchMessages,
+        loadMoreSearchResults,
+        clearSearch: clearChannelMessageSearch,
+        jumpToMessage,
+    } = useChannelMessageStore();
     const {
         friends,
         onlineCount,
@@ -138,6 +150,9 @@ const FeedPage = () => {
     const [showVoiceInviteModal, setShowVoiceInviteModal] = useState(false);
     const [showVoiceStageChatDrawer, setShowVoiceStageChatDrawer] = useState(false);
     const [voiceStageChatWidth, setVoiceStageChatWidth] = useState(420);
+    const [channelSearchQuery, setChannelSearchQuery] = useState('');
+    const [showChannelSearchPanel, setShowChannelSearchPanel] = useState(false);
+    const [channelSearchJumpError, setChannelSearchJumpError] = useState('');
     const [voiceInviteSearch, setVoiceInviteSearch] = useState('');
     const [invitingVoiceUserIds, setInvitingVoiceUserIds] = useState([]);
     const [voiceInvitedUserIds, setVoiceInvitedUserIds] = useState([]);
@@ -147,10 +162,12 @@ const FeedPage = () => {
     const [groupError, setGroupError] = useState('');
     const [roles, setRoles] = useState([]);
     const streamVideoRef = useRef(null);
+    const previousStagePresenceRef = useRef({ channelId: null, count: 0 });
     const isResizingVoiceStageChatRef = useRef(false);
     const voiceStageResizeStartXRef = useRef(0);
     const voiceStageResizeStartWidthRef = useRef(420);
     const typingTimeoutRef = useRef(null);
+    const channelSearchPanelRef = useRef(null);
     const prevCommunityIdRef = useRef(activeCommunityId);
     const [incomingCall, setIncomingCall] = useState(null);
     const [outgoingCall, setOutgoingCall] = useState(null);
@@ -434,6 +451,7 @@ const FeedPage = () => {
 
     const closeVoiceStageView = useCallback(() => {
         setShowVoiceStageView(false);
+        setPreviewVoiceChannel(null);
         setShowVoiceInviteModal(false);
         setShowVoiceStageChatDrawer(false);
     }, []);
@@ -527,6 +545,31 @@ const FeedPage = () => {
         if (isViewingActiveVoiceChannel) return;
         setShowVoiceInviteModal(false);
     }, [isViewingActiveVoiceChannel]);
+
+    useEffect(() => {
+        if (!showVoiceStageView || viewMode !== 'server') return;
+        const activeType = (channels.find((ch) => ch._id === activeChannelId) || channels[0])?.type || 'text';
+        if (!['text', 'announcement', 'forum'].includes(activeType)) return;
+        closeVoiceStageView();
+    }, [showVoiceStageView, viewMode, channels, activeChannelId, closeVoiceStageView]);
+
+    useEffect(() => {
+        const channelId = stageVoiceChannel?._id || null;
+        const count = stagePresenceMembers.length;
+        const previous = previousStagePresenceRef.current;
+
+        if (!showVoiceStageView || !channelId || isViewingActiveVoiceChannel) {
+            previousStagePresenceRef.current = { channelId, count };
+            return;
+        }
+
+        const roomJustEnded = previous.channelId === channelId && previous.count > 0 && count === 0;
+        if (roomJustEnded) {
+            closeVoiceStageView();
+        }
+
+        previousStagePresenceRef.current = { channelId, count };
+    }, [showVoiceStageView, stageVoiceChannel?._id, stagePresenceMembers.length, isViewingActiveVoiceChannel, closeVoiceStageView]);
 
     useEffect(() => {
         setVoiceInvitedUserIds((prev) => prev.filter((id) => !inCallUserIds.has(id)));
@@ -725,6 +768,24 @@ const FeedPage = () => {
                 next.delete(tId);
                 return next;
             });
+            if (!tId) return;
+            setDmRoomStatus((prev) => ({
+                ...prev,
+                [tId]: {
+                    members: [],
+                    count: 0,
+                },
+            }));
+            setRoomInvites((prev) => {
+                if (!prev[tId]) return prev;
+                return { ...prev, [tId]: [] };
+            });
+            if (activeDmCall?.threadId === tId) {
+                if (activeVoiceChannel?._id === `dm-${tId}`) {
+                    leaveVoice();
+                }
+                setActiveDmCall(null);
+            }
         };
         const handleVoicePresence = ({ channelId, members }) => {
             if (!channelId) return;
@@ -945,6 +1006,22 @@ const FeedPage = () => {
             socket.emit('voice:unwatch', { channelId });
         };
     }, [socket, threadId]);
+
+    useEffect(() => {
+        const activeThreadId = activeDmCall?.threadId;
+        if (!activeThreadId) return;
+        if (!Object.prototype.hasOwnProperty.call(dmRoomStatus, activeThreadId)) return;
+
+        const status = dmRoomStatus[activeThreadId];
+        const isCallStillActive = (status?.count || 0) > 0;
+        if (isCallStillActive) return;
+
+        const activeRoomId = `dm-${activeThreadId}`;
+        if (activeVoiceChannel?._id === activeRoomId) {
+            leaveVoice();
+        }
+        setActiveDmCall(null);
+    }, [activeDmCall?.threadId, dmRoomStatus, activeVoiceChannel?._id, leaveVoice]);
 
     useEffect(() => {
         setShowCallInvite(false);
@@ -1565,22 +1642,24 @@ const FeedPage = () => {
 
     const handleVoiceChannelPreview = useCallback((channel) => {
         if (!channel?._id) return;
+        setActiveChannel(channel._id);
         setPreviewVoiceChannel(channel);
         setShowVoiceStageView(true);
-    }, []);
+    }, [setActiveChannel]);
 
     const handleVoiceChannelJoin = useCallback((channel) => {
         if (!channel?._id) return;
         if (incomingCall || outgoingCall || activeDmCall) {
             exitDmCallForVoice();
         }
+        setActiveChannel(channel._id);
         setPreviewVoiceChannel(channel);
         setShowVoiceStageView(true);
         if (activeVoiceChannel?._id === channel._id) {
             return;
         }
         joinVoice({ ...channel, communityId: activeCommunityId });
-    }, [incomingCall, outgoingCall, activeDmCall, exitDmCallForVoice, activeVoiceChannel?._id, joinVoice, activeCommunityId]);
+    }, [incomingCall, outgoingCall, activeDmCall, exitDmCallForVoice, activeVoiceChannel?._id, joinVoice, activeCommunityId, setActiveChannel]);
 
     useEffect(() => {
         if (!friendError && !friendSuccess) return;
@@ -1598,6 +1677,75 @@ const FeedPage = () => {
         () => channels.find((ch) => ch._id === activeChannelId) || channels[0],
         [channels, activeChannelId]
     );
+
+    useEffect(() => {
+        setChannelSearchQuery('');
+        setShowChannelSearchPanel(false);
+        setChannelSearchJumpError('');
+        clearChannelMessageSearch();
+    }, [activeCommunityId, activeChannel?._id, viewMode, clearChannelMessageSearch]);
+
+    useEffect(() => {
+        if (viewMode !== 'server' || !activeChannel?._id) return;
+        const trimmed = channelSearchQuery.trim();
+        if (!trimmed) {
+            clearChannelMessageSearch();
+            setChannelSearchJumpError('');
+            return;
+        }
+        const t = setTimeout(() => {
+            searchMessages(activeChannel._id, trimmed, { reset: true, limit: 20 }).catch(() => { });
+        }, 260);
+        return () => clearTimeout(t);
+    }, [viewMode, activeChannel?._id, channelSearchQuery, searchMessages, clearChannelMessageSearch]);
+
+    useEffect(() => {
+        if (!showChannelSearchPanel) return;
+        const onPointerDown = (event) => {
+            if (!channelSearchPanelRef.current) return;
+            if (channelSearchPanelRef.current.contains(event.target)) return;
+            setShowChannelSearchPanel(false);
+        };
+        document.addEventListener('mousedown', onPointerDown);
+        return () => document.removeEventListener('mousedown', onPointerDown);
+    }, [showChannelSearchPanel]);
+
+    const formatSearchTimestamp = useCallback((value) => {
+        if (!value) return '';
+        try {
+            return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        } catch {
+            return '';
+        }
+    }, []);
+
+    const buildSearchPreview = useCallback((content) => {
+        const text = String(content || '').replace(/\s+/g, ' ').trim();
+        if (!text) return 'Attachment message';
+
+        const query = channelSearchQuery.trim().toLowerCase();
+        if (!query || query.length < 2) return text.length > 150 ? `${text.slice(0, 147)}...` : text;
+
+        const at = text.toLowerCase().indexOf(query);
+        if (at < 0) return text.length > 150 ? `${text.slice(0, 147)}...` : text;
+
+        const start = Math.max(0, at - 48);
+        const end = Math.min(text.length, at + query.length + 72);
+        const prefix = start > 0 ? '...' : '';
+        const suffix = end < text.length ? '...' : '';
+        return `${prefix}${text.slice(start, end)}${suffix}`;
+    }, [channelSearchQuery]);
+
+    const handleSelectSearchResult = useCallback(async (result) => {
+        if (!activeChannel?._id || !result?._id) return;
+        setChannelSearchJumpError('');
+        const ok = await jumpToMessage(activeChannel._id, result._id);
+        if (!ok) {
+            setChannelSearchJumpError('Could not locate that message in channel history.');
+            return;
+        }
+        setShowChannelSearchPanel(false);
+    }, [activeChannel?._id, jumpToMessage]);
 
     const isTextChannelActive = useMemo(() => {
         const type = activeChannel?.type || 'text';
@@ -1979,8 +2127,8 @@ const FeedPage = () => {
     );
 
     const memberListBody = (
-        <div className="flex-1 min-h-0 flex flex-col">
-            <div className="px-3 pt-3 pb-2 border-b border-discord-darkest/70">
+        <div className="flex-1 min-h-0 flex flex-col bg-[#1a1a1e]">
+            <div className="px-3 pt-3 pb-2 border-b border-discord-darkest/70 bg-[#1a1a1e]">
                 <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-discord-faint" />
                     <input
@@ -1988,7 +2136,7 @@ const FeedPage = () => {
                         value={memberSearchQuery}
                         onChange={(e) => setMemberSearchQuery(e.target.value)}
                         placeholder="Search members"
-                        className="ui-search-input w-full pl-8 pr-3 py-2 text-xs placeholder:text-discord-faint/60 focus:outline-none"
+                        className="w-full pl-8 pr-3 py-2 text-xs rounded-md border border-[#29292d] bg-[#111318] text-discord-light placeholder:text-discord-faint/70 focus:outline-none focus:border-[#3a3a40]"
                     />
                 </div>
             </div>
@@ -2175,25 +2323,32 @@ const FeedPage = () => {
             <main className={`ui-panel flex-1 flex flex-col ${switchAnimBase} ${switchAnimClass}`}>
                 {viewMode === 'server' ? (
                     <>
-                <div className="ui-topbar h-12 flex items-center justify-between px-4">
+                <div
+                    className="ui-topbar relative z-[140] h-12 flex items-center justify-between px-4 border-b border-[#29292d] shadow-[0_1px_0_rgba(0,0,0,0.45)]"
+                    style={{ background: '#1a1a1e' }}
+                >
                     <div className="flex items-center gap-2 text-sm font-semibold text-discord-light">
                         <button
                             onClick={() => setShowMobileServers(true)}
-                            className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
+                            className="md:hidden w-8 h-8 rounded-md hover:bg-[#23262e] text-discord-faint hover:text-discord-light flex items-center justify-center"
                             title="Open servers"
                         >
                             <Server className="w-4 h-4" />
                         </button>
                         <button
                             onClick={() => setShowMobileSidebar(true)}
-                            className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
+                            className="md:hidden w-8 h-8 rounded-md hover:bg-[#23262e] text-discord-faint hover:text-discord-light flex items-center justify-center"
                             title="Open channels"
                         >
                             <Menu className="w-4 h-4" />
                         </button>
                         {activeChannel?.name ? (
                             <>
-                                <Hash className="w-4 h-4" />
+                                {activeChannel?.isPrivate ? (
+                                    <Lock className="w-3.5 h-3.5 text-discord-faint" />
+                                ) : (
+                                    <Hash className="w-4 h-4 text-discord-faint" />
+                                )}
                                 <span>{activeChannel.name}</span>
                             </>
                         ) : (
@@ -2203,7 +2358,7 @@ const FeedPage = () => {
                     <div className="flex items-center gap-3 text-discord-faint">
                         <button
                             onClick={() => setMobileDirectorySignal((v) => v + 1)}
-                            className="md:hidden hover:text-discord-light cursor-pointer"
+                            className="md:hidden w-8 h-8 rounded-md hover:bg-[#23262e] hover:text-discord-light cursor-pointer flex items-center justify-center"
                             title="Discover servers"
                         >
                             <Compass className="w-4 h-4" />
@@ -2211,19 +2366,116 @@ const FeedPage = () => {
                         {shouldShowServerMembersPanel && (
                             <button
                                 onClick={() => setShowMemberList((v) => !v)}
-                                className={`hover:text-discord-light cursor-pointer ${showMemberList ? 'text-discord-white' : 'text-discord-faint'}`}
+                                className={`w-8 h-8 rounded-md hover:bg-[#23262e] hover:text-discord-light cursor-pointer flex items-center justify-center ${showMemberList ? 'text-discord-white' : 'text-discord-faint'}`}
                                 title="Toggle members list"
                             >
                                 <Users className="w-4 h-4" />
                             </button>
                         )}
-                        <button onClick={() => setShowPins(true)} className="hover:text-discord-light cursor-pointer">
+                        <button onClick={() => setShowPins(true)} className="w-8 h-8 rounded-md hover:bg-[#23262e] hover:text-discord-light cursor-pointer flex items-center justify-center">
                             <Pin className="w-4 h-4" />
                         </button>
                         <NotificationBell />
-                        <button onClick={() => navigate('/help')} className="hover:text-discord-light cursor-pointer" title="Help">
+                        <button onClick={() => navigate('/help')} className="w-8 h-8 rounded-md hover:bg-[#23262e] hover:text-discord-light cursor-pointer flex items-center justify-center" title="Help">
                             <HelpCircle className="w-4 h-4" />
                         </button>
+                        <div ref={channelSearchPanelRef} className="hidden md:block relative z-[150]">
+                            <div className="flex items-center gap-2 h-8 w-[300px] rounded-md border border-[#2a2d33] bg-[#0f1117] px-2.5 text-xs text-discord-faint">
+                                <Search className="w-3.5 h-3.5 shrink-0" />
+                                <input
+                                    type="text"
+                                    value={channelSearchQuery}
+                                    onFocus={() => setShowChannelSearchPanel(true)}
+                                    onChange={(e) => {
+                                        setChannelSearchQuery(e.target.value);
+                                        setShowChannelSearchPanel(true);
+                                        setChannelSearchJumpError('');
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Escape') {
+                                            setShowChannelSearchPanel(false);
+                                        }
+                                        if (e.key === 'Enter' && channelSearchResults.length > 0) {
+                                            e.preventDefault();
+                                            handleSelectSearchResult(channelSearchResults[0]);
+                                        }
+                                    }}
+                                    placeholder="Search messages"
+                                    className="flex-1 bg-transparent outline-none text-discord-light placeholder:text-discord-faint/80"
+                                />
+                            </div>
+
+                            {showChannelSearchPanel && (
+                                <div className="absolute right-0 top-10 z-[220] w-[420px] max-w-[70vw] rounded-lg border border-[#2a2d33] bg-[#111318] shadow-2xl overflow-hidden">
+                                    <div className="px-3 py-2 border-b border-[#29292d] text-[11px] uppercase tracking-[0.12em] text-discord-faint font-semibold">
+                                        Search In #{activeChannel?.name || 'channel'}
+                                    </div>
+
+                                    <div className="max-h-[420px] overflow-y-auto">
+                                        {!channelSearchQuery.trim() && (
+                                            <div className="px-3 py-3 text-xs text-discord-faint">
+                                                Use filters like from:name, has:link, has:file, before:2026-01-01, after:2026-01-01.
+                                            </div>
+                                        )}
+
+                                        {channelSearchQuery.trim() && channelSearchQuery.trim().length < 2 && !channelSearchLoading && (
+                                            <div className="px-3 py-3 text-xs text-discord-faint">Type at least 2 characters to search.</div>
+                                        )}
+
+                                        {channelSearchLoading && (
+                                            <div className="px-3 py-3 text-xs text-discord-faint">Searching messages...</div>
+                                        )}
+
+                                        {!!channelSearchError && !channelSearchLoading && (
+                                            <div className="px-3 py-3 text-xs text-discord-red">{channelSearchError}</div>
+                                        )}
+
+                                        {!channelSearchLoading && !channelSearchError && channelSearchQuery.trim().length >= 2 && channelSearchResults.length === 0 && (
+                                            <div className="px-3 py-3 text-xs text-discord-faint">No messages matched this search.</div>
+                                        )}
+
+                                        {!channelSearchLoading && channelSearchResults.length > 0 && (
+                                            <div className="divide-y divide-[#29292d]">
+                                                {channelSearchResults.map((row) => (
+                                                    <button
+                                                        key={row._id}
+                                                        type="button"
+                                                        onClick={() => handleSelectSearchResult(row)}
+                                                        className="w-full px-3 py-2.5 text-left hover:bg-[#1d2028] transition-colors"
+                                                    >
+                                                        <div className="flex items-center justify-between gap-3">
+                                                            <div className="text-xs font-semibold text-discord-light truncate">{row.sender?.displayName || 'Member'}</div>
+                                                            <div className="text-[11px] text-discord-faint shrink-0">{formatSearchTimestamp(row.createdAt)}</div>
+                                                        </div>
+                                                        <div className="mt-1 text-xs text-discord-muted leading-relaxed">
+                                                            {buildSearchPreview(row.content)}
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {channelSearchHasMore && !channelSearchLoading && (
+                                        <div className="px-3 py-2 border-t border-[#29292d]">
+                                            <button
+                                                type="button"
+                                                onClick={() => loadMoreSearchResults(activeChannel?._id, 20)}
+                                                className="w-full h-8 rounded-md bg-[#1b1e25] border border-[#2a2d33] text-xs text-discord-light hover:bg-[#242833]"
+                                            >
+                                                Load More Results
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {channelSearchJumpError && (
+                                        <div className="px-3 py-2 border-t border-[#29292d] text-xs text-discord-red">
+                                            {channelSearchJumpError}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -2269,16 +2521,21 @@ const FeedPage = () => {
                         <div className="h-[calc(100%-3rem)] p-3 md:p-4">
                             {!isViewingActiveVoiceChannel ? (
                                 <div className="h-full rounded-2xl border border-discord-border/50 bg-[radial-gradient(circle_at_50%_120%,rgba(116,122,255,0.55),rgba(31,35,99,0.82)_35%,rgba(14,17,52,0.96)_72%)] flex flex-col">
-                                    <div className="px-3 py-2 flex items-center justify-end">
+                                    <div className="px-3 py-2 flex items-center justify-between">
+                                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">Channel Chat</p>
                                         <button
                                             type="button"
-                                            onClick={() => handleVoiceChannelJoin(stageVoiceChannel)}
-                                            className="px-3 py-1.5 rounded-md bg-white text-[#1e234f] text-xs font-semibold hover:bg-white/90"
+                                            onClick={toggleVoiceChannelChatDrawer}
+                                            className={`w-8 h-8 rounded-md text-white flex items-center justify-center transition-colors ${
+                                                shouldRenderVoiceStageChatDrawer ? 'bg-white/30' : 'bg-white/10 hover:bg-white/20'
+                                            }`}
+                                            title={shouldRenderVoiceStageChatDrawer ? 'Close channel chat' : 'Open channel chat'}
                                         >
-                                            Join Voice
+                                            <MessageCircle className="w-4 h-4" />
                                         </button>
                                     </div>
-                                    <div className="flex-1 min-h-0 px-4 pb-6">
+                                    <div className="flex-1 min-h-0 flex gap-3 px-3 pb-3">
+                                        <div className="flex-1 min-h-0 px-1 pb-3">
                                         {stagePresenceMembers.length === 0 ? (
                                             <div className="h-full flex flex-col items-center justify-center text-center">
                                                 <p className="text-4xl md:text-5xl font-bold text-white/90 leading-none">{stageVoiceChannel?.name || 'Voice Channel'}</p>
@@ -2293,6 +2550,15 @@ const FeedPage = () => {
                                             </div>
                                         ) : (
                                             <div className="h-full overflow-y-auto">
+                                                <div className="mb-3 flex items-center justify-end">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleVoiceChannelJoin(stageVoiceChannel)}
+                                                        className="px-3 py-1.5 rounded-md bg-white text-[#1e234f] text-xs font-semibold hover:bg-white/90"
+                                                    >
+                                                        Join Voice
+                                                    </button>
+                                                </div>
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                                     {stagePresenceMembers.map((member) => (
                                                         <div key={`stage-member-${member.userId || member.socketId}`} className="rounded-xl border border-white/10 bg-black/25 backdrop-blur-sm px-3 py-3 flex items-center gap-3">
@@ -2311,6 +2577,26 @@ const FeedPage = () => {
                                                     ))}
                                                 </div>
                                             </div>
+                                        )}
+
+                                        </div>
+
+                                        {shouldRenderVoiceStageChatDrawer && (
+                                            <aside
+                                                className="h-full min-h-0 rounded-xl border border-discord-border/70 bg-discord-chat overflow-hidden"
+                                                style={{ width: `${voiceStageChatWidth}px` }}
+                                            >
+                                                <ChannelChat
+                                                    channel={activeChannel}
+                                                    socket={socket}
+                                                    editSignal={editChannelSignal}
+                                                    currentUser={channelChatCurrentUser}
+                                                    members={rosterFriends}
+                                                    showPins={showPins}
+                                                    onClosePins={() => setShowPins(false)}
+                                                    canEditChannel={canEditChannel}
+                                                />
+                                            </aside>
                                         )}
                                     </div>
                                 </div>
@@ -2580,7 +2866,8 @@ const FeedPage = () => {
                                     }, 1200);
                                 }}
                                 onSend={async () => {
-                                    if (!dmText.trim() && dmFiles.length === 0) return;
+                                    const normalizedText = normalizeEmojiShortcodes(dmText);
+                                    if (!normalizedText.trim() && dmFiles.length === 0) return;
                                     setDmSending(true);
                                     try {
                                         const mediaURLs = [];
@@ -2588,7 +2875,7 @@ const FeedPage = () => {
                                             const url = await uploadFile(f.file);
                                             mediaURLs.push(url);
                                         }
-                                        const payload = { content: dmText.trim(), mediaURLs };
+                                        const payload = { content: normalizedText.trim(), mediaURLs };
                                         const msg = await sendMessage(threadId, payload);
                                         pushMessage(msg);
                                         setDmText('');
@@ -3112,13 +3399,13 @@ const FeedPage = () => {
 
             {viewMode === 'server' && shouldShowServerMembersPanel && showMemberList && (
                 <>
-                    <aside className="hidden lg:flex w-60 border-l border-discord-darkest/80 bg-discord-darker flex-col">
+                    <aside className="hidden lg:flex w-60 border-l border-discord-darkest/80 bg-[#1a1a1e] flex-col">
                         {memberListBody}
                     </aside>
                     <div className="lg:hidden">
                         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={() => setShowMemberList(false)} />
-                        <aside className="fixed top-0 right-0 bottom-0 w-72 bg-discord-darker z-50 shadow-2xl flex flex-col">
-                            <div className="h-12 flex items-center justify-between px-4 border-b border-discord-darkest/80">
+                        <aside className="fixed top-0 right-0 bottom-0 w-72 bg-[#1a1a1e] z-50 shadow-2xl flex flex-col">
+                            <div className="h-12 flex items-center justify-between px-4 border-b border-discord-darkest/80 bg-[#1a1a1e]">
                                 <span className="text-sm font-semibold text-discord-light">Members</span>
                                 <button onClick={() => setShowMemberList(false)} className="text-discord-faint hover:text-white">
                                     <X className="w-4 h-4" />
