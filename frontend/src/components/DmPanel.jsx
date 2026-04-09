@@ -63,6 +63,7 @@ const DmPanel = ({
     const [openMessageMenuId, setOpenMessageMenuId] = useState(null);
     const [copiedMessageId, setCopiedMessageId] = useState(null);
     const dmMenuRef = useRef(null);
+    const sendLockRef = useRef(false);
     const hasLocalCamera = !!localCameraStream;
     const hasRemoteCamera = !!remoteCameraStream;
     const cameraStreamMap = useMemo(() => {
@@ -217,6 +218,19 @@ const DmPanel = ({
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utterance);
         setOpenMessageMenuId(null);
+    };
+
+    const fireSend = async () => {
+        if (!onSend) return;
+        if (sendLockRef.current || sending) return;
+        const trimmed = (value || '').trim();
+        if (!trimmed && (!files || files.length === 0)) return;
+        sendLockRef.current = true;
+        try {
+            await onSend();
+        } finally {
+            sendLockRef.current = false;
+        }
     };
 
     return (
@@ -703,7 +717,7 @@ const DmPanel = ({
                             if (e.key === 'Enter' && !e.shiftKey) {
                                 if (e.nativeEvent?.isComposing) return;
                                 e.preventDefault();
-                                onSend?.();
+                                fireSend();
                             }
                         }}
                         placeholder={`Message @${headerTitle}`}
@@ -718,7 +732,7 @@ const DmPanel = ({
                         </button>
                         <Send
                             className={`w-4 h-4 cursor-pointer ${sending ? 'opacity-50' : ''}`}
-                            onClick={() => onSend?.()}
+                            onClick={() => fireSend()}
                         />
                     </div>
 

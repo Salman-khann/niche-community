@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Hash, Search, Users, Pin, HelpCircle, User, MessageCircle, Phone, MoreVertical, Settings, Menu, X, Server, Compass, Maximize2, MoreHorizontal, MonitorUp, UserPlus } from 'lucide-react';
+import { Hash, Search, Users, Pin, HelpCircle, User, MessageCircle, Phone, MoreVertical, Settings, Menu, X, Server, Compass, Maximize2, MoreHorizontal, MonitorUp, UserPlus, MoveHorizontal } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useProfileStore } from '../stores/profileStore';
@@ -46,9 +46,11 @@ const FeedPage = () => {
     const [showPins, setShowPins] = useState(false);
     const [activeTab, setActiveTab] = useState('online');
     const [showMemberList, setShowMemberList] = useState(true);
+    const [memberSearchQuery, setMemberSearchQuery] = useState('');
     const [selectedMember, setSelectedMember] = useState(null);
     const [showMemberPopout, setShowMemberPopout] = useState(false);
     const [friendIdInput, setFriendIdInput] = useState('');
+    const [addFriendSearchQuery, setAddFriendSearchQuery] = useState('');
     const [friendSearchQuery, setFriendSearchQuery] = useState('');
     const [requestFilter, setRequestFilter] = useState('all');
     const [activeFriendMenuId, setActiveFriendMenuId] = useState(null);
@@ -89,6 +91,8 @@ const FeedPage = () => {
         acceptRequest,
         declineRequest,
         removeFriend,
+        searchUsers,
+        searchResults,
         clearMessages,
         updatePresence: updateFriendPresence,
         removeOutgoing,
@@ -130,6 +134,10 @@ const FeedPage = () => {
     const [hoveredVoiceTile, setHoveredVoiceTile] = useState(null);
     const [showShareModePicker, setShowShareModePicker] = useState(false);
     const [showVoiceStageView, setShowVoiceStageView] = useState(false);
+    const [previewVoiceChannel, setPreviewVoiceChannel] = useState(null);
+    const [showVoiceInviteModal, setShowVoiceInviteModal] = useState(false);
+    const [showVoiceStageChatDrawer, setShowVoiceStageChatDrawer] = useState(false);
+    const [voiceStageChatWidth, setVoiceStageChatWidth] = useState(420);
     const [voiceInviteSearch, setVoiceInviteSearch] = useState('');
     const [invitingVoiceUserIds, setInvitingVoiceUserIds] = useState([]);
     const [voiceInvitedUserIds, setVoiceInvitedUserIds] = useState([]);
@@ -139,6 +147,9 @@ const FeedPage = () => {
     const [groupError, setGroupError] = useState('');
     const [roles, setRoles] = useState([]);
     const streamVideoRef = useRef(null);
+    const isResizingVoiceStageChatRef = useRef(false);
+    const voiceStageResizeStartXRef = useRef(0);
+    const voiceStageResizeStartWidthRef = useRef(420);
     const typingTimeoutRef = useRef(null);
     const prevCommunityIdRef = useRef(activeCommunityId);
     const [incomingCall, setIncomingCall] = useState(null);
@@ -363,6 +374,32 @@ const FeedPage = () => {
             isLocal: !!fallbackEntry.isLocal,
         };
     }, [activeScreenShareTile, voiceParticipants, localCameraStream, remoteCameraMap]);
+    const stageVoiceChannel = previewVoiceChannel || activeVoiceChannel;
+    const isViewingActiveVoiceChannel = !!activeVoiceChannel?._id && activeVoiceChannel?._id === stageVoiceChannel?._id;
+    const stagePresenceMembers = useMemo(() => {
+        const channelId = stageVoiceChannel?._id;
+        if (!channelId) return [];
+        if (isViewingActiveVoiceChannel) return voiceParticipants || [];
+        const list = voicePresence?.[channelId] || [];
+        return Array.isArray(list) ? list : [];
+    }, [stageVoiceChannel?._id, isViewingActiveVoiceChannel, voiceParticipants, voicePresence]);
+    const secondaryVoiceTiles = useMemo(() => {
+        if (!isViewingActiveVoiceChannel) return [];
+        const primaryId = primaryVoiceTile?.id;
+        return (voiceParticipants || [])
+            .map((member, index) => {
+                const stream = member?.isLocal
+                    ? localCameraStream
+                    : remoteCameraMap.get(member?.socketId) || null;
+                return {
+                    id: `voice-member-${member?.socketId || member?.userId || index}`,
+                    title: member?.displayName || 'Member',
+                    stream,
+                    avatar: member?.avatar || '',
+                };
+            })
+            .filter((tile) => tile.id !== primaryId);
+    }, [isViewingActiveVoiceChannel, voiceParticipants, localCameraStream, remoteCameraMap, primaryVoiceTile?.id]);
     const inCallUserIds = useMemo(() => new Set(
         (voiceParticipants || []).map((p) => p.userId).filter(Boolean)
     ), [voiceParticipants]);
@@ -378,7 +415,8 @@ const FeedPage = () => {
             return name.includes(query) || handle.includes(query);
         });
     }, [voiceInviteSearch, rosterFriends, user?._id, inCallUserIds]);
-    const showServerVoiceStage = viewMode === 'server' && !!activeVoiceChannel && showVoiceStageView;
+    const showServerVoiceStage = viewMode === 'server' && !!stageVoiceChannel && showVoiceStageView;
+    const shouldRenderVoiceStageChatDrawer = showServerVoiceStage && showVoiceStageChatDrawer;
 
     const openShareModePicker = useCallback(() => {
         setShowShareModePicker(true);
@@ -390,11 +428,59 @@ const FeedPage = () => {
 
     const openVoiceStageView = useCallback(() => {
         if (!activeVoiceChannel) return;
+        setPreviewVoiceChannel(activeVoiceChannel);
         setShowVoiceStageView(true);
     }, [activeVoiceChannel]);
 
     const closeVoiceStageView = useCallback(() => {
         setShowVoiceStageView(false);
+        setShowVoiceInviteModal(false);
+        setShowVoiceStageChatDrawer(false);
+    }, []);
+
+    const toggleVoiceChannelChatDrawer = useCallback(() => {
+        const voiceChannelId = stageVoiceChannel?._id;
+        if (!voiceChannelId) return;
+        if (activeChannelId !== voiceChannelId) {
+            setActiveChannel(voiceChannelId);
+        }
+        setShowVoiceStageChatDrawer((prev) => !prev);
+    }, [stageVoiceChannel?._id, activeChannelId, setActiveChannel]);
+
+    const startVoiceStageChatResize = useCallback((event) => {
+        if (!shouldRenderVoiceStageChatDrawer) return;
+        event.preventDefault();
+        isResizingVoiceStageChatRef.current = true;
+        voiceStageResizeStartXRef.current = event.clientX;
+        voiceStageResizeStartWidthRef.current = voiceStageChatWidth;
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+    }, [shouldRenderVoiceStageChatDrawer, voiceStageChatWidth]);
+
+    useEffect(() => {
+        const handleMouseMove = (event) => {
+            if (!isResizingVoiceStageChatRef.current) return;
+            const delta = voiceStageResizeStartXRef.current - event.clientX;
+            const maxAllowed = Math.min(760, Math.floor(window.innerWidth * 0.7));
+            const nextWidth = Math.min(maxAllowed, Math.max(320, voiceStageResizeStartWidthRef.current + delta));
+            setVoiceStageChatWidth(nextWidth);
+        };
+
+        const handleMouseUp = () => {
+            if (!isResizingVoiceStageChatRef.current) return;
+            isResizingVoiceStageChatRef.current = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
     }, []);
 
     const handleShareToggle = useCallback(() => {
@@ -422,13 +508,25 @@ const FeedPage = () => {
     }, [screenShareTiles.length]);
 
     useEffect(() => {
-        if (activeVoiceChannel) return;
+        if (activeVoiceChannel) {
+            setPreviewVoiceChannel(activeVoiceChannel);
+            return;
+        }
         setShowShareModePicker(false);
-        setShowVoiceStageView(false);
+        setShowVoiceInviteModal(false);
+        setShowVoiceStageChatDrawer(false);
         setVoiceInviteSearch('');
         setInvitingVoiceUserIds([]);
         setVoiceInvitedUserIds([]);
-    }, [activeVoiceChannel]);
+        if (!previewVoiceChannel?._id) {
+            setShowVoiceStageView(false);
+        }
+    }, [activeVoiceChannel, previewVoiceChannel?._id]);
+
+    useEffect(() => {
+        if (isViewingActiveVoiceChannel) return;
+        setShowVoiceInviteModal(false);
+    }, [isViewingActiveVoiceChannel]);
 
     useEffect(() => {
         setVoiceInvitedUserIds((prev) => prev.filter((id) => !inCallUserIds.has(id)));
@@ -669,10 +767,25 @@ const FeedPage = () => {
                 });
                 return;
             }
-            setVoicePresence((prev) => ({
-                ...prev,
-                [channelKey]: uniqueMembers,
-            }));
+            setVoicePresence((prev) => {
+                const activeKey = activeVoiceChannel?._id?.toString?.() || String(activeVoiceChannel?._id || '');
+                const currentUid = user?._id?.toString?.() || String(user?._id || '');
+                const others = uniqueMembers.filter((m) => {
+                    const uid = m?.userId?.toString?.() || String(m?.userId || '');
+                    if (!uid || !currentUid) return true;
+                    return uid !== currentUid;
+                });
+                if (others.length === 0 && channelKey !== activeKey) {
+                    if (!prev[channelKey]) return prev;
+                    const next = { ...prev };
+                    delete next[channelKey];
+                    return next;
+                }
+                return {
+                    ...prev,
+                    [channelKey]: others,
+                };
+            });
         };
         const handleRoomStatus = ({ roomId, members }) => {
             if (!roomId || !roomId.startsWith('dm-')) return;
@@ -1450,6 +1563,25 @@ const FeedPage = () => {
         leaveVoice();
     }, [activeDmCall, endDmCall, leaveVoice]);
 
+    const handleVoiceChannelPreview = useCallback((channel) => {
+        if (!channel?._id) return;
+        setPreviewVoiceChannel(channel);
+        setShowVoiceStageView(true);
+    }, []);
+
+    const handleVoiceChannelJoin = useCallback((channel) => {
+        if (!channel?._id) return;
+        if (incomingCall || outgoingCall || activeDmCall) {
+            exitDmCallForVoice();
+        }
+        setPreviewVoiceChannel(channel);
+        setShowVoiceStageView(true);
+        if (activeVoiceChannel?._id === channel._id) {
+            return;
+        }
+        joinVoice({ ...channel, communityId: activeCommunityId });
+    }, [incomingCall, outgoingCall, activeDmCall, exitDmCallForVoice, activeVoiceChannel?._id, joinVoice, activeCommunityId]);
+
     useEffect(() => {
         if (!friendError && !friendSuccess) return;
         const t = setTimeout(() => clearMessages(), 2500);
@@ -1467,12 +1599,37 @@ const FeedPage = () => {
         [channels, activeChannelId]
     );
 
+    const isTextChannelActive = useMemo(() => {
+        const type = activeChannel?.type || 'text';
+        return ['text', 'announcement', 'forum'].includes(type);
+    }, [activeChannel?.type]);
+    const shouldShowServerMembersPanel = useMemo(() => {
+        return isTextChannelActive && !activeVoiceChannel;
+    }, [isTextChannelActive, activeVoiceChannel]);
+
+    useEffect(() => {
+        if (shouldShowServerMembersPanel) return;
+        setShowMemberList(false);
+        setMemberSearchQuery('');
+    }, [shouldShowServerMembersPanel]);
+
     const activeMembership = useMemo(() => (
         user?.memberships?.find((m) => {
             const membershipCommunityId = typeof m.communityId === 'string' ? m.communityId : m.communityId?._id;
             return membershipCommunityId === activeCommunityId;
         }) || null
     ), [user?.memberships, activeCommunityId]);
+
+    const channelChatCurrentUser = useMemo(() => ({
+        id: user?._id,
+        displayName,
+        username: user?.username || username,
+        avatar: profile?.avatar || '',
+        communityRole: user?.memberships?.find((m) => {
+            const id = m.communityId?._id || m.communityId;
+            return id?.toString?.() === activeCommunityId;
+        })?.role,
+    }), [user?._id, user?.username, user?.memberships, displayName, username, profile?.avatar, activeCommunityId]);
 
     const memberList = useMemo(() => {
         const current = {
@@ -1531,43 +1688,32 @@ const FeedPage = () => {
         setEditChannelSignal((v) => v + 1);
     };
 
-    const groupedMembers = useMemo(() => {
+    const filteredMemberList = useMemo(() => {
+        const q = (memberSearchQuery || '').trim().toLowerCase();
+        const base = (memberList || []).filter((m) => !!m?._id);
+        if (!q) return base;
+        return base.filter((m) => {
+            const name = (m.displayName || '').toLowerCase();
+            const handle = (m.username || '').toLowerCase();
+            const status = (filterStatusText(m.bio || m.statusText) || '').toLowerCase();
+            return name.includes(q) || handle.includes(q) || status.includes(q);
+        });
+    }, [memberList, memberSearchQuery]);
+
+    const memberSections = useMemo(() => {
         const presenceOrder = { online: 0, dnd: 1, idle: 2, offline: 3 };
         const sortByPresence = (list) => [...list].sort((a, b) => {
             const diff = (presenceOrder[a.presence] ?? 9) - (presenceOrder[b.presence] ?? 9);
             if (diff !== 0) return diff;
             return (a.displayName || '').localeCompare(b.displayName || '');
         });
-
-        const assigned = new Set();
-        const offlineMembers = memberList.filter((m) => m.presence === 'offline');
-        const admins = memberList.filter((m) => m.communityRole === 'admin' && m.presence !== 'offline');
-        admins.forEach((m) => assigned.add(m._id));
-        const moderators = memberList.filter((m) => m.communityRole === 'moderator' && !assigned.has(m._id) && m.presence !== 'offline');
-        moderators.forEach((m) => assigned.add(m._id));
-
-        const customGroups = roles.map((role) => {
-            const roleId = role._id?.toString?.() || String(role._id);
-            const members = memberList.filter((m) => {
-                if (assigned.has(m._id)) return false;
-                if (m.presence === 'offline') return false;
-                const roleIds = (m.roleIds || []).map((id) => id?.toString?.() || String(id));
-                return roleIds.includes(roleId);
-            });
-            members.forEach((m) => assigned.add(m._id));
-            return { id: roleId, label: role.name, members: sortByPresence(members) };
-        }).filter((g) => g.members.length > 0);
-
-        const everyone = memberList.filter((m) => !assigned.has(m._id) && m.presence !== 'offline');
-
+        const online = sortByPresence(filteredMemberList.filter((m) => m.presence !== 'offline'));
+        const offline = sortByPresence(filteredMemberList.filter((m) => m.presence === 'offline'));
         return [
-            { id: 'admin', label: 'Admins', members: sortByPresence(admins) },
-            { id: 'moderator', label: 'Moderators', members: sortByPresence(moderators) },
-            ...customGroups,
-            { id: 'everyone', label: 'Members', members: sortByPresence(everyone) },
-            { id: 'offline', label: 'Offline', members: sortByPresence(offlineMembers) },
-        ].filter((g) => g.members.length > 0);
-    }, [memberList, roles]);
+            { id: 'online', label: 'Online', members: online },
+            { id: 'offline', label: 'Offline', members: offline },
+        ];
+    }, [filteredMemberList]);
 
     const filteredFriends = useMemo(() => {
         let base = friends;
@@ -1639,13 +1785,31 @@ const FeedPage = () => {
         }
     }, [dmThreadEntries, activeDm?._id]);
 
-    const handleSendRequest = async () => {
-        if (!friendIdInput.trim()) return;
-        await sendRequest(friendIdInput.trim());
-        setFriendIdInput('');
-        fetchFriends();
-        fetchRequests();
+    const handleSendRequest = async (targetId = friendIdInput) => {
+        const id = (targetId || '').trim();
+        if (!id) return;
+        try {
+            await sendRequest(id);
+            if (id === (friendIdInput || '').trim()) {
+                setFriendIdInput('');
+            }
+            fetchFriends();
+            fetchRequests();
+            if (addFriendSearchQuery.trim().length >= 2) {
+                searchUsers(addFriendSearchQuery.trim()).catch(() => { });
+            }
+        } catch { }
     };
+
+    useEffect(() => {
+        if (activeTab !== 'add') return;
+        const q = addFriendSearchQuery.trim();
+        if (q.length < 2) return;
+        const timer = setTimeout(() => {
+            searchUsers(q).catch(() => { });
+        }, 220);
+        return () => clearTimeout(timer);
+    }, [activeTab, addFriendSearchQuery, searchUsers]);
 
     const handleMobileServerSwitch = (communityId) => {
         if (!communityId) return;
@@ -1815,43 +1979,59 @@ const FeedPage = () => {
     );
 
     const memberListBody = (
-        <>
-            <div className="px-3 py-4 space-y-5">
-                {groupedMembers.map((group) => (
+        <div className="flex-1 min-h-0 flex flex-col">
+            <div className="px-3 pt-3 pb-2 border-b border-discord-darkest/70">
+                <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-discord-faint" />
+                    <input
+                        type="text"
+                        value={memberSearchQuery}
+                        onChange={(e) => setMemberSearchQuery(e.target.value)}
+                        placeholder="Search members"
+                        className="ui-search-input w-full pl-8 pr-3 py-2 text-xs placeholder:text-discord-faint/60 focus:outline-none"
+                    />
+                </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-5">
+                {memberSections.map((group) => (
                     <div key={group.id}>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-discord-faint mb-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-discord-faint mb-2">
                             {group.label} — {group.members.length}
                         </div>
-                        <div className="space-y-2">
-                            {group.members.map((m) => (
-                                <button
-                                    key={m._id}
-                                    onClick={() => { setSelectedMember(m); setShowMemberPopout(true); }}
-                                    className="w-full flex items-start gap-2 text-sm text-discord-light rounded-lg px-2 py-1.5 hover:bg-discord-darkest/70 transition cursor-pointer text-left"
-                                >
-                                    <div className="relative w-8 h-8 shrink-0 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-semibold">
-                                        {m.avatar ? (
-                                            <img src={m.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
-                                        ) : (
-                                            m.displayName?.charAt(0).toUpperCase()
-                                        )}
-                                        <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-discord-darker ${presenceColor(m.presence)}`} />
-                                    </div>
-                                    <div className="min-w-0 flex-1 leading-tight">
-                                        <p className="text-sm font-semibold text-discord-white truncate">{m.displayName}</p>
-                                        {filterStatusText(m.bio || m.statusText) && (
-                                            <p className="text-[11px] text-discord-faint line-clamp-2 break-words">
-                                                {filterStatusText(m.bio || m.statusText)}
-                                            </p>
-                                        )}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
+                        {group.members.length === 0 ? (
+                            <div className="px-2 py-2 text-xs text-discord-faint">No members</div>
+                        ) : (
+                            <div className="space-y-1">
+                                {group.members.map((m) => (
+                                    <button
+                                        key={m._id}
+                                        onClick={() => { setSelectedMember(m); setShowMemberPopout(true); }}
+                                        className="w-full flex items-center gap-2 text-sm text-discord-light rounded-lg px-2 py-1.5 hover:bg-discord-darkest/70 transition cursor-pointer text-left"
+                                    >
+                                        <div className="relative w-8 h-8 shrink-0 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-semibold overflow-hidden">
+                                            {m.avatar ? (
+                                                <img src={m.avatar} alt="" className="w-8 h-8 object-cover" />
+                                            ) : (
+                                                m.displayName?.charAt(0).toUpperCase()
+                                            )}
+                                            <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-discord-darker ${presenceColor(m.presence)}`} />
+                                        </div>
+                                        <div className="min-w-0 flex-1 leading-tight">
+                                            <p className="text-sm font-semibold text-discord-white truncate">{m.displayName}</p>
+                                            {filterStatusText(m.bio || m.statusText) && (
+                                                <p className="text-[11px] text-discord-faint truncate">
+                                                    {filterStatusText(m.bio || m.statusText)}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
-        </>
+        </div>
     );
 
     const switchAnimClass = isServerSwitching
@@ -1882,17 +2062,8 @@ const FeedPage = () => {
                         setShowMobileServers(false);
                     }}
                     onOpenChannelSettings={handleOpenChannelSettings}
-                    onVoiceChannelClick={(channel) => {
-                        if (!channel?._id) return;
-                        if (incomingCall || outgoingCall || activeDmCall) {
-                            exitDmCallForVoice();
-                        }
-                        if (activeVoiceChannel?._id === channel._id) {
-                            leaveVoice();
-                        } else {
-                            joinVoice({ ...channel, communityId: activeCommunityId });
-                        }
-                    }}
+                    onVoiceChannelClick={handleVoiceChannelPreview}
+                    onVoiceChannelDoubleClick={handleVoiceChannelJoin}
                     voiceState={{
                         isConnected: !!activeVoiceChannel,
                         activeChannelId: activeVoiceChannel?._id,
@@ -2037,13 +2208,15 @@ const FeedPage = () => {
                         >
                             <Compass className="w-4 h-4" />
                         </button>
-                        <button
-                            onClick={() => setShowMemberList((v) => !v)}
-                            className={`hover:text-discord-light cursor-pointer ${showMemberList ? 'text-discord-white' : 'text-discord-faint'}`}
-                            title="Toggle members list"
-                        >
-                            <Users className="w-4 h-4" />
-                        </button>
+                        {shouldShowServerMembersPanel && (
+                            <button
+                                onClick={() => setShowMemberList((v) => !v)}
+                                className={`hover:text-discord-light cursor-pointer ${showMemberList ? 'text-discord-white' : 'text-discord-faint'}`}
+                                title="Toggle members list"
+                            >
+                                <Users className="w-4 h-4" />
+                            </button>
+                        )}
                         <button onClick={() => setShowPins(true)} className="hover:text-discord-light cursor-pointer">
                             <Pin className="w-4 h-4" />
                         </button>
@@ -2059,21 +2232,93 @@ const FeedPage = () => {
                         <div className="h-12 border-b border-discord-border/60 px-4 flex items-center justify-between">
                             <div className="flex items-center gap-2 text-discord-light">
                                 <UserPlus className="w-4 h-4 text-discord-faint" />
-                                <p className="text-sm font-semibold">Voice Call - {activeVoiceChannel?.name || 'Channel'}</p>
+                                <p className="text-sm font-semibold">Voice Call - {stageVoiceChannel?.name || 'Channel'}</p>
                             </div>
-                            <button
-                                type="button"
-                                onClick={closeVoiceStageView}
-                                className="w-8 h-8 rounded-md hover:bg-discord-border-light/30 text-discord-faint hover:text-discord-light flex items-center justify-center"
-                                title="Close call view"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {isViewingActiveVoiceChannel && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowVoiceInviteModal(true)}
+                                        className="h-8 px-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5"
+                                        title="Invite members"
+                                    >
+                                        <UserPlus className="w-3.5 h-3.5" />
+                                        Invite
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={toggleVoiceChannelChatDrawer}
+                                    className={`w-8 h-8 rounded-md text-white flex items-center justify-center transition-colors ${
+                                        shouldRenderVoiceStageChatDrawer ? 'bg-white/30' : 'bg-white/10 hover:bg-white/20'
+                                    }`}
+                                    title={shouldRenderVoiceStageChatDrawer ? 'Close channel chat' : 'Open channel chat'}
+                                >
+                                    <MessageCircle className="w-4 h-4" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={closeVoiceStageView}
+                                    className="w-8 h-8 rounded-md hover:bg-discord-border-light/30 text-discord-faint hover:text-discord-light flex items-center justify-center"
+                                    title="Close call view"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
                         </div>
                         <div className="h-[calc(100%-3rem)] p-3 md:p-4">
-                            <div className="grid grid-cols-1 lg:grid-cols-[2fr,1fr] gap-3 h-full">
+                            {!isViewingActiveVoiceChannel ? (
+                                <div className="h-full rounded-2xl border border-discord-border/50 bg-[radial-gradient(circle_at_50%_120%,rgba(116,122,255,0.55),rgba(31,35,99,0.82)_35%,rgba(14,17,52,0.96)_72%)] flex flex-col">
+                                    <div className="px-3 py-2 flex items-center justify-end">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleVoiceChannelJoin(stageVoiceChannel)}
+                                            className="px-3 py-1.5 rounded-md bg-white text-[#1e234f] text-xs font-semibold hover:bg-white/90"
+                                        >
+                                            Join Voice
+                                        </button>
+                                    </div>
+                                    <div className="flex-1 min-h-0 px-4 pb-6">
+                                        {stagePresenceMembers.length === 0 ? (
+                                            <div className="h-full flex flex-col items-center justify-center text-center">
+                                                <p className="text-4xl md:text-5xl font-bold text-white/90 leading-none">{stageVoiceChannel?.name || 'Voice Channel'}</p>
+                                                <p className="mt-3 text-sm text-white/70">No one is currently in voice</p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleVoiceChannelJoin(stageVoiceChannel)}
+                                                    className="mt-6 px-5 py-2.5 rounded-lg bg-white text-[#20254f] text-sm font-semibold hover:bg-white/90"
+                                                >
+                                                    Join Voice
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="h-full overflow-y-auto">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                    {stagePresenceMembers.map((member) => (
+                                                        <div key={`stage-member-${member.userId || member.socketId}`} className="rounded-xl border border-white/10 bg-black/25 backdrop-blur-sm px-3 py-3 flex items-center gap-3">
+                                                            <div className="w-11 h-11 rounded-full bg-discord-darkest overflow-hidden flex items-center justify-center text-sm font-semibold text-discord-light shrink-0">
+                                                                {member.avatar ? (
+                                                                    <img src={member.avatar} alt="" className="w-11 h-11 object-cover" />
+                                                                ) : (
+                                                                    (member.displayName || 'U').charAt(0).toUpperCase()
+                                                                )}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="text-sm font-semibold text-white truncate">{member.displayName || 'Member'}</p>
+                                                                <p className="text-xs text-white/70 truncate">In voice</p>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                            <div className="h-full flex gap-3">
+                                <div className="flex-1 min-w-0 h-full flex flex-col">
                                 <div
-                                    className="group relative h-full min-h-[260px] rounded-xl border border-emerald-500/55 overflow-hidden bg-zinc-300"
+                                    className="group relative flex-1 min-h-[260px] rounded-xl border border-emerald-500/55 overflow-hidden bg-zinc-300"
                                     onMouseEnter={() => setHoveredVoiceTile('primary')}
                                     onMouseLeave={() => setHoveredVoiceTile(null)}
                                 >
@@ -2145,87 +2390,158 @@ const FeedPage = () => {
                                     </div>
                                 </div>
 
-                                <div className="h-full min-h-[260px] rounded-xl border border-discord-border/70 bg-discord-darkest/60 p-3 flex flex-col">
-                                    <p className="text-sm font-semibold text-discord-light">Invite Others</p>
-                                    <p className="text-[11px] text-discord-faint mt-1">Add community members to this voice channel.</p>
-                                    <div className="mt-3 relative">
-                                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-discord-faint" />
-                                        <input
-                                            type="text"
-                                            value={voiceInviteSearch}
-                                            onChange={(e) => setVoiceInviteSearch(e.target.value)}
-                                            placeholder="Search members"
-                                            className="w-full pl-8 pr-3 py-2 rounded-lg bg-discord-darkest border border-discord-border/50 text-sm text-discord-light placeholder:text-discord-faint/70 outline-none"
-                                        />
-                                    </div>
-                                    <div className="mt-3 flex-1 overflow-y-auto space-y-2 pr-1">
-                                        {inviteCandidates.length === 0 && (
-                                            <div className="h-full min-h-[120px] flex items-center justify-center text-xs text-discord-faint text-center">
-                                                No members available to invite.
-                                            </div>
-                                        )}
-                                        {inviteCandidates.map((member) => {
-                                            const isInviting = invitingVoiceUserIds.includes(member._id);
-                                            const isInvited = voiceInvitedUserIds.includes(member._id);
-                                            const isInCall = inCallUserIds.has(member._id);
-                                            return (
-                                                <div key={member._id} className="rounded-lg bg-discord-darkest/70 border border-discord-border/40 px-2.5 py-2 flex items-center gap-2">
-                                                    <div className="w-8 h-8 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-semibold overflow-hidden">
-                                                        {member.avatar ? (
-                                                            <img src={member.avatar} alt="" className="w-full h-full object-cover" />
+                                {secondaryVoiceTiles.length > 0 && (
+                                    <div className="mt-3 rounded-xl border border-discord-border/60 bg-discord-darkest/60 p-2.5">
+                                        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-discord-faint mb-2 px-1">
+                                            Participants — {voiceParticipants.length}
+                                        </div>
+                                        <div className="max-h-[180px] overflow-y-auto grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
+                                            {secondaryVoiceTiles.map((tile) => (
+                                                <div key={tile.id} className="rounded-lg border border-white/10 bg-black/25 p-2 flex items-center gap-2">
+                                                    <div className="w-8 h-8 rounded-full bg-discord-darkest overflow-hidden flex items-center justify-center text-xs font-semibold text-discord-light shrink-0">
+                                                        {tile.stream ? (
+                                                            <VoiceVideoPlayer stream={tile.stream} muted className="w-8 h-8 object-cover" />
+                                                        ) : tile.avatar ? (
+                                                            <img src={tile.avatar} alt="" className="w-8 h-8 object-cover" />
                                                         ) : (
-                                                            (member.displayName || 'M').charAt(0).toUpperCase()
+                                                            tile.title.charAt(0).toUpperCase()
                                                         )}
                                                     </div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="text-sm text-discord-light font-semibold truncate">{member.displayName || 'Member'}</p>
-                                                        <p className="text-[11px] text-discord-faint truncate">{member.username ? `@${member.username}` : 'Member'}</p>
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        disabled={isInCall || isInviting || isInvited}
-                                                        onClick={() => inviteUserToVoice(member)}
-                                                        className={`px-2.5 py-1.5 rounded-md text-xs font-semibold ${
-                                                            isInCall
-                                                                ? 'bg-discord-border/30 text-discord-faint cursor-not-allowed'
-                                                                : isInviting
-                                                                    ? 'bg-amber-500/20 text-amber-200 cursor-wait'
-                                                                    : isInvited
-                                                                        ? 'bg-emerald-500/20 text-emerald-200 cursor-default'
-                                                                        : 'bg-blurple/80 text-white hover:bg-blurple'
-                                                        }`}
-                                                    >
-                                                        {isInCall ? 'In Call' : isInviting ? 'Inviting...' : isInvited ? 'Invited' : 'Invite'}
-                                                    </button>
+                                                    <p className="text-xs text-white truncate">{tile.title}</p>
                                                 </div>
-                                            );
-                                        })}
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                </div>
+
+                                {shouldRenderVoiceStageChatDrawer && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onMouseDown={startVoiceStageChatResize}
+                                            className="group relative w-3 shrink-0 cursor-ew-resize rounded-full bg-discord-border/50 hover:bg-blurple/60 transition-colors"
+                                            aria-label="Resize chat drawer"
+                                            title="Drag to resize"
+                                        >
+                                            <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-white/35" />
+                                            <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md bg-discord-darkest/90 border border-discord-border/60 px-1 py-0.5 text-white/80 opacity-80 group-hover:opacity-100">
+                                                <MoveHorizontal className="w-3 h-3" />
+                                            </span>
+                                        </button>
+
+                                        <aside
+                                            className="h-full min-h-0 rounded-xl border border-discord-border/70 bg-discord-chat overflow-hidden"
+                                            style={{ width: `${voiceStageChatWidth}px` }}
+                                        >
+                                            <ChannelChat
+                                                channel={activeChannel}
+                                                socket={socket}
+                                                editSignal={editChannelSignal}
+                                                currentUser={channelChatCurrentUser}
+                                                members={rosterFriends}
+                                                showPins={showPins}
+                                                onClosePins={() => setShowPins(false)}
+                                                canEditChannel={canEditChannel}
+                                            />
+                                        </aside>
+                                    </>
+                                )}
+                            </div>
+                            )}
+
+                            {showVoiceInviteModal && isViewingActiveVoiceChannel && (
+                                <div className="fixed inset-0 z-[95] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowVoiceInviteModal(false)}>
+                                    <div className="w-full max-w-3xl max-h-[82vh] rounded-2xl border border-discord-border/70 bg-discord-darker shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+                                        <div className="px-4 py-3 border-b border-discord-border/50 flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm font-semibold text-discord-light">Invite Others</p>
+                                                <p className="text-[11px] text-discord-faint">Add community members to this voice channel.</p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowVoiceInviteModal(false)}
+                                                className="w-8 h-8 rounded-md hover:bg-discord-border-light/30 text-discord-faint hover:text-discord-light flex items-center justify-center"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+
+                                        <div className="p-4 border-b border-discord-border/40">
+                                            <div className="relative">
+                                                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-discord-faint" />
+                                                <input
+                                                    type="text"
+                                                    value={voiceInviteSearch}
+                                                    onChange={(e) => setVoiceInviteSearch(e.target.value)}
+                                                    placeholder="Search members"
+                                                    className="w-full pl-8 pr-3 py-2 rounded-lg bg-discord-darkest border border-discord-border/50 text-sm text-discord-light placeholder:text-discord-faint/70 outline-none"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="p-4 flex-1 overflow-y-auto space-y-2">
+                                            {inviteCandidates.length === 0 && (
+                                                <div className="h-full min-h-[120px] flex items-center justify-center text-xs text-discord-faint text-center">
+                                                    No members available to invite.
+                                                </div>
+                                            )}
+                                            {inviteCandidates.map((member) => {
+                                                const isInviting = invitingVoiceUserIds.includes(member._id);
+                                                const isInvited = voiceInvitedUserIds.includes(member._id);
+                                                const isInCall = inCallUserIds.has(member._id);
+                                                return (
+                                                    <div key={member._id} className="rounded-lg bg-discord-darkest/70 border border-discord-border/40 px-2.5 py-2 flex items-center gap-2">
+                                                        <div className="w-8 h-8 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-semibold overflow-hidden">
+                                                            {member.avatar ? (
+                                                                <img src={member.avatar} alt="" className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                (member.displayName || 'M').charAt(0).toUpperCase()
+                                                            )}
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-sm text-discord-light font-semibold truncate">{member.displayName || 'Member'}</p>
+                                                            <p className="text-[11px] text-discord-faint truncate">{member.username ? `@${member.username}` : 'Member'}</p>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            disabled={isInCall || isInviting || isInvited}
+                                                            onClick={() => inviteUserToVoice(member)}
+                                                            className={`px-2.5 py-1.5 rounded-md text-xs font-semibold ${
+                                                                isInCall
+                                                                    ? 'bg-discord-border/30 text-discord-faint cursor-not-allowed'
+                                                                    : isInviting
+                                                                        ? 'bg-amber-500/20 text-amber-200 cursor-wait'
+                                                                        : isInvited
+                                                                            ? 'bg-emerald-500/20 text-emerald-200 cursor-default'
+                                                                            : 'bg-blurple/80 text-white hover:bg-blurple'
+                                                            }`}
+                                                        >
+                                                            {isInCall ? 'In Call' : isInviting ? 'Inviting...' : isInvited ? 'Invited' : 'Invite'}
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     </div>
                 )}
 
-                <ChannelChat
-                    channel={activeChannel}
-                    socket={socket}
-                    editSignal={editChannelSignal}
-                    currentUser={{
-                        id: user?._id,
-                        displayName,
-                        username: user?.username || username,
-                        avatar: profile?.avatar || '',
-                        communityRole: user?.memberships?.find((m) => {
-                            const id = m.communityId?._id || m.communityId;
-                            return id?.toString?.() === activeCommunityId;
-                        })?.role,
-                    }}
-                    members={rosterFriends}
-                    showPins={showPins}
-                    onClosePins={() => setShowPins(false)}
-                    canEditChannel={canEditChannel}
-                />
+                {!shouldRenderVoiceStageChatDrawer && (
+                    <ChannelChat
+                        channel={activeChannel}
+                        socket={socket}
+                        editSignal={editChannelSignal}
+                        currentUser={channelChatCurrentUser}
+                        members={rosterFriends}
+                        showPins={showPins}
+                        onClosePins={() => setShowPins(false)}
+                        canEditChannel={canEditChannel}
+                    />
+                )}
                     </>
                 ) : viewMode === 'dm' ? (
                     <>
@@ -2424,7 +2740,90 @@ const FeedPage = () => {
                             <div className="flex-1 overflow-y-auto px-4 py-6">
                                 <div className="max-w-3xl">
                                     <h2 className="text-xl font-bold text-white">Add Friend</h2>
-                                    <p className="text-sm text-discord-muted mt-1">You can add friends with their user ID.</p>
+                                    <p className="text-sm text-discord-muted mt-1">Search users by name/email or send by user ID.</p>
+
+                                    <div className="mt-4 rounded-xl bg-discord-darkest/70 border border-discord-border/50 px-3 py-2">
+                                        <div className="relative">
+                                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-discord-faint" />
+                                            <input
+                                                type="text"
+                                                value={addFriendSearchQuery}
+                                                onChange={(e) => setAddFriendSearchQuery(e.target.value)}
+                                                placeholder="Search users"
+                                                className="w-full pl-8 pr-3 py-2 bg-transparent text-sm text-discord-white placeholder:text-discord-faint/60 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {addFriendSearchQuery.trim().length >= 2 && (
+                                        <div className="mt-3 rounded-xl border border-discord-border/50 bg-discord-darkest/55 divide-y divide-discord-border/40 overflow-hidden">
+                                            {searchResults.length === 0 ? (
+                                                <div className="px-3 py-4 text-xs text-discord-faint">No users found.</div>
+                                            ) : (
+                                                searchResults.map((candidate) => (
+                                                    <div key={`candidate-${candidate._id}`} className="px-3 py-2 flex items-center gap-3 justify-between">
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            <div className="w-9 h-9 rounded-full bg-discord-darkest overflow-hidden flex items-center justify-center text-xs font-semibold text-discord-light shrink-0">
+                                                                {candidate.avatar ? (
+                                                                    <img src={candidate.avatar} alt="" className="w-9 h-9 object-cover" />
+                                                                ) : (
+                                                                    (candidate.displayName || 'U').charAt(0).toUpperCase()
+                                                                )}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="text-sm font-semibold text-discord-white truncate">{candidate.displayName}</p>
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <p className="text-[11px] text-discord-faint truncate">{candidate.username ? `@${candidate.username}` : candidate._id}</p>
+                                                                    {!!candidate.mutualFriendsCount && (
+                                                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-discord-border/40 text-discord-light">
+                                                                            {candidate.mutualFriendsCount} mutual
+                                                                        </span>
+                                                                    )}
+                                                                    {candidate.relationship === 'friend' && (
+                                                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200">Friend</span>
+                                                                    )}
+                                                                    {candidate.relationship === 'outgoing' && (
+                                                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-200">Requested</span>
+                                                                    )}
+                                                                    {candidate.relationship === 'incoming' && (
+                                                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-200">Wants to connect</span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        {candidate.relationship === 'incoming' ? (
+                                                            <button
+                                                                onClick={async () => {
+                                                                    await acceptRequest(candidate._id);
+                                                                    fetchFriends();
+                                                                    fetchRequests();
+                                                                    searchUsers(addFriendSearchQuery.trim()).catch(() => { });
+                                                                }}
+                                                                disabled={isFriendLoading}
+                                                                className="px-3 py-1.5 rounded-md bg-discord-green text-xs font-semibold text-discord-darkest hover:bg-discord-green/90 disabled:opacity-60"
+                                                            >
+                                                                Accept
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleSendRequest(candidate._id)}
+                                                                disabled={isFriendLoading || candidate.relationship === 'friend' || candidate.relationship === 'outgoing'}
+                                                                className={`px-3 py-1.5 rounded-md text-xs font-semibold disabled:opacity-60 ${
+                                                                    candidate.relationship === 'friend'
+                                                                        ? 'bg-discord-border/30 text-discord-faint cursor-not-allowed'
+                                                                        : candidate.relationship === 'outgoing'
+                                                                            ? 'bg-amber-500/20 text-amber-200 cursor-not-allowed'
+                                                                            : 'bg-blurple text-white hover:bg-blurple-hover'
+                                                                }`}
+                                                            >
+                                                                {candidate.relationship === 'friend' ? 'Added' : candidate.relationship === 'outgoing' ? 'Requested' : 'Add'}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
 
                                     <div className="mt-4 flex items-center gap-3 rounded-xl bg-discord-darkest/70 border border-discord-border/50 px-3 py-2">
                                         <input
@@ -2711,7 +3110,7 @@ const FeedPage = () => {
                 )}
             </main>
 
-            {viewMode === 'server' && showMemberList && (
+            {viewMode === 'server' && shouldShowServerMembersPanel && showMemberList && (
                 <>
                     <aside className="hidden lg:flex w-60 border-l border-discord-darkest/80 bg-discord-darker flex-col">
                         {memberListBody}

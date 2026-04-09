@@ -196,7 +196,7 @@ const WorkspaceSwitcher = ({ onHomeClick, onServerSelect, openDirectorySignal = 
 
     return (
         <>
-            <aside className="workspace-switcher hidden md:flex flex-col items-center w-16 shrink-0 bg-discord-sidebar border-r border-discord-darkest/80 py-3 gap-3 overflow-y-auto">
+            <aside className="workspace-switcher hidden md:flex flex-col items-center w-16 shrink-0 bg-[#0f1117] border-r border-discord-darkest/80 py-3 gap-3 overflow-y-auto">
                 <button
                     onClick={() => {
                         onHomeClick?.();
@@ -232,6 +232,7 @@ const WorkspaceSwitcher = ({ onHomeClick, onServerSelect, openDirectorySignal = 
                     const id = getId(m);
                     const isActive = id === activeCommunityId;
                     const unreadCount = unreadByCommunity.get(id?.toString?.() || String(id)) || 0;
+                    const hasUnread = unreadCount > 0;
 
                     return (
                         <div
@@ -248,9 +249,16 @@ const WorkspaceSwitcher = ({ onHomeClick, onServerSelect, openDirectorySignal = 
                             }}
                             onMouseLeave={() => setHoveredServer(null)}
                         >
-                            {/* Active pill indicator */}
-                            <div className={`absolute left-0 w-1 rounded-r-full bg-white transition-all duration-300
-                                ${isActive ? 'h-10' : 'h-0 group-hover:h-5'}`} />
+                            {/* Discord-like left indicator: full pill for active, white dot for unread */}
+                            <div
+                                className={`absolute left-0 bg-white transition-all duration-200
+                                    ${isActive
+                                        ? 'w-1 h-10 rounded-r-full'
+                                        : hasUnread
+                                            ? 'w-2 h-2 rounded-full'
+                                            : 'w-0 h-0 group-hover:w-1 group-hover:h-5 group-hover:rounded-r-full'
+                                    }`}
+                            />
 
                             <button onClick={() => handleSwitch(id)}
                                 className={`w-11 h-11 flex items-center justify-center text-xs font-bold text-discord-light
@@ -266,9 +274,6 @@ const WorkspaceSwitcher = ({ onHomeClick, onServerSelect, openDirectorySignal = 
                                     getInitial(m)
                                 )}
                             </button>
-                            {unreadCount > 0 && (
-                                <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-discord-red border-2 border-discord-sidebar" />
-                            )}
                         </div>
                     );
                 })}

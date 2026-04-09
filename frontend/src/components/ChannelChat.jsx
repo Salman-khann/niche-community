@@ -93,6 +93,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     const messageMenuRef = useRef(null);
     const commentInputRefs = useRef({});
     const scrollContainerRef = useRef(null);
+    const sendLockRef = useRef(false);
     const COMMENT_REACTIONS = ['👍', '❤️', '😂', '🔥', '👏'];
 
     const handleCloseEdit = () => {
@@ -145,19 +146,13 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     useEffect(() => {
         if (!channel?._id) return;
         let active = true;
-        const MIN_LOAD_MS = 250;
         const run = async () => {
             setIsSwitching(true);
             clearChannelState?.();
-            const started = Date.now();
             try {
                 await fetchMessages(channel._id);
             } catch { }
-            const elapsed = Date.now() - started;
-            const remaining = Math.max(0, MIN_LOAD_MS - elapsed);
-            setTimeout(() => {
-                if (active) setIsSwitching(false);
-            }, remaining);
+            if (active) setIsSwitching(false);
             socket?.emit('join_channel', channel._id);
         };
         run();
@@ -351,9 +346,11 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     };
 
     const handleSend = async () => {
+        if (sendLockRef.current || isUploading) return;
         if (!channel?._id) return;
         const trimmed = text.trim();
         if (!trimmed && files.length === 0) return;
+        sendLockRef.current = true;
         setIsUploading(true);
         setSendError('');
         try {
@@ -380,6 +377,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
             setSendError(err?.message || 'Failed to send message with attachment.');
         } finally {
             setIsUploading(false);
+            sendLockRef.current = false;
         }
     };
 
@@ -623,8 +621,8 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
 
     return (
         <>
-        <div className="flex-1 min-h-0 flex flex-col">
-            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-6">
+        <div className="flex-1 min-h-0 flex flex-col bg-[#181b24]">
+            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-6 bg-[#181b24]">
                 {isLoading || isSwitching ? (
                     <div className="text-sm text-discord-faint">Loading messages...</div>
                 ) : error ? (
@@ -946,7 +944,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                 )}
             </div>
 
-            <div className="px-4 pb-4">
+            <div className="px-4 pb-4 border-t border-white/5 bg-[#171a22]">
                 {typingLabel && (
                     <div className="text-xs text-discord-faint mb-2">{typingLabel}</div>
                 )}
@@ -987,7 +985,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                     </div>
                 )}
 
-                <div className="relative flex items-center gap-2 bg-discord-darkest/80 border border-discord-border/40 rounded-xl px-3 py-2">
+                <div className="relative flex items-center gap-2 bg-[#11141b] border border-[#2a3040] rounded-xl px-3 py-2">
                     <label className={`w-8 h-8 rounded-md flex items-center justify-center ${canPost ? 'hover:bg-discord-border-light/20 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
                         <Plus className="w-4 h-4 text-discord-faint" />
                         <input

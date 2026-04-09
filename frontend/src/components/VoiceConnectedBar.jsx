@@ -18,6 +18,7 @@ const VoiceConnectedBar = ({
     avatar,
 }) => {
     const totalMembers = Math.max(1, memberCount || 1);
+    const resolvedDisplayName = (displayName || 'User').trim();
     const others = Math.max(0, totalMembers - 1);
     let connectionLabel = '';
     if (others > 0 && connectedCount >= others) {
@@ -27,7 +28,7 @@ const VoiceConnectedBar = ({
     }
 
     return (
-        <div className="relative z-30 -ml-14 mr-2 mb-2 w-[calc(100%+3rem)] rounded-xl border border-discord-border/70 bg-gradient-to-b from-[#232833] to-[#1a1f2a] pl-10 pr-3.5 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.42)] flex flex-col gap-3">
+        <div className="relative z-40 -ml-16 mr-0 mb-1 w-[calc(100%+4rem)] rounded-xl border border-white/10 bg-[#23262f] pl-10 pr-3.5 py-3 shadow-[0_10px_24px_rgba(0,0,0,0.46)] flex flex-col gap-3">
             <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-discord-green/10 border border-discord-green/20 flex items-center justify-center text-discord-green">
                     <Radio className="w-4 h-4" />
@@ -95,7 +96,6 @@ const VoiceConnectedBar = ({
                 )}
             </div>
 
-            {displayName && (
             <div className="flex items-center gap-2.5 rounded-lg border border-discord-border/60 bg-[#1d2330] px-2.5 py-2">
                 <button
                     type="button"
@@ -107,12 +107,12 @@ const VoiceConnectedBar = ({
                         {avatar ? (
                             <img src={avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
                         ) : (
-                            (displayName || 'U').charAt(0).toUpperCase()
+                            resolvedDisplayName.charAt(0).toUpperCase()
                         )}
                         <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-discord-darkest bg-discord-green" />
                     </div>
                     <div className="min-w-0">
-                        <p className="text-sm font-semibold text-discord-white uppercase tracking-[0.02em] leading-tight">{displayName || 'User'}</p>
+                        <p className="text-sm font-semibold text-discord-white uppercase tracking-[0.02em] leading-tight">{resolvedDisplayName}</p>
                         <p className="text-[11px] text-discord-faint">Online</p>
                     </div>
                 </button>
@@ -126,7 +126,6 @@ const VoiceConnectedBar = ({
                     </button>
                 </div>
             </div>
-            )}
         </div>
     );
 };

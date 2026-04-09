@@ -18,7 +18,7 @@ import EventCreateModal from './EventCreateModal';
 import EventDetailsModal from './EventDetailsModal';
 import VoiceConnectedBar from './VoiceConnectedBar';
 
-const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsClick, onVoiceChannelClick, onOpenChannelSettings, voiceState, animateClassName = '' }) => {
+const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsClick, onVoiceChannelClick, onVoiceChannelDoubleClick, onOpenChannelSettings, voiceState, animateClassName = '' }) => {
     const navigate = useNavigate();
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showServerMenu, setShowServerMenu] = useState(false);
@@ -29,6 +29,8 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
     const [showEventDetails, setShowEventDetails] = useState(false);
     const [activeEvent, setActiveEvent] = useState(null);
     const [dismissedLiveEventId, setDismissedLiveEventId] = useState(null);
+    const [isTextChannelsOpen, setIsTextChannelsOpen] = useState(true);
+    const [isVoiceChannelsOpen, setIsVoiceChannelsOpen] = useState(true);
     const [createError, setCreateError] = useState('');
 
     const { channels, activeChannelId, fetchChannels, createChannel, setActiveChannel, isLoading } = useChannelStore();
@@ -136,22 +138,35 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
         const list = voiceState?.members || [];
         return list.find((m) => !(m?.isLocal || m?.socketId === 'local')) || null;
     }, [voiceState?.members]);
+    const connectedIdentityName = remoteVoiceMember?.displayName || profile?.displayName || user?.name || 'User';
+    const connectedIdentityAvatar = remoteVoiceMember?.avatar || profile?.avatar || '';
 
     const content = (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full bg-[#0f1117] text-[#d6d7dc]">
             {/* Server header */}
-            <div className="ui-topbar flex items-center justify-between px-4 py-3 shadow-sm relative">
+            <div className="flex items-center justify-between px-3 py-3 border-b border-white/10 relative z-[90] overflow-visible bg-[#10131a]">
                 <button
-                    className="group ui-chip ui-chip--active flex items-center gap-2 text-sm font-semibold px-2 py-1 transition
-                    active:bg-discord-darkest/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blurple/60"
+                    className="group flex items-center gap-1.5 text-sm font-semibold px-2.5 py-1.5 rounded-xl bg-[#1a1e27] hover:bg-[#222734] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blurple/60"
                     onClick={() => setShowServerMenu((v) => !v)}
                 >
+                    <span className="w-3 h-3 rounded-full bg-emerald-400 shrink-0" />
                     <span className="truncate">{communityName}</span>
                     <ChevronDown
                         className={`w-4 h-4 text-discord-faint transition-transform duration-200 ${showServerMenu ? 'rotate-180' : 'rotate-0'}`}
                     />
                 </button>
-                <div className="flex items-center gap-1.5" />
+                <div className="flex items-center gap-1.5">
+                    {canInvite && (
+                        <button
+                            type="button"
+                            onClick={() => setShowInviteModal(true)}
+                            className="w-8 h-8 rounded-lg text-discord-light hover:bg-[#222734] hover:text-white flex items-center justify-center"
+                            title="Invite members"
+                        >
+                            <Users className="w-4 h-4" />
+                        </button>
+                    )}
+                </div>
                 <ServerMenu
                     isOpen={showServerMenu}
                     onClose={() => setShowServerMenu(false)}
@@ -201,17 +216,17 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                     </div>
                 </div>
             )}
-            <div className="ui-topbar px-3 py-3 space-y-1 text-sm text-discord-muted">
+            <div className="px-3 py-3 space-y-1 text-sm text-discord-muted relative z-10 border-b border-white/10 bg-[#0f1117]">
                 <button
                     onClick={() => setShowEventsModal(true)}
-                    className="ui-chip w-full flex items-center gap-2 px-2 py-1.5 cursor-pointer"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[#1a1e27] text-[#a8adb8] hover:text-white cursor-pointer"
                 >
                     <Calendar className="w-4 h-4" />
                     Events
                 </button>
                 <button
                     onClick={() => navigate('/upgrade')}
-                    className="ui-chip w-full flex items-center gap-2 px-2 py-1.5 cursor-pointer"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[#1a1e27] text-[#a8adb8] hover:text-white cursor-pointer"
                 >
                     <Sparkles className="w-4 h-4" />
                     CircleCore Plus
@@ -290,13 +305,17 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
             {createError && <div className="px-4 py-2 text-xs text-discord-red">{createError}</div>}
 
             {/* Channel list */}
-            <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
+            <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4 bg-[#0f1117]">
                 <div>
-                    <div className="flex items-center justify-between px-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-discord-faint">
-                        <div className="flex items-center gap-1">
-                            <ChevronDown className="w-3 h-3" />
+                    <div className="flex items-center justify-between px-2 text-xs font-semibold tracking-[0.02em] text-[#8f939d]">
+                        <button
+                            type="button"
+                            onClick={() => setIsTextChannelsOpen((prev) => !prev)}
+                            className="flex items-center gap-1 hover:text-discord-light transition-colors"
+                        >
+                            <ChevronDown className={`w-3 h-3 transition-transform ${isTextChannelsOpen ? 'rotate-0' : '-rotate-90'}`} />
                             Text Channels
-                        </div>
+                        </button>
                         {canCreateChannels && (
                             <button onClick={() => setShowCreateModal(true)}
                                 className="w-6 h-6 rounded-md hover:bg-discord-border-light/30 flex items-center justify-center transition-colors cursor-pointer"
@@ -306,6 +325,7 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                         )}
                     </div>
 
+                    {isTextChannelsOpen && (
                     <div className="mt-1 space-y-0.5">
                         {/* Channel items */}
                 {channels.filter((ch) => ['text', 'announcement', 'forum'].includes(ch.type || 'text')).map((ch) => {
@@ -313,10 +333,10 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                     const isAnnouncement = ch.type === 'announcement';
                     return (
                         <button key={ch._id} onClick={() => handleChannelClick(ch)}
-                            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left transition-all duration-150 cursor-pointer group
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-all duration-150 cursor-pointer group
                                 ${isActive
-                                    ? 'bg-discord-border-light/30 text-discord-white'
-                                    : 'text-discord-muted hover:bg-discord-border-light/15 hover:text-discord-light'
+                                    ? 'bg-[#3a3d46] text-white font-semibold'
+                                    : 'text-[#9ca1ad] hover:bg-[#1d212b] hover:text-[#e6e8ee]'
                                 }`}
                             title={ch.description || ch.name}>
                             {ch.isPremium || ch.isPrivate ? (
@@ -359,14 +379,19 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                     );
                 })}
                     </div>
+                    )}
                 </div>
 
                 <div>
-                    <div className="flex items-center justify-between px-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-discord-faint">
-                        <div className="flex items-center gap-1">
-                            <ChevronDown className="w-3 h-3" />
+                    <div className="flex items-center justify-between px-2 text-xs font-semibold tracking-[0.02em] text-[#8f939d]">
+                        <button
+                            type="button"
+                            onClick={() => setIsVoiceChannelsOpen((prev) => !prev)}
+                            className="flex items-center gap-1 hover:text-discord-light transition-colors"
+                        >
+                            <ChevronDown className={`w-3 h-3 transition-transform ${isVoiceChannelsOpen ? 'rotate-0' : '-rotate-90'}`} />
                             Voice Channels
-                        </div>
+                        </button>
                         {canCreateChannels && (
                             <button
                                 onClick={() => setShowCreateModal(true)}
@@ -376,6 +401,7 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                             </button>
                         )}
                     </div>
+                    {isVoiceChannelsOpen && (
                     <div className="mt-1 space-y-0.5">
                         {(channels.filter((ch) => ch.type === 'voice').map((ch) => ch.name)).length > 0
                             ? channels.filter((ch) => ch.type === 'voice').map((ch) => {
@@ -395,17 +421,25 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                                     }
                                     return acc;
                                 }, new Map());
-                                const normalizedMembers = Array.from(dedupedMembers.values());
+                                const normalizedMembers = Array.from(dedupedMembers.values()).filter((m) => {
+                                    if (!m) return false;
+                                    if (isActive) return true;
+                                    const uid = m.userId?.toString?.() || String(m.userId || '');
+                                    const currentUid = user?._id?.toString?.() || String(user?._id || '');
+                                    if (!uid || !currentUid) return true;
+                                    return uid !== currentUid;
+                                });
                                 const nonLocalMembers = normalizedMembers.filter((m) => !(m?.isLocal || m?.socketId === 'local'));
                                 const members = isActive && nonLocalMembers.length === 0 ? [] : normalizedMembers;
                                 return (
                                     <div key={ch._id}>
                                         <button
                                             onClick={() => onVoiceChannelClick?.(ch)}
-                                            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left transition-colors cursor-pointer ${
+                                            onDoubleClick={() => onVoiceChannelDoubleClick?.(ch)}
+                                            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
                                                 isActive
-                                                    ? 'bg-discord-border-light/25 text-discord-white'
-                                                    : 'text-discord-muted hover:bg-discord-border-light/15 hover:text-discord-light'
+                                                    ? 'bg-[#3a3d46] text-white font-semibold'
+                                                    : 'text-[#9ca1ad] hover:bg-[#1d212b] hover:text-[#e6e8ee]'
                                             }`}
                                         >
                                             <Volume2 className="w-4 h-4 shrink-0" strokeWidth={2} />
@@ -463,6 +497,7 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                                 </button>
                             ))}
                     </div>
+                    )}
                 </div>
             </nav>
 
@@ -487,8 +522,8 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                     onLeave={voiceState?.onLeave}
                     onProfileClick={onProfileClick}
                     onSettingsClick={onSettingsClick}
-                    displayName={remoteVoiceMember?.displayName || ''}
-                    avatar={remoteVoiceMember?.avatar || ''}
+                    displayName={connectedIdentityName}
+                    avatar={connectedIdentityAvatar}
                 />
             )}
             {!voiceState?.isConnected && (
@@ -529,7 +564,7 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
     return (
         <>
             {/* Desktop sidebar */}
-            <aside className={`hidden md:flex relative z-20 w-60 shrink-0 bg-discord-sidebar border-r border-discord-darkest/60 flex-col overflow-visible ${animateClassName}`}>
+            <aside className={`hidden md:flex relative z-20 w-60 shrink-0 bg-[#0f1117] border-r border-discord-darkest/60 flex-col overflow-visible ${animateClassName}`}>
                 {content}
             </aside>
 
@@ -537,7 +572,7 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
             {isOpen && (
                 <>
                     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden" onClick={onClose} />
-                    <aside className={`fixed top-0 left-0 bottom-0 w-72 bg-discord-sidebar z-50 shadow-2xl animate-slide-right md:hidden overflow-visible ${animateClassName}`}>
+                    <aside className={`fixed top-0 left-0 bottom-0 w-72 bg-[#0f1117] z-50 shadow-2xl animate-slide-right md:hidden overflow-visible ${animateClassName}`}>
                         {content}
                     </aside>
                 </>

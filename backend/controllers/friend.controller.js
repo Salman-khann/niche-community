@@ -167,6 +167,24 @@ export const acceptRequest = async (req, res) => {
     try {
         const { requesterId } = req.body;
         if (!requesterId) return res.status(400).json({ success: false, message: "requesterId is required" });
+        if (requesterId === req.userId) return res.status(400).json({ success: false, message: "You cannot accept yourself" });
+
+        const [currentUser, requester] = await Promise.all([
+            User.findById(req.userId).select("friendRequests friends").lean(),
+            User.findById(requesterId).select("_id").lean(),
+        ]);
+
+        if (!requester) return res.status(404).json({ success: false, message: "User not found" });
+
+        const hasIncoming = currentUser?.friendRequests?.incoming?.some((r) => r.userId?.toString?.() === requesterId);
+        if (!hasIncoming) {
+            return res.status(400).json({ success: false, message: "No pending request from this user" });
+        }
+
+        const alreadyFriends = currentUser?.friends?.some((id) => id?.toString?.() === requesterId);
+        if (alreadyFriends) {
+            return res.status(400).json({ success: false, message: "Already friends" });
+        }
 
         const accepter = await User.findById(req.userId)
             .select("name email profileId")
@@ -213,6 +231,66 @@ export const acceptRequest = async (req, res) => {
     } catch (error) {
         console.log("Error in acceptRequest:", error);
         res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── GET /friends/search ────────────────────────────────────────────────────
+export const searchUsers = async (req, res) => {
+    try {
+        const q = (req.query.q || "").trim();
+        const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 10));
+        if (q.length < 2) {
+            return res.status(200).json({ success: true, users: [] });
+        }
+
+        const self = await User.findById(req.userId)
+            .select("friends friendRequests")
+            .lean();
+
+        const friendIds = new Set((self?.friends || []).map((id) => id?.toString?.() || String(id)));
+        const incomingIds = new Set((self?.friendRequests?.incoming || []).map((r) => r.userId?.toString?.() || String(r.userId)));
+        const outgoingIds = new Set((self?.friendRequests?.outgoing || []).map((r) => r.userId?.toString?.() || String(r.userId)));
+        const selfFriendIds = new Set((self?.friends || []).map((id) => id?.toString?.() || String(id)));
+
+        const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escaped, "i");
+
+        const candidates = await User.find({
+            _id: { $ne: req.userId },
+            $or: [
+                { name: regex },
+                { email: regex },
+            ],
+        })
+            .select("name email lastLogin profileId friends")
+            .populate("profileId", "avatar displayName status presence tier")
+            .limit(limit * 3)
+            .lean();
+
+        const users = [];
+        for (const u of candidates) {
+            const id = u?._id?.toString?.() || String(u?._id || "");
+            if (!id) continue;
+            const candidateFriendIds = new Set((u?.friends || []).map((fid) => fid?.toString?.() || String(fid)));
+            const mutualFriendsCount = Array.from(candidateFriendIds).reduce((acc, fid) => acc + (selfFriendIds.has(fid) ? 1 : 0), 0);
+
+            let relationship = "none";
+            if (friendIds.has(id)) relationship = "friend";
+            else if (incomingIds.has(id)) relationship = "incoming";
+            else if (outgoingIds.has(id)) relationship = "outgoing";
+
+            users.push({
+                ...shapeUser(u),
+                relationship,
+                mutualFriendsCount,
+            });
+            if (users.length >= limit) break;
+        }
+
+        return res.status(200).json({ success: true, users });
+    } catch (error) {
+        console.log("Error in searchUsers:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
     }
 };
 

@@ -5,30 +5,33 @@ const ServerMenu = ({ isOpen, onClose, onInvite, onCreateChannel, onCreateEvent,
     const hasActions = !hideInvite || !hideSettings || !hideCreateChannel || !hideEvent;
 
     return (
-        <div className="mt-2 mx-3 rounded-xl bg-discord-darker border border-discord-border/60 shadow-2xl overflow-hidden animate-slide-down">
+        <div
+            className="absolute left-2 right-2 top-[calc(100%+8px)] z-[120] min-w-[220px] rounded-xl bg-discord-darker border border-discord-border/60 shadow-2xl overflow-hidden animate-slide-down"
+            role="menu"
+        >
             {!hideInvite && (
-                <button onClick={onInvite}
+                <button onClick={() => { onInvite?.(); onClose?.(); }}
                     className="w-full flex items-center justify-between px-3 py-2 text-sm text-discord-light hover:bg-discord-border-light/15 cursor-pointer">
                     Invite to Server
                     <UserPlus className="w-4 h-4 text-discord-faint" />
                 </button>
             )}
             {!hideSettings && (
-                <button onClick={onServerSettings}
+                <button onClick={() => { onServerSettings?.(); onClose?.(); }}
                     className="w-full flex items-center justify-between px-3 py-2 text-sm text-discord-light hover:bg-discord-border-light/15 cursor-pointer">
                     Server Settings
                     <Settings className="w-4 h-4 text-discord-faint" />
                 </button>
             )}
             {!hideCreateChannel && (
-                <button onClick={onCreateChannel}
+                <button onClick={() => { onCreateChannel?.(); onClose?.(); }}
                     className="w-full flex items-center justify-between px-3 py-2 text-sm text-discord-light hover:bg-discord-border-light/15 cursor-pointer">
                     Create Channel
                     <Plus className="w-4 h-4 text-discord-faint" />
                 </button>
             )}
             {!hideEvent && (
-                <button onClick={onCreateEvent}
+                <button onClick={() => { onCreateEvent?.(); onClose?.(); }}
                     className="w-full flex items-center justify-between px-3 py-2 text-sm text-discord-light hover:bg-discord-border-light/15 cursor-pointer">
                     Create Event
                     <CalendarPlus className="w-4 h-4 text-discord-faint" />

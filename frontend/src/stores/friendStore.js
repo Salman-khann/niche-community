@@ -9,6 +9,7 @@ export const useFriendStore = create((set) => ({
     onlineCount: 0,
     incoming: [],
     outgoing: [],
+    searchResults: [],
     isLoading: false,
     error: null,
     success: null,
@@ -37,6 +38,26 @@ export const useFriendStore = create((set) => ({
             return data;
         } catch (error) {
             set({ error: error.message, isLoading: false });
+            throw error;
+        }
+    },
+
+    searchUsers: async (query, limit = 10) => {
+        const q = (query || '').trim();
+        if (q.length < 2) {
+            set({ searchResults: [] });
+            return [];
+        }
+        set({ isLoading: true, error: null });
+        try {
+            const res = await apiFetch(`${API_URL}/search?q=${encodeURIComponent(q)}&limit=${limit}`, { credentials: 'include' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to search users');
+            const users = data.users || [];
+            set({ searchResults: users, isLoading: false });
+            return users;
+        } catch (error) {
+            set({ isLoading: false, error: error.message, searchResults: [] });
             throw error;
         }
     },
@@ -97,7 +118,7 @@ export const useFriendStore = create((set) => ({
             if (!res.ok) throw new Error(data.message || 'Failed to remove friend');
             set((state) => {
                 const nextFriends = state.friends.filter((f) => f._id !== targetId);
-                const onlineCount = nextFriends.filter((f) => f.presence === 'online').length;
+                    const onlineCount = nextFriends.filter((f) => f.presence !== 'offline').length;
                 return { friends: nextFriends, onlineCount, isLoading: false, success: data.message || 'Friend removed' };
             });
             return data;
@@ -112,7 +133,7 @@ export const useFriendStore = create((set) => ({
         const friends = state.friends.map((f) =>
             f._id === userId ? { ...f, presence: presence || f.presence } : f
         );
-        const onlineCount = friends.filter((f) => f.presence === 'online').length;
+        const onlineCount = friends.filter((f) => f.presence !== 'offline').length;
         return { friends, onlineCount };
     }),
 
