@@ -1,29 +1,29 @@
 @import "tailwindcss";
 
 @theme {
-  /* ── Discord Dark Palette ── */
-  --color-discord-dark: #313338;
-  --color-discord-darker: #2b2d31;
-  --color-discord-darkest: #1e1f22;
-  --color-discord-sidebar: #2b2d31;
-  --color-discord-chat: #313338;
-  --color-discord-input: #1e1f22;
+  /* ── Deep Navy Palette ── */
+  --color-discord-dark: #222734;
+  --color-discord-darker: #1b202b;
+  --color-discord-darkest: #141925;
+  --color-discord-sidebar: #101521;
+  --color-discord-chat: #1e2431;
+  --color-discord-input: #121826;
 
   /* Accent */
-  --color-blurple: #5865F2;
-  --color-blurple-hover: #4752C4;
-  --color-blurple-light: rgba(88, 101, 242, 0.15);
-  --color-blurple-glow: rgba(88, 101, 242, 0.35);
+  --color-blurple: #5f73eb;
+  --color-blurple-hover: #4e61d5;
+  --color-blurple-light: rgba(95, 115, 235, 0.16);
+  --color-blurple-glow: rgba(95, 115, 235, 0.36);
 
   /* Text */
-  --color-discord-white: #F2F3F5;
-  --color-discord-light: #DBDEE1;
-  --color-discord-muted: #949BA4;
-  --color-discord-faint: #6D6F78;
+  --color-discord-white: #eef3ff;
+  --color-discord-light: #d8dff0;
+  --color-discord-muted: #a0abc2;
+  --color-discord-faint: #74809c;
 
   /* Borders */
-  --color-discord-border: #3f4147;
-  --color-discord-border-light: #4e5058;
+  --color-discord-border: #2d3547;
+  --color-discord-border-light: #3a445b;
 
   /* Status */
   --color-discord-green: #57F287;
@@ -32,17 +32,17 @@
   --color-discord-pink: #EB459E;
 
   /* Legacy compat aliases (so existing Tailwind classes don't break) */
-  --color-cream: #313338;
-  --color-cream-dark: #2b2d31;
-  --color-warm-yellow: #5865F2;
-  --color-warm-yellow-hover: #4752C4;
-  --color-warm-yellow-light: rgba(88, 101, 242, 0.15);
-  --color-warm-yellow-glow: rgba(88, 101, 242, 0.35);
-  --color-ink: #F2F3F5;
-  --color-ink-light: #DBDEE1;
-  --color-slate: #949BA4;
-  --color-muted: #6D6F78;
-  --color-border-warm: #3f4147;
+  --color-cream: #222734;
+  --color-cream-dark: #1b202b;
+  --color-warm-yellow: #5f73eb;
+  --color-warm-yellow-hover: #4e61d5;
+  --color-warm-yellow-light: rgba(95, 115, 235, 0.16);
+  --color-warm-yellow-glow: rgba(95, 115, 235, 0.36);
+  --color-ink: #eef3ff;
+  --color-ink-light: #d8dff0;
+  --color-slate: #a0abc2;
+  --color-muted: #74809c;
+  --color-border-warm: #2d3547;
   --color-success: #57F287;
   --color-error: #ED4245;
 
@@ -582,18 +582,18 @@ body {
 /* ── App Surface System ─────────────────────────────────────────────────── */
 .ui-shell {
   background:
-    radial-gradient(1200px 700px at 8% -12%, rgba(88, 101, 242, 0.16), transparent 60%),
-    radial-gradient(900px 500px at 92% 110%, rgba(59, 165, 93, 0.08), transparent 55%),
+    radial-gradient(1050px 640px at 10% -14%, rgba(95, 115, 235, 0.14), transparent 62%),
+    radial-gradient(780px 420px at 94% 118%, rgba(69, 91, 180, 0.08), transparent 56%),
     var(--color-discord-darkest);
 }
 
 .ui-panel {
-  background: linear-gradient(180deg, rgba(49, 51, 56, 0.96), rgba(42, 44, 49, 0.98));
+  background: linear-gradient(180deg, rgba(30, 36, 50, 0.98), rgba(23, 28, 40, 0.99));
 }
 
 .ui-topbar {
-  background: linear-gradient(180deg, rgba(54, 57, 63, 0.92), rgba(47, 49, 54, 0.92));
-  border-bottom: 1px solid rgba(21, 23, 26, 0.85);
+  background: linear-gradient(180deg, rgba(35, 42, 57, 0.92), rgba(28, 34, 48, 0.94));
+  border-bottom: 1px solid rgba(16, 21, 33, 0.88);
   backdrop-filter: blur(6px);
 }
 
@@ -616,31 +616,31 @@ body {
 
 .ui-icon-btn {
   border-radius: 9999px;
-  background: rgba(30, 32, 36, 0.82);
+  background: rgba(17, 23, 36, 0.85);
   color: var(--color-discord-faint);
   transition: transform 0.16s ease, background-color 0.16s ease, color 0.16s ease;
 }
 
 .ui-icon-btn:hover {
   transform: translateY(-1px);
-  background: rgba(70, 72, 79, 0.82);
+  background: rgba(57, 69, 94, 0.72);
   color: var(--color-discord-white);
 }
 
 .ui-list-row {
-  border-bottom: 1px solid rgba(21, 23, 26, 0.8);
+  border-bottom: 1px solid rgba(17, 23, 36, 0.82);
   border-radius: 10px;
   transition: background-color 0.16s ease;
 }
 
 .ui-list-row:hover {
-  background: rgba(21, 23, 26, 0.45);
+  background: rgba(43, 53, 74, 0.32);
 }
 
 .ui-search-input {
-  border: 1px solid rgba(21, 23, 26, 0.85);
+  border: 1px solid rgba(42, 51, 69, 0.92);
   border-radius: 8px;
-  background: rgba(30, 32, 36, 0.9);
+  background: rgba(20, 26, 38, 0.95);
   color: var(--color-discord-white);
 }
 

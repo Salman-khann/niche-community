@@ -24,6 +24,33 @@ const AUDIO_CONSTRAINTS = {
     channelCount: 1,
 };
 
+const buildDisplayCaptureOptions = ({ mode = 'screen', includeAudio = true } = {}) => {
+    const normalizedMode = ['screen', 'window', 'tab'].includes(mode) ? mode : 'screen';
+    const options = {
+        video: true,
+        audio: includeAudio,
+    };
+
+    if (normalizedMode === 'tab') {
+        options.preferCurrentTab = true;
+        options.surfaceSwitching = 'include';
+        options.systemAudio = includeAudio ? 'include' : 'exclude';
+        options.selfBrowserSurface = 'include';
+    } else if (normalizedMode === 'window') {
+        options.preferCurrentTab = false;
+        options.surfaceSwitching = 'include';
+        options.systemAudio = includeAudio ? 'include' : 'exclude';
+        options.selfBrowserSurface = 'exclude';
+    } else {
+        options.preferCurrentTab = false;
+        options.surfaceSwitching = 'include';
+        options.systemAudio = includeAudio ? 'include' : 'exclude';
+        options.selfBrowserSurface = 'exclude';
+    }
+
+    return options;
+};
+
 const buildLocalUser = (user, profile) => ({
     userId: user?._id || null,
     displayName: profile?.displayName || user?.name || 'Member',
@@ -44,6 +71,7 @@ const useVoiceCall = (socket, user, profile) => {
     const [isSharing, setIsSharing] = useState(false);
     const [isCameraOn, setIsCameraOn] = useState(false);
     const [noiseReduction, setNoiseReduction] = useState(false);
+    const [liveReactions, setLiveReactions] = useState([]);
     const [startTime, setStartTime] = useState(null);
     const [elapsed, setElapsed] = useState(0);
 
@@ -57,6 +85,7 @@ const useVoiceCall = (socket, user, profile) => {
     const socketToUserRef = useRef(new Map());
     const pendingSignalsRef = useRef(new Map()); // socketId -> signal payloads waiting for user mapping
     const timersRef = useRef(null);
+    const reactionTimersRef = useRef(new Set());
     const audioCtxRef = useRef(null);
     const handleSignalRef = useRef(null);
     const sendOfferRef = useRef(null);
@@ -162,8 +191,9 @@ const useVoiceCall = (socket, user, profile) => {
     }, []);
 
     const addLocalTracks = useCallback((pc, peerState) => {
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach((track) => pc.addTrack(track, localStreamRef.current));
+        const micTrack = localStreamRef.current?.getAudioTracks?.()[0];
+        if (micTrack && !peerState.micSender) {
+            peerState.micSender = pc.addTrack(micTrack, localStreamRef.current);
         }
         const cameraTrack = cameraStreamRef.current?.getVideoTracks?.()[0];
         if (cameraTrack && !peerState.cameraSender) {
@@ -173,18 +203,20 @@ const useVoiceCall = (socket, user, profile) => {
         if (screenTrack && !peerState.screenSender) {
             peerState.screenSender = pc.addTrack(screenTrack, screenStreamRef.current);
         }
+        const screenAudioTrack = screenStreamRef.current?.getAudioTracks?.()[0];
+        if (screenAudioTrack && !peerState.screenAudioSender) {
+            peerState.screenAudioSender = pc.addTrack(screenAudioTrack, screenStreamRef.current);
+        }
     }, []);
 
     const applyLocalAudioTrack = useCallback((stream) => {
         const track = stream?.getAudioTracks?.()[0];
         if (!track) return;
         peersRef.current.forEach((peer, userId) => {
-            const pc = peer.pc;
-            const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'audio');
-            if (sender) {
-                sender.replaceTrack(track);
+            if (peer.micSender) {
+                peer.micSender.replaceTrack(track);
             } else {
-                pc.addTrack(track, stream);
+                peer.micSender = peer.pc.addTrack(track, stream);
                 sendOfferRef.current?.(userId);
             }
         });
@@ -202,13 +234,25 @@ const useVoiceCall = (socket, user, profile) => {
         });
     }, []);
 
-    const addScreenTrackToPeers = useCallback((track, stream) => {
-        if (!track) return;
+    const addScreenTracksToPeers = useCallback((stream) => {
+        if (!stream) return;
+        const videoTrack = stream.getVideoTracks?.()[0];
+        const audioTrack = stream.getAudioTracks?.()[0];
+        if (!videoTrack && !audioTrack) return;
         peersRef.current.forEach((peer, userId) => {
-            if (peer.screenSender) {
-                peer.screenSender.replaceTrack(track);
-            } else {
-                peer.screenSender = peer.pc.addTrack(track, stream);
+            if (videoTrack) {
+                if (peer.screenSender) {
+                    peer.screenSender.replaceTrack(videoTrack);
+                } else {
+                    peer.screenSender = peer.pc.addTrack(videoTrack, stream);
+                }
+            }
+            if (audioTrack) {
+                if (peer.screenAudioSender) {
+                    peer.screenAudioSender.replaceTrack(audioTrack);
+                } else {
+                    peer.screenAudioSender = peer.pc.addTrack(audioTrack, stream);
+                }
             }
             sendOfferRef.current?.(userId);
         });
@@ -229,14 +273,28 @@ const useVoiceCall = (socket, user, profile) => {
 
     const removeScreenTrackFromPeers = useCallback(() => {
         peersRef.current.forEach((peer, userId) => {
-            if (!peer.screenSender) return;
-            try {
-                peer.pc.removeTrack(peer.screenSender);
-            } catch {
-                // ignore
+            let removed = false;
+            if (peer.screenSender) {
+                try {
+                    peer.pc.removeTrack(peer.screenSender);
+                } catch {
+                    // ignore
+                }
+                peer.screenSender = null;
+                removed = true;
             }
-            peer.screenSender = null;
-            sendOfferRef.current?.(userId);
+            if (peer.screenAudioSender) {
+                try {
+                    peer.pc.removeTrack(peer.screenAudioSender);
+                } catch {
+                    // ignore
+                }
+                peer.screenAudioSender = null;
+                removed = true;
+            }
+            if (removed) {
+                sendOfferRef.current?.(userId);
+            }
         });
     }, []);
 
@@ -281,6 +339,18 @@ const useVoiceCall = (socket, user, profile) => {
         setRemoteVideos((prev) => prev.filter((item) => item.socketId !== socketId));
         setRemoteScreenStreams((prev) => prev.filter((item) => item.socketId !== socketId));
         setRemoteCameraStreams((prev) => prev.filter((item) => item.socketId !== socketId));
+    }, []);
+
+    const enqueueReaction = useCallback((reaction) => {
+        if (!reaction?.emoji) return;
+        const id = `${reaction.socketId || reaction.userId || 'reaction'}-${reaction.createdAt || Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const item = { ...reaction, id };
+        setLiveReactions((prev) => [...prev.slice(-7), item]);
+        const timer = setTimeout(() => {
+            setLiveReactions((prev) => prev.filter((entry) => entry.id !== id));
+            reactionTimersRef.current.delete(timer);
+        }, 4200);
+        reactionTimersRef.current.add(timer);
     }, []);
 
     const sendOffer = useCallback(async (userId) => {
@@ -343,8 +413,10 @@ const useVoiceCall = (socket, user, profile) => {
                 makingOffer: false,
                 ignoreOffer: false,
                 pendingCandidates: [],
+                micSender: null,
                 cameraSender: null,
                 screenSender: null,
+                screenAudioSender: null,
                 disconnectTimer: null,
             };
             peersRef.current.set(userId, peerState);
@@ -464,6 +536,7 @@ const useVoiceCall = (socket, user, profile) => {
                 setRemoteVideos([]);
                 setRemoteScreenStreams([]);
                 setRemoteCameraStreams([]);
+                setLiveReactions([]);
             }
 
             try {
@@ -490,7 +563,7 @@ const useVoiceCall = (socket, user, profile) => {
                 addCameraTrackToPeers(cameraStreamRef.current.getVideoTracks()[0], cameraStreamRef.current);
             }
             if (screenStreamRef.current?.getVideoTracks?.()[0]) {
-                addScreenTrackToPeers(screenStreamRef.current.getVideoTracks()[0], screenStreamRef.current);
+                addScreenTracksToPeers(screenStreamRef.current);
             }
 
             activeChannelIdRef.current = channel._id;
@@ -505,7 +578,7 @@ const useVoiceCall = (socket, user, profile) => {
             }
             playTone(760, 0.09, 'sine', 0.04);
         },
-        [socket, user, profile, activeVoiceChannel, isMuted, playTone, buildProcessedStream, noiseReduction, ensureAudioConstraints, closePeerConnection, applyLocalAudioTrack, addCameraTrackToPeers, addScreenTrackToPeers]
+        [socket, user, profile, activeVoiceChannel, isMuted, playTone, buildProcessedStream, noiseReduction, ensureAudioConstraints, closePeerConnection, applyLocalAudioTrack, addCameraTrackToPeers, addScreenTracksToPeers]
     );
 
     const leaveVoice = useCallback(() => {
@@ -542,11 +615,37 @@ const useVoiceCall = (socket, user, profile) => {
         setRemoteVideos([]);
         setRemoteScreenStreams([]);
         setRemoteCameraStreams([]);
+        setLiveReactions([]);
         setActiveVoiceChannel(null);
         setStartTime(null);
         setIsSharing(false);
         playTone(240, 0.12, 'sine', 0.05);
     }, [socket, closePeerConnection, activeVoiceChannel?._id]);
+
+    const sendReaction = useCallback((emoji) => {
+        if (!emoji) return;
+        const channelId = activeVoiceChannel?._id || activeChannelIdRef.current;
+        if (!channelId) return;
+        const localIdentity = buildLocalUser(user, profile);
+        const payload = {
+            channelId,
+            emoji,
+            user: localIdentity,
+        };
+        if (socket) {
+            socket.emit('voice:reaction', payload);
+        }
+        enqueueReaction({
+            channelId,
+            socketId: socket?.id || 'local',
+            userId: localIdentity.userId,
+            displayName: localIdentity.displayName || 'You',
+            avatar: localIdentity.avatar || '',
+            emoji,
+            createdAt: Date.now(),
+            isLocal: true,
+        });
+    }, [socket, activeVoiceChannel?._id, user, profile, enqueueReaction]);
 
     const stopScreenShare = useCallback(() => {
         if (!screenStreamRef.current) return;
@@ -593,9 +692,10 @@ const useVoiceCall = (socket, user, profile) => {
         }
     }, [activeVoiceChannel, socket, addCameraTrackToPeers, stopCamera]);
 
-    const startScreenShare = useCallback(async () => {
+    const startScreenShare = useCallback(async (options = {}) => {
         if (!activeVoiceChannel || !socket) return;
         if (screenStreamRef.current) return;
+        const includeAudio = options.includeAudio !== false;
         try {
             if (!navigator.mediaDevices?.getDisplayMedia) {
                 console.error('Screen share not supported in this browser');
@@ -613,14 +713,18 @@ const useVoiceCall = (socket, user, profile) => {
                     // allow screen share even if mic access is denied
                 }
             }
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+            const captureOptions = buildDisplayCaptureOptions({
+                mode: options.mode || 'screen',
+                includeAudio,
+            });
+            const screenStream = await navigator.mediaDevices.getDisplayMedia(captureOptions);
             const [track] = screenStream.getVideoTracks();
             if (!track) return;
             screenStreamRef.current = screenStream;
             setLocalScreenStream(screenStream);
             setIsSharing(true);
             socket.emit('voice:share-start', { channelId: activeVoiceChannel._id, streamId: screenStream.id });
-            addScreenTrackToPeers(track, screenStream);
+            addScreenTracksToPeers(screenStream);
 
             track.onended = () => {
                 stopScreenShare();
@@ -629,7 +733,7 @@ const useVoiceCall = (socket, user, profile) => {
             console.error('Screen share failed', err);
             setIsSharing(false);
         }
-    }, [activeVoiceChannel, socket, stopScreenShare, buildProcessedStream, noiseReduction, ensureAudioConstraints, addScreenTrackToPeers]);
+    }, [activeVoiceChannel, socket, stopScreenShare, buildProcessedStream, noiseReduction, ensureAudioConstraints, addScreenTracksToPeers]);
 
     const toggleMute = useCallback(() => {
         setIsMuted((prev) => {
@@ -892,6 +996,16 @@ const useVoiceCall = (socket, user, profile) => {
             });
         };
 
+        const handleVoiceReaction = (payload) => {
+            const activeId = activeChannelIdRef.current || activeVoiceChannel?._id;
+            if (!activeId) return;
+            const channelKey = payload?.channelId?.toString?.() || String(payload?.channelId || '');
+            const activeKey = activeId?.toString?.() || String(activeId);
+            if (!channelKey || channelKey !== activeKey) return;
+            if (payload?.socketId && socket?.id && payload.socketId === socket.id) return;
+            enqueueReaction(payload);
+        };
+
         handleSignalRef.current = handleSignal;
 
         socket.on('room-users', handleRoomUsers);
@@ -903,6 +1017,7 @@ const useVoiceCall = (socket, user, profile) => {
         socket.on('voice:share-started', handleShareStarted);
         socket.on('voice:share-stopped', handleShareStopped);
         socket.on('voice:camera-stopped', handleCameraStopped);
+        socket.on('voice:reaction', handleVoiceReaction);
 
         return () => {
             socket.off('room-users', handleRoomUsers);
@@ -914,8 +1029,9 @@ const useVoiceCall = (socket, user, profile) => {
             socket.off('voice:share-started', handleShareStarted);
             socket.off('voice:share-stopped', handleShareStopped);
             socket.off('voice:camera-stopped', handleCameraStopped);
+            socket.off('voice:reaction', handleVoiceReaction);
         };
-    }, [socket, user, profile, createPeerConnection, closePeerConnection, dedupeParticipants, activeVoiceChannel?._id]);
+    }, [socket, user, profile, createPeerConnection, closePeerConnection, dedupeParticipants, activeVoiceChannel?._id, enqueueReaction]);
 
     useEffect(() => {
         return () => {
@@ -938,6 +1054,8 @@ const useVoiceCall = (socket, user, profile) => {
             }
             setLocalCameraStream(null);
             setIsCameraOn(false);
+            reactionTimersRef.current.forEach((timer) => clearTimeout(timer));
+            reactionTimersRef.current.clear();
         };
     }, [closePeerConnection]);
 
@@ -955,6 +1073,7 @@ const useVoiceCall = (socket, user, profile) => {
         isSharing,
         isCameraOn,
         noiseReduction,
+        liveReactions,
         connectedPeerIds,
         elapsed,
         joinVoice,
@@ -966,6 +1085,7 @@ const useVoiceCall = (socket, user, profile) => {
         stopCamera,
         startScreenShare,
         stopScreenShare,
+        sendReaction,
     };
 };
 

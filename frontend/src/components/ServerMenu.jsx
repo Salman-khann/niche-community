@@ -5,7 +5,7 @@ const ServerMenu = ({ isOpen, onClose, onInvite, onCreateChannel, onCreateEvent,
     const hasActions = !hideInvite || !hideSettings || !hideCreateChannel || !hideEvent;
 
     return (
-        <div className="absolute top-12 left-3 z-40 w-56 rounded-xl bg-discord-darker border border-discord-border/60 shadow-2xl overflow-hidden animate-slide-down">
+        <div className="mt-2 mx-3 rounded-xl bg-discord-darker border border-discord-border/60 shadow-2xl overflow-hidden animate-slide-down">
             {!hideInvite && (
                 <button onClick={onInvite}
                     className="w-full flex items-center justify-between px-3 py-2 text-sm text-discord-light hover:bg-discord-border-light/15 cursor-pointer">

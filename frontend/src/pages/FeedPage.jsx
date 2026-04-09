@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Hash, Search, Users, Pin, HelpCircle, User, MessageCircle, Phone, MoreVertical, Settings, Menu, X, Server, Compass } from 'lucide-react';
+import { Hash, Search, Users, Pin, HelpCircle, User, MessageCircle, Phone, MoreVertical, Settings, Menu, X, Server, Compass, Maximize2, MoreHorizontal, MonitorUp, UserPlus } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useProfileStore } from '../stores/profileStore';
@@ -127,6 +127,12 @@ const FeedPage = () => {
     const [typingUser, setTypingUser] = useState(null);
     const [showStreamViewer, setShowStreamViewer] = useState(true);
     const [fullscreenStream, setFullscreenStream] = useState(null);
+    const [hoveredVoiceTile, setHoveredVoiceTile] = useState(null);
+    const [showShareModePicker, setShowShareModePicker] = useState(false);
+    const [showVoiceStageView, setShowVoiceStageView] = useState(false);
+    const [voiceInviteSearch, setVoiceInviteSearch] = useState('');
+    const [invitingVoiceUserIds, setInvitingVoiceUserIds] = useState([]);
+    const [voiceInvitedUserIds, setVoiceInvitedUserIds] = useState([]);
     const [showGroupAdd, setShowGroupAdd] = useState(false);
     const [groupSearch, setGroupSearch] = useState('');
     const [groupSelection, setGroupSelection] = useState([]);
@@ -232,6 +238,10 @@ const FeedPage = () => {
     }, [activeCommunityId, fetchRoster]);
 
     useEffect(() => {
+        setVoicePresence({});
+    }, [activeCommunityId]);
+
+    useEffect(() => {
         if (!user?._id) return;
         fetchThreads();
     }, [user?._id, fetchThreads]);
@@ -279,6 +289,7 @@ const FeedPage = () => {
         isSharing,
         isCameraOn,
         noiseReduction,
+        liveReactions,
         connectedPeerIds,
         elapsed,
         joinVoice,
@@ -290,15 +301,9 @@ const FeedPage = () => {
         stopCamera,
         startScreenShare,
         stopScreenShare,
+        sendReaction,
     } = useVoiceCall(socket, user, profile);
 
-    useEffect(() => {
-        if (remoteScreenStreams.length > 0) {
-            setShowStreamViewer(true);
-        }
-    }, [remoteScreenStreams.length]);
-
-    const remoteScreenStream = remoteScreenStreams[0]?.stream || null;
     const remoteCameraStream = remoteCameraStreams[0]?.stream || null;
     const screenShareTiles = useMemo(() => {
         const tiles = [];
@@ -321,9 +326,134 @@ const FeedPage = () => {
         });
         return tiles;
     }, [localScreenStream, remoteScreenStreams, voiceParticipants, displayName]);
+    const activeScreenShareTile = screenShareTiles.find((tile) => !tile.isLocal) || screenShareTiles[0] || null;
     const screenShareStream = screenShareTiles[0]?.stream || null;
     const isRemoteScreenShare = screenShareTiles.some((t) => !t.isLocal);
     const showStreamFullscreen = !!fullscreenStream;
+    const remoteCameraMap = useMemo(() => {
+        const map = new Map();
+        remoteCameraStreams.forEach((item) => {
+            if (item?.socketId) map.set(item.socketId, item.stream);
+        });
+        return map;
+    }, [remoteCameraStreams]);
+    const primaryVoiceTile = useMemo(() => {
+        if (activeScreenShareTile?.stream) {
+            return {
+                id: activeScreenShareTile.id,
+                title: `${activeScreenShareTile.ownerName || 'Member'} is sharing`,
+                subtitle: 'Screen Share',
+                stream: activeScreenShareTile.stream,
+                isLocal: !!activeScreenShareTile.isLocal,
+            };
+        }
+
+        const localEntry = voiceParticipants.find((p) => p.isLocal) || null;
+        const fallbackEntry = localEntry || voiceParticipants[0] || null;
+        if (!fallbackEntry) return null;
+        const stream = fallbackEntry.isLocal
+            ? localCameraStream
+            : remoteCameraMap.get(fallbackEntry.socketId) || null;
+        return {
+            id: `voice-tile-${fallbackEntry.socketId || fallbackEntry.userId || 'member'}`,
+            title: fallbackEntry.displayName || 'Member',
+            subtitle: stream ? 'Camera Live' : 'No Video',
+            stream,
+            avatar: fallbackEntry.avatar || '',
+            isLocal: !!fallbackEntry.isLocal,
+        };
+    }, [activeScreenShareTile, voiceParticipants, localCameraStream, remoteCameraMap]);
+    const inCallUserIds = useMemo(() => new Set(
+        (voiceParticipants || []).map((p) => p.userId).filter(Boolean)
+    ), [voiceParticipants]);
+    const inviteCandidates = useMemo(() => {
+        const query = (voiceInviteSearch || '').trim().toLowerCase();
+        return (rosterFriends || []).filter((m) => {
+            if (!m?._id) return false;
+            if (m._id === user?._id) return false;
+            if (inCallUserIds.has(m._id)) return false;
+            if (!query) return true;
+            const name = (m.displayName || '').toLowerCase();
+            const handle = (m.username || '').toLowerCase();
+            return name.includes(query) || handle.includes(query);
+        });
+    }, [voiceInviteSearch, rosterFriends, user?._id, inCallUserIds]);
+    const showServerVoiceStage = viewMode === 'server' && !!activeVoiceChannel && showVoiceStageView;
+
+    const openShareModePicker = useCallback(() => {
+        setShowShareModePicker(true);
+    }, []);
+
+    const closeShareModePicker = useCallback(() => {
+        setShowShareModePicker(false);
+    }, []);
+
+    const openVoiceStageView = useCallback(() => {
+        if (!activeVoiceChannel) return;
+        setShowVoiceStageView(true);
+    }, [activeVoiceChannel]);
+
+    const closeVoiceStageView = useCallback(() => {
+        setShowVoiceStageView(false);
+    }, []);
+
+    const handleShareToggle = useCallback(() => {
+        if (isSharing) {
+            stopScreenShare();
+            return;
+        }
+        openShareModePicker();
+    }, [isSharing, stopScreenShare, openShareModePicker]);
+
+    const startShareWithMode = useCallback(async (mode) => {
+        setShowShareModePicker(false);
+        const includeAudio = mode !== 'window';
+        await startScreenShare({ mode, includeAudio });
+    }, [startScreenShare]);
+
+    const sendQuickReaction = useCallback((emoji) => {
+        sendReaction(emoji);
+    }, [sendReaction]);
+
+    useEffect(() => {
+        if (screenShareTiles.length > 0) {
+            setShowStreamViewer(true);
+        }
+    }, [screenShareTiles.length]);
+
+    useEffect(() => {
+        if (activeVoiceChannel) return;
+        setShowShareModePicker(false);
+        setShowVoiceStageView(false);
+        setVoiceInviteSearch('');
+        setInvitingVoiceUserIds([]);
+        setVoiceInvitedUserIds([]);
+    }, [activeVoiceChannel]);
+
+    useEffect(() => {
+        setVoiceInvitedUserIds((prev) => prev.filter((id) => !inCallUserIds.has(id)));
+    }, [inCallUserIds]);
+
+    const inviteUserToVoice = useCallback((member) => {
+        if (!socket || !activeVoiceChannel?._id || !member?._id) return;
+        const targetId = member._id;
+        if (inCallUserIds.has(targetId)) return;
+        if (invitingVoiceUserIds.includes(targetId)) return;
+        setInvitingVoiceUserIds((prev) => [...prev, targetId]);
+        socket.emit('invite-to-room', {
+            roomId: activeVoiceChannel._id,
+            invitedUserIds: [targetId],
+            roomMeta: {
+                type: 'voice',
+                channelName: activeVoiceChannel?.name || 'Voice Channel',
+                communityId: activeCommunityId,
+            },
+        });
+        setVoiceInvitedUserIds((prev) => (prev.includes(targetId) ? prev : [...prev, targetId]));
+        setTimeout(() => {
+            setInvitingVoiceUserIds((prev) => prev.filter((id) => id !== targetId));
+        }, 500);
+    }, [socket, activeVoiceChannel?._id, activeVoiceChannel?.name, activeCommunityId, inCallUserIds, invitingVoiceUserIds]);
 
     useEffect(() => {
         if (!fullscreenStream) return;
@@ -501,9 +631,18 @@ const FeedPage = () => {
         const handleVoicePresence = ({ channelId, members }) => {
             if (!channelId) return;
             const channelKey = channelId?.toString?.() || String(channelId);
+            const uniqueMembers = Array.isArray(members)
+                ? Array.from((members || []).reduce((acc, member) => {
+                    if (!member) return acc;
+                    const key = member.userId || member.socketId;
+                    if (!key) return acc;
+                    if (!acc.has(key)) acc.set(key, member);
+                    return acc;
+                }, new Map()).values())
+                : [];
             if (channelKey.startsWith('dm-')) {
                 const threadKey = channelKey.replace(/^dm-/, '');
-                const list = Array.isArray(members) ? members : [];
+                const list = uniqueMembers;
                 setDmRoomStatus((prev) => ({
                     ...prev,
                     [threadKey]: {
@@ -521,7 +660,7 @@ const FeedPage = () => {
                 });
                 return;
             }
-            if (!Array.isArray(members) || members.length === 0) {
+            if (uniqueMembers.length === 0) {
                 setVoicePresence((prev) => {
                     if (!prev[channelKey]) return prev;
                     const next = { ...prev };
@@ -532,7 +671,7 @@ const FeedPage = () => {
             }
             setVoicePresence((prev) => ({
                 ...prev,
-                [channelKey]: members,
+                [channelKey]: uniqueMembers,
             }));
         };
         const handleRoomStatus = ({ roomId, members }) => {
@@ -1768,12 +1907,13 @@ const FeedPage = () => {
                         isDeafened,
                         isSharing,
                         noiseReduction,
-                        hasRemoteStream: remoteScreenStreams.length > 0 || remoteMedia.length > 0,
+                        hasRemoteStream: screenShareTiles.length > 0,
                         onToggleViewer: () => setShowStreamViewer((prev) => !prev),
                         onToggleMute: toggleMute,
                         onToggleDeafen: toggleDeafen,
                         onToggleNoiseReduction: toggleNoiseReduction,
-                        onToggleShare: isSharing ? stopScreenShare : startScreenShare,
+                        onToggleShare: handleShareToggle,
+                        onOpenCallView: openVoiceStageView,
                         onLeave: handleVoiceBarLeave,
                     }}
                 />
@@ -1914,6 +2054,159 @@ const FeedPage = () => {
                     </div>
                 </div>
 
+                {showServerVoiceStage && (
+                    <div className="fixed inset-0 z-[85] bg-[#05070c]">
+                        <div className="h-12 border-b border-discord-border/60 px-4 flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-discord-light">
+                                <UserPlus className="w-4 h-4 text-discord-faint" />
+                                <p className="text-sm font-semibold">Voice Call - {activeVoiceChannel?.name || 'Channel'}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeVoiceStageView}
+                                className="w-8 h-8 rounded-md hover:bg-discord-border-light/30 text-discord-faint hover:text-discord-light flex items-center justify-center"
+                                title="Close call view"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="h-[calc(100%-3rem)] p-3 md:p-4">
+                            <div className="grid grid-cols-1 lg:grid-cols-[2fr,1fr] gap-3 h-full">
+                                <div
+                                    className="group relative h-full min-h-[260px] rounded-xl border border-emerald-500/55 overflow-hidden bg-zinc-300"
+                                    onMouseEnter={() => setHoveredVoiceTile('primary')}
+                                    onMouseLeave={() => setHoveredVoiceTile(null)}
+                                >
+                                    {primaryVoiceTile?.stream ? (
+                                        <VoiceVideoPlayer
+                                            stream={primaryVoiceTile.stream}
+                                            muted
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        <div className="h-full w-full flex items-center justify-center">
+                                            {primaryVoiceTile?.avatar ? (
+                                                <img src={primaryVoiceTile.avatar} alt="" className="w-24 h-24 rounded-full object-cover shadow-lg" />
+                                            ) : (
+                                                <div className="w-24 h-24 rounded-full bg-white/80 flex items-center justify-center text-2xl font-bold text-black shadow-lg">
+                                                    {(primaryVoiceTile?.title || 'U').charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="absolute left-3 top-3 rounded-lg bg-black/45 px-2.5 py-1 text-[11px] text-white backdrop-blur">
+                                        <p className="font-semibold leading-none">{primaryVoiceTile?.title || 'Voice'}</p>
+                                        <p className="text-[10px] text-white/80 mt-1">{primaryVoiceTile?.subtitle || 'Connected'}</p>
+                                    </div>
+
+                                    <div className={`absolute left-1/2 -translate-x-1/2 bottom-3 transition-all duration-150 ${hoveredVoiceTile === 'primary' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}>
+                                        <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-black/55 backdrop-blur px-2 py-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => primaryVoiceTile?.stream && setFullscreenStream(primaryVoiceTile.stream)}
+                                                className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+                                                title="Fullscreen"
+                                            >
+                                                <Maximize2 className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleShareToggle}
+                                                className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+                                                title={isSharing ? 'Stop share' : 'Share screen'}
+                                            >
+                                                <MonitorUp className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+                                                title="More"
+                                            >
+                                                <MoreHorizontal className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        <div className="mt-2 rounded-2xl border border-white/10 bg-black/40 backdrop-blur-md px-2.5 py-2">
+                                            <p className="text-[10px] uppercase tracking-[0.18em] text-white/60 text-center mb-2">Quick Reactions</p>
+                                            <div className="flex items-center justify-center gap-2">
+                                                {['🙋', '👍', '👏', '❤️'].map((emoji) => (
+                                                <button
+                                                    key={`stage-reaction-${emoji}`}
+                                                    type="button"
+                                                    onClick={() => sendQuickReaction(emoji)}
+                                                    className="h-9 w-9 rounded-xl border border-white/15 bg-gradient-to-b from-white/18 to-white/5 hover:from-white/26 hover:to-white/12 text-white flex items-center justify-center shadow-[0_8px_18px_rgba(0,0,0,0.35)] transition-all hover:-translate-y-0.5"
+                                                    title={`React ${emoji}`}
+                                                >
+                                                    <span className="text-lg leading-none drop-shadow">{emoji}</span>
+                                                </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="h-full min-h-[260px] rounded-xl border border-discord-border/70 bg-discord-darkest/60 p-3 flex flex-col">
+                                    <p className="text-sm font-semibold text-discord-light">Invite Others</p>
+                                    <p className="text-[11px] text-discord-faint mt-1">Add community members to this voice channel.</p>
+                                    <div className="mt-3 relative">
+                                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-discord-faint" />
+                                        <input
+                                            type="text"
+                                            value={voiceInviteSearch}
+                                            onChange={(e) => setVoiceInviteSearch(e.target.value)}
+                                            placeholder="Search members"
+                                            className="w-full pl-8 pr-3 py-2 rounded-lg bg-discord-darkest border border-discord-border/50 text-sm text-discord-light placeholder:text-discord-faint/70 outline-none"
+                                        />
+                                    </div>
+                                    <div className="mt-3 flex-1 overflow-y-auto space-y-2 pr-1">
+                                        {inviteCandidates.length === 0 && (
+                                            <div className="h-full min-h-[120px] flex items-center justify-center text-xs text-discord-faint text-center">
+                                                No members available to invite.
+                                            </div>
+                                        )}
+                                        {inviteCandidates.map((member) => {
+                                            const isInviting = invitingVoiceUserIds.includes(member._id);
+                                            const isInvited = voiceInvitedUserIds.includes(member._id);
+                                            const isInCall = inCallUserIds.has(member._id);
+                                            return (
+                                                <div key={member._id} className="rounded-lg bg-discord-darkest/70 border border-discord-border/40 px-2.5 py-2 flex items-center gap-2">
+                                                    <div className="w-8 h-8 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-semibold overflow-hidden">
+                                                        {member.avatar ? (
+                                                            <img src={member.avatar} alt="" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            (member.displayName || 'M').charAt(0).toUpperCase()
+                                                        )}
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-sm text-discord-light font-semibold truncate">{member.displayName || 'Member'}</p>
+                                                        <p className="text-[11px] text-discord-faint truncate">{member.username ? `@${member.username}` : 'Member'}</p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        disabled={isInCall || isInviting || isInvited}
+                                                        onClick={() => inviteUserToVoice(member)}
+                                                        className={`px-2.5 py-1.5 rounded-md text-xs font-semibold ${
+                                                            isInCall
+                                                                ? 'bg-discord-border/30 text-discord-faint cursor-not-allowed'
+                                                                : isInviting
+                                                                    ? 'bg-amber-500/20 text-amber-200 cursor-wait'
+                                                                    : isInvited
+                                                                        ? 'bg-emerald-500/20 text-emerald-200 cursor-default'
+                                                                        : 'bg-blurple/80 text-white hover:bg-blurple'
+                                                        }`}
+                                                    >
+                                                        {isInCall ? 'In Call' : isInviting ? 'Inviting...' : isInvited ? 'Invited' : 'Invite'}
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <ChannelChat
                     channel={activeChannel}
                     socket={socket}
@@ -2008,9 +2301,9 @@ const FeedPage = () => {
                                     else startCamera();
                                 }}
                                 onToggleShare={() => {
-                                    if (isSharing) stopScreenShare();
-                                    else startScreenShare();
+                                    handleShareToggle();
                                 }}
+                                onSendReaction={sendQuickReaction}
                                 onEndCall={endDmCall}
                                 isMuted={isMuted}
                                 isSharing={isSharing}
@@ -2816,27 +3109,46 @@ const FeedPage = () => {
                 <VoiceAudioPlayer key={item.socketId} stream={item.stream} muted={isDeafened} />
             ))}
 
-            {remoteScreenStreams.length > 0 && showStreamViewer && (
+            {screenShareTiles.length > 0 && showStreamViewer && viewMode !== 'server' && (
                 <div className="fixed bottom-6 right-6 z-40 w-[320px] max-w-[90vw] rounded-2xl bg-discord-darkest/90 border border-discord-border/60 shadow-2xl p-3 space-y-2">
                     <div className="flex items-center justify-between">
-                        <p className="text-xs font-semibold text-discord-faint">Screen Share</p>
+                        <div>
+                            <p className="text-xs font-semibold text-discord-faint">Screen Share</p>
+                            {activeScreenShareTile && (
+                                <p className="text-[11px] text-discord-muted truncate">
+                                    Live now: {activeScreenShareTile.ownerName}
+                                </p>
+                            )}
+                        </div>
                         <button
-                            onClick={() => setFullscreenStream(remoteScreenStreams[0]?.stream || null)}
+                            onClick={() => setFullscreenStream(activeScreenShareTile?.stream || null)}
                             className="text-[11px] px-2 py-1 rounded-md bg-discord-darkest text-discord-light hover:bg-discord-border-light/40"
                         >
                             Fullscreen
                         </button>
                     </div>
                     <div className="space-y-2">
-                        {remoteScreenStreams.map((item, idx) => (
-                            <div key={item.socketId} className="w-full aspect-video rounded-xl bg-black/60 overflow-hidden">
-                                <VoiceVideoPlayer
-                                    stream={item.stream}
-                                    muted
-                                    ref={idx === 0 ? streamVideoRef : undefined}
-                                    id={idx === 0 ? 'cc-screen-share-video' : undefined}
-                                />
-                            </div>
+                        {screenShareTiles.map((item, idx) => (
+                            <button
+                                key={item.id}
+                                onClick={() => setFullscreenStream(item.stream)}
+                                className="w-full text-left rounded-xl border border-transparent hover:border-discord-border/80 transition-colors"
+                            >
+                                <div className="w-full aspect-video rounded-xl bg-black/60 overflow-hidden">
+                                    <VoiceVideoPlayer
+                                        stream={item.stream}
+                                        muted
+                                        ref={idx === 0 ? streamVideoRef : undefined}
+                                        id={idx === 0 ? 'cc-screen-share-video' : undefined}
+                                    />
+                                </div>
+                                <div className="mt-1.5 flex items-center justify-between">
+                                    <p className="text-[11px] font-medium text-discord-light truncate">{item.ownerName}</p>
+                                    <span className="text-[10px] uppercase tracking-[0.12em] text-discord-faint">
+                                        {item.isLocal ? 'You' : 'Live'}
+                                    </span>
+                                </div>
+                            </button>
                         ))}
                     </div>
                 </div>
@@ -2847,12 +3159,81 @@ const FeedPage = () => {
                     className="fixed inset-0 z-[90] bg-black/90 flex items-center justify-center"
                     onClick={() => setFullscreenStream(null)}
                 >
-                    <div className="w-[92vw] h-[92vh] max-w-[1400px] max-h-[880px] rounded-2xl bg-black/80 border border-discord-border/60 shadow-2xl p-3">
+                    <div
+                        className="w-[92vw] h-[92vh] max-w-[1400px] max-h-[880px] rounded-2xl bg-black/80 border border-discord-border/60 shadow-2xl p-3"
+                        onClick={(event) => event.stopPropagation()}
+                    >
                         <VoiceVideoPlayer
                             stream={fullscreenStream}
                             muted
                             className="w-full h-full object-contain rounded-xl bg-black"
                         />
+                    </div>
+                </div>
+            )}
+
+            {liveReactions.length > 0 && (
+                <div className="fixed right-5 top-16 z-[96] flex flex-col gap-2 pointer-events-none">
+                    {liveReactions.slice(-5).map((reaction) => (
+                        <div
+                            key={reaction.id}
+                            className="px-2.5 py-1.5 rounded-2xl bg-black/58 border border-white/10 text-white text-xs flex items-center gap-2 shadow-[0_12px_24px_rgba(0,0,0,0.4)] backdrop-blur-md"
+                        >
+                            <span className="w-7 h-7 rounded-xl bg-white/12 border border-white/15 flex items-center justify-center text-base leading-none">
+                                {reaction.emoji}
+                            </span>
+                            <div className="min-w-0">
+                                <p className="truncate max-w-[170px] text-[12px] font-semibold leading-tight">{reaction.displayName || 'Member'}</p>
+                                <p className="text-[10px] text-white/65 leading-tight">Reacted just now</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {showShareModePicker && (
+                <div className="fixed inset-0 z-[95] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeShareModePicker}>
+                    <div
+                        className="w-full max-w-md rounded-2xl border border-discord-border/70 bg-discord-darker p-4 shadow-2xl"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <p className="text-base font-semibold text-discord-white">Share your screen</p>
+                        <p className="text-xs text-discord-faint mt-1">Choose how you want to present in this voice call.</p>
+                        <div className="mt-4 space-y-2">
+                            <button
+                                type="button"
+                                onClick={() => startShareWithMode('screen')}
+                                className="w-full rounded-xl border border-discord-border/60 bg-discord-darkest/70 px-3 py-2 text-left hover:bg-discord-border-light/25"
+                            >
+                                <p className="text-sm font-semibold text-discord-light">Entire Screen</p>
+                                <p className="text-[11px] text-discord-faint mt-0.5">Best for slides, demos, and multi-app walkthroughs.</p>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => startShareWithMode('window')}
+                                className="w-full rounded-xl border border-discord-border/60 bg-discord-darkest/70 px-3 py-2 text-left hover:bg-discord-border-light/25"
+                            >
+                                <p className="text-sm font-semibold text-discord-light">Application Window</p>
+                                <p className="text-[11px] text-discord-faint mt-0.5">Share one app window for cleaner, focused presenting.</p>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => startShareWithMode('tab')}
+                                className="w-full rounded-xl border border-discord-border/60 bg-discord-darkest/70 px-3 py-2 text-left hover:bg-discord-border-light/25"
+                            >
+                                <p className="text-sm font-semibold text-discord-light">Browser Tab (with audio)</p>
+                                <p className="text-[11px] text-discord-faint mt-0.5">Ideal for videos and web demos with tab sound when supported.</p>
+                            </button>
+                        </div>
+                        <div className="mt-4 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={closeShareModePicker}
+                                className="px-3 py-1.5 rounded-lg bg-discord-darkest text-discord-light text-sm hover:bg-discord-border-light/30"
+                            >
+                                Cancel
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

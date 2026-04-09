@@ -132,6 +132,10 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
     };
 
     const communityName = activeMembership?.communityId?.name || activeMembership?.communityId?.slug || 'Server';
+    const remoteVoiceMember = useMemo(() => {
+        const list = voiceState?.members || [];
+        return list.find((m) => !(m?.isLocal || m?.socketId === 'local')) || null;
+    }, [voiceState?.members]);
 
     const content = (
         <div className="flex flex-col h-full">
@@ -377,8 +381,23 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                             ? channels.filter((ch) => ch.type === 'voice').map((ch) => {
                                 const isActive = voiceState?.activeChannelId === ch._id;
                                 const presenceMembers = voiceState?.voicePresence?.[ch._id] || [];
-                                const members = isActive ? voiceState?.members || [] : presenceMembers;
+                                const allMembers = isActive ? (voiceState?.members || []) : presenceMembers;
                                 const connectedIds = isActive ? (voiceState?.connectedPeerIds || []) : [];
+                                const dedupedMembers = allMembers.reduce((acc, member) => {
+                                    if (!member) return acc;
+                                    const key = member.userId || member.socketId;
+                                    if (!key) return acc;
+                                    const current = acc.get(key);
+                                    const memberConnected = !!member.isLocal || connectedIds.includes(member.socketId);
+                                    const currentConnected = current ? (!!current.isLocal || connectedIds.includes(current.socketId)) : false;
+                                    if (!current || (!currentConnected && memberConnected)) {
+                                        acc.set(key, member);
+                                    }
+                                    return acc;
+                                }, new Map());
+                                const normalizedMembers = Array.from(dedupedMembers.values());
+                                const nonLocalMembers = normalizedMembers.filter((m) => !(m?.isLocal || m?.socketId === 'local'));
+                                const members = isActive && nonLocalMembers.length === 0 ? [] : normalizedMembers;
                                 return (
                                     <div key={ch._id}>
                                         <button
@@ -409,7 +428,7 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                                         {members.length > 0 && (
                                             <div className="mt-1 ml-7 space-y-1">
                                                 {members.map((m) => (
-                                                    <div key={m.socketId} className="flex items-center gap-2 text-xs text-discord-light">
+                                                    <div key={m.userId || m.socketId} className="flex items-center gap-2 text-xs text-discord-light">
                                                         <div className="relative w-6 h-6 rounded-full bg-discord-darkest flex items-center justify-center text-[10px] font-semibold">
                                                             {m.avatar ? (
                                                                 <img src={m.avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
@@ -464,11 +483,15 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                     onToggleDeafen={voiceState?.onToggleDeafen}
                     onToggleNoiseReduction={voiceState?.onToggleNoiseReduction}
                     onToggleShare={voiceState?.onToggleShare}
+                    onOpenCallView={voiceState?.onOpenCallView}
                     onLeave={voiceState?.onLeave}
-                    displayName={profile?.displayName || user?.name || 'User'}
-                    avatar={profile?.avatar || ''}
+                    onProfileClick={onProfileClick}
+                    onSettingsClick={onSettingsClick}
+                    displayName={remoteVoiceMember?.displayName || ''}
+                    avatar={remoteVoiceMember?.avatar || ''}
                 />
             )}
+            {!voiceState?.isConnected && (
             <div className="h-14 px-3 border-t border-discord-darkest/60 flex items-center gap-2 bg-discord-darkest/80 cursor-pointer" onClick={onProfileClick}>
                 <div className="relative">
                     {profile?.avatar ? (
@@ -499,13 +522,14 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                     </button>
                 </div>
             </div>
+            )}
         </div>
     );
 
     return (
         <>
             {/* Desktop sidebar */}
-            <aside className={`hidden md:flex w-60 shrink-0 bg-discord-sidebar border-r border-discord-darkest/60 flex-col overflow-y-auto ${animateClassName}`}>
+            <aside className={`hidden md:flex relative z-20 w-60 shrink-0 bg-discord-sidebar border-r border-discord-darkest/60 flex-col overflow-visible ${animateClassName}`}>
                 {content}
             </aside>
 
@@ -513,7 +537,7 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
             {isOpen && (
                 <>
                     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden" onClick={onClose} />
-                    <aside className={`fixed top-0 left-0 bottom-0 w-72 bg-discord-sidebar z-50 shadow-2xl animate-slide-right md:hidden ${animateClassName}`}>
+                    <aside className={`fixed top-0 left-0 bottom-0 w-72 bg-discord-sidebar z-50 shadow-2xl animate-slide-right md:hidden overflow-visible ${animateClassName}`}>
                         {content}
                     </aside>
                 </>

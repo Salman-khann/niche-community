@@ -689,13 +689,13 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                     }}
                                 >
                                     {(hoveredMessageId === m._id || openMessageMenuId === m._id) && (
-                                        <div className="absolute -top-4 right-0 z-20 flex items-center gap-1 rounded-lg border border-[#1f2024] bg-[#2b2d31] p-1 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                                            <div className="absolute -top-4 right-0 z-20 flex items-center gap-1 rounded-lg border border-discord-border/70 bg-discord-darker p-1 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
                                             {['😂', '❤️', '✅', '🏠'].map((emoji) => (
                                                 <button
                                                     key={`${m._id}-${emoji}`}
                                                     type="button"
                                                     onClick={() => toggleReaction(channel._id, m._id)}
-                                                    className="h-8 w-8 rounded-md text-sm bg-[#3a3c43] hover:bg-[#4a4d57] transition-colors"
+                                                    className="h-8 w-8 rounded-md text-sm bg-discord-dark hover:bg-discord-border-light/60 transition-colors"
                                                     title={`React ${emoji}`}
                                                 >
                                                     {emoji}
@@ -704,7 +704,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                             <button
                                                 type="button"
                                                 onClick={() => handleReplyToMessage(m._id)}
-                                                className="w-8 h-8 rounded-md flex items-center justify-center bg-[#3a3c43] hover:bg-[#4a4d57] text-discord-faint hover:text-discord-light"
+                                                className="w-8 h-8 rounded-md flex items-center justify-center bg-discord-dark hover:bg-discord-border-light/60 text-discord-faint hover:text-discord-light"
                                                 title="Reply"
                                             >
                                                 <Reply className="w-4 h-4" />
@@ -712,7 +712,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                             <button
                                                 type="button"
                                                 onClick={() => handleForwardMessage(m, sender)}
-                                                className="w-8 h-8 rounded-md flex items-center justify-center bg-[#3a3c43] hover:bg-[#4a4d57] text-discord-faint hover:text-discord-light"
+                                                className="w-8 h-8 rounded-md flex items-center justify-center bg-discord-dark hover:bg-discord-border-light/60 text-discord-faint hover:text-discord-light"
                                                 title="Forward"
                                             >
                                                 <Forward className="w-4 h-4" />
@@ -721,60 +721,60 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                                                 <button
                                                     type="button"
                                                     onClick={() => setOpenMessageMenuId((prev) => (prev === m._id ? null : m._id))}
-                                                    className="w-8 h-8 rounded-md flex items-center justify-center bg-[#3a3c43] hover:bg-[#4a4d57] text-discord-faint hover:text-discord-light"
+                                                    className="w-8 h-8 rounded-md flex items-center justify-center bg-discord-dark hover:bg-discord-border-light/60 text-discord-faint hover:text-discord-light"
                                                     title="More"
                                                 >
                                                     <MoreHorizontal className="w-4 h-4" />
                                                 </button>
                                                 {openMessageMenuId === m._id && (
-                                                    <div className="absolute right-0 top-10 w-64 rounded-lg border border-[#141518] bg-[#1e1f22] shadow-2xl p-1.5">
+                                                    <div className="absolute right-0 top-10 w-64 rounded-lg border border-discord-border/80 bg-discord-darkest shadow-2xl p-1.5">
                                                         <button
                                                             type="button"
                                                             onClick={() => toggleReaction(channel._id, m._id)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
                                                         >
                                                             Add Reaction <ChevronRight className="w-4 h-4 text-discord-faint" />
                                                         </button>
-                                                        <div className="my-1 h-px bg-[#2b2d31]" />
+                                                        <div className="my-1 h-px bg-discord-border/70" />
                                                         <button
                                                             type="button"
                                                             onClick={() => handleReplyToMessage(m._id)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
                                                         >
                                                             Reply <Reply className="w-4 h-4 text-discord-faint" />
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => handleForwardMessage(m, sender)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
                                                         >
                                                             Forward <Forward className="w-4 h-4 text-discord-faint" />
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => copyMessageText(m._id, m.content || '')}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
                                                         >
                                                             Copy Text <Copy className="w-4 h-4 text-discord-faint" />
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => togglePin(channel._id, m._id)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
                                                         >
                                                             Pin Message <Pin className="w-4 h-4 text-discord-faint" />
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => setOpenMessageMenuId(null)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
                                                         >
                                                             Mark Unread <Bell className="w-4 h-4 text-discord-faint" />
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => copyMessageLink(m._id)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
                                                         >
                                                             Copy Message Link <Link2 className="w-4 h-4 text-discord-faint" />
                                                         </button>
@@ -1076,7 +1076,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         {showReportModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowReportModal(false)}>
                 <div
-                    className="w-[420px] max-w-[92vw] rounded-2xl bg-[#2b2d31] border border-discord-border/50 shadow-2xl p-6 animate-scale-in"
+                    className="w-[420px] max-w-[92vw] rounded-2xl bg-discord-darker border border-discord-border/50 shadow-2xl p-6 animate-scale-in"
                     onClick={(e) => e.stopPropagation()}
                 >
                     <div className="flex items-start justify-between">

@@ -654,6 +654,40 @@ io.on("connection", (socket) => {
         await emitVoiceMembers(channelKey);
     });
 
+    socket.on("voice:reaction", async ({ channelId, emoji, user }) => {
+        if (!channelId || !emoji) return;
+        const channelKey = channelId?.toString?.() || String(channelId);
+        const roomName = `voice:${channelKey}`;
+        if (!socket.rooms.has(roomName)) return;
+        let memberInfo = io.voiceState?.channels?.get(channelKey)?.get(socket.id) || null;
+        if (!memberInfo && useRedisVoiceState()) {
+            const raw = await redisStateClient.hget(`voice:channel:${channelKey}:members`, socket.id);
+            if (raw) {
+                try {
+                    memberInfo = JSON.parse(raw);
+                } catch {
+                    memberInfo = null;
+                }
+            }
+        }
+        const payload = {
+            channelId: channelKey,
+            socketId: socket.id,
+            userId: memberInfo?.userId || socket.data.userId || user?.userId || null,
+            displayName: memberInfo?.displayName || socket.data.displayName || user?.displayName || "Member",
+            avatar: memberInfo?.avatar || socket.data.avatar || user?.avatar || "",
+            emoji,
+            createdAt: Date.now(),
+        };
+        io.to(`voice:${channelKey}`).emit("voice:reaction", payload);
+        io.to(`voicewatch:${channelKey}`).emit("voice:reaction", payload);
+        const communityId = io.voiceState?.channelCommunity?.get(channelKey)
+            || (useRedisVoiceState() ? await redisStateClient.get(`voice:channel:${channelKey}:community`) : null);
+        if (communityId) {
+            io.to(`community:${communityId}`).emit("voice:reaction", payload);
+        }
+    });
+
     socket.on("disconnect", async () => {
         if (socket.data.activeCallRoom) {
             const roomId = socket.data.activeCallRoom;
