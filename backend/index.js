@@ -32,19 +32,8 @@ import { startLeaderboardBotScheduler } from './utils/leaderboardBot.js';
 import { startEventReminderScheduler } from './utils/eventReminderScheduler.js';
 import { startNotificationDigestScheduler } from './utils/notificationDigestScheduler.js';
 
-const allowedOrigins = (process.env.CLIENT_URL || '')
-    .split(',')
-    .map((origin) => origin.trim().replace(/\/+$/, ''))
-    .filter(Boolean);
-
 app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin) return callback(null, true); // allow non-browser requests
-        if (allowedOrigins.length === 0) return callback(null, true);
-        const normalizedOrigin = String(origin).trim().replace(/\/+$/, '');
-        if (allowedOrigins.includes(normalizedOrigin)) return callback(null, true);
-        return callback(new Error('Not allowed by CORS'));
-    },
+    origin: true,
     credentials: true,
 }));
 
