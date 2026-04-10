@@ -59,6 +59,10 @@ app.get('/api/health', (_req, res) => {
     res.status(200).json({ ok: true, service: 'backend' });
 });
 
+app.get('/api/test', (_req, res) => {
+    res.status(200).json({ message: 'Hello World' });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/invites', inviteRoutes);

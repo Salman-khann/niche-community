@@ -66,6 +66,10 @@ app.get('/api/health', (_req, res) => {
     });
 });
 
+app.get('/api/test', (_req, res) => {
+    res.status(200).json({ message: 'Hello World' });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/invites', inviteRoutes);
 app.use('/api/communities', communityRoutes);
