@@ -8,6 +8,19 @@ import { apiUrl } from '../config/urls';
 
 const API_URL = apiUrl('/api/billing');
 
+const safeReadJson = async (response) => {
+    if (!response) return {};
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const bodyText = await response.text();
+    if (!bodyText) return {};
+    if (!contentType.includes('application/json')) return { message: bodyText };
+    try {
+        return JSON.parse(bodyText);
+    } catch {
+        return { message: bodyText };
+    }
+};
+
 const UpgradeSuccessPage = () => {
     const { user } = useAuthStore();
     const { fetchProfile } = useProfileStore();
@@ -27,7 +40,7 @@ const UpgradeSuccessPage = () => {
                 const res = await fetch(`${API_URL}/verify-session?session_id=${sessionId}`, {
                     credentials: 'include',
                 });
-                const data = await res.json();
+                const data = await safeReadJson(res);
                 if (!res.ok) throw new Error(data.message || 'Verification failed');
 
                 // Refresh profile to pick up the updated tier

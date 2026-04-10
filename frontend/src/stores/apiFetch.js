@@ -8,6 +8,19 @@
 import { useWorkspaceStore } from './workspaceStore';
 import { apiUrl } from '../config/urls';
 
+const safeReadJson = async (response) => {
+    if (!response) return {};
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const bodyText = await response.text();
+    if (!bodyText) return {};
+    if (!contentType.includes('application/json')) return { message: bodyText };
+    try {
+        return JSON.parse(bodyText);
+    } catch {
+        return { message: bodyText };
+    }
+};
+
 export const apiFetch = async (url, options = {}) => {
     const finalUrl = apiUrl(url);
     const communityId = useWorkspaceStore.getState().activeCommunityId;
@@ -25,7 +38,7 @@ export const apiFetch = async (url, options = {}) => {
         // Clone so the body can still be read by the caller if needed
         const clone = res.clone();
         try {
-            const data = await clone.json();
+            const data = await safeReadJson(clone);
             if (data.code === 'SUSPENDED' || data.code === 'BANNED') {
                 sessionStorage.setItem('suspensionData', JSON.stringify({
                     code: data.code,

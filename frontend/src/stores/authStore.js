@@ -4,6 +4,19 @@ import { apiUrl } from '../config/urls';
 
 const API_URL = apiUrl('/api/auth');
 
+const safeReadJson = async (response) => {
+    if (!response) return {};
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const bodyText = await response.text();
+    if (!bodyText) return {};
+    if (!contentType.includes('application/json')) return { message: bodyText };
+    try {
+        return JSON.parse(bodyText);
+    } catch {
+        return { message: bodyText };
+    }
+};
+
 const authFetch = async (url, options = {}, allowRetry = true) => {
     const requestOptions = {
         ...options,
@@ -49,7 +62,7 @@ export const useAuthStore = create((set) => ({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, email, password, inviteCode, captchaToken, ...botFields }),
             });
-            const data = await res.json();
+            const data = await safeReadJson(res);
             if (!res.ok) throw new Error(data.message || 'Signup failed');
             set({ user: data.user, tier: data.user?.tier || 'free', isLoading: false });
             // Initialise the active workspace from memberships
@@ -71,7 +84,7 @@ export const useAuthStore = create((set) => ({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password, captchaToken }),
             });
-            const data = await res.json();
+            const data = await safeReadJson(res);
             if (!res.ok) throw new Error(data.message || 'Login failed');
             if (data.requiresTwoFactor) {
                 set({ isLoading: false });
@@ -106,7 +119,7 @@ export const useAuthStore = create((set) => ({
         set({ isCheckingAuth: true, error: null });
         try {
             const res = await authFetch(`${API_URL}/check-auth`);
-            const data = await res.json();
+            const data = await safeReadJson(res);
             if (!res.ok) throw new Error(data.message);
             set({ user: data.user, tier: data.user?.tier || 'free', isCheckingAuth: false });
             // Restore / initialise workspace from persisted memberships
@@ -126,7 +139,7 @@ export const useAuthStore = create((set) => ({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ code }),
             });
-            const data = await res.json();
+            const data = await safeReadJson(res);
             if (!res.ok) throw new Error(data.message || 'Verification failed');
             set({ user: data.user, tier: data.user?.tier || 'free', isLoading: false });
             return data;
@@ -144,7 +157,7 @@ export const useAuthStore = create((set) => ({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, captchaToken }),
             });
-            const data = await res.json();
+            const data = await safeReadJson(res);
             if (!res.ok) throw new Error(data.message || 'Failed to send reset email');
             set({ message: data.message, isLoading: false });
             return data;
@@ -162,7 +175,7 @@ export const useAuthStore = create((set) => ({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password }),
             });
-            const data = await res.json();
+            const data = await safeReadJson(res);
             if (!res.ok) throw new Error(data.message || 'Failed to reset password');
             set({ message: data.message, isLoading: false });
             return data;
@@ -180,7 +193,7 @@ export const useAuthStore = create((set) => ({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ credential, inviteCode: inviteCode || undefined }),
             });
-            const data = await res.json();
+            const data = await safeReadJson(res);
             if (!res.ok) throw new Error(data.message || 'Google login failed');
             set({ user: data.user, tier: data.user?.tier || 'free', isLoading: false });
             if (data.user?.memberships) {
@@ -201,7 +214,7 @@ export const useAuthStore = create((set) => ({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token, code }),
             });
-            const data = await res.json();
+            const data = await safeReadJson(res);
             if (!res.ok) throw new Error(data.message || 'Two-factor verification failed');
             set({ user: data.user, tier: data.user?.tier || 'free', isLoading: false });
             if (data.user?.memberships) {
@@ -220,7 +233,7 @@ export const useAuthStore = create((set) => ({
             const res = await authFetch(`${API_URL}/2fa/setup`, {
                 method: 'POST',
             });
-            const data = await res.json();
+            const data = await safeReadJson(res);
             if (!res.ok) throw new Error(data.message || 'Failed to start 2FA setup');
             set({ isLoading: false });
             return data;
@@ -238,7 +251,7 @@ export const useAuthStore = create((set) => ({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ secret, code }),
             });
-            const data = await res.json();
+            const data = await safeReadJson(res);
             if (!res.ok) throw new Error(data.message || 'Failed to enable 2FA');
             set({ user: data.user, tier: data.user?.tier || 'free', isLoading: false });
             return data;
@@ -256,7 +269,7 @@ export const useAuthStore = create((set) => ({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ code }),
             });
-            const data = await res.json();
+            const data = await safeReadJson(res);
             if (!res.ok) throw new Error(data.message || 'Failed to disable 2FA');
             if (data.user) {
                 set({ user: data.user, tier: data.user?.tier || 'free', isLoading: false });
