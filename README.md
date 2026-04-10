@@ -116,7 +116,30 @@ VITE_TURN_CREDENTIAL=turn_credential
 **Build & Deploy**
 1. Build frontend: `cd frontend && npm run build`
 2. For Vercel SPA routing, keep the rewrite in `frontend/vercel.json` so deep links resolve.
-3. Deploy backend to your Node hosting of choice and set the same env vars.
+
+### Deploy Frontend on Vercel
+1. In Vercel, create a new project from this repo.
+2. Set the project root to `frontend`.
+3. Framework preset: `Vite`.
+4. Build command: `npm run build`.
+5. Output directory: `dist`.
+6. Add frontend environment variables (at least):
+   - `VITE_API_URL=https://<your-backend-vercel-domain>`
+   - `VITE_SOCKET_URL=https://<your-realtime-backend-domain>` (optional, see realtime note below)
+7. Deploy.
+
+### Deploy Backend on Vercel
+1. Create a second Vercel project from the same repo.
+2. Set the project root to `backend`.
+3. Keep `backend/vercel.json` as committed (routes all requests to `api/index.js`).
+4. Add backend environment variables from the `backend/.env` template in this README.
+5. Set `CLIENT_URL` to your frontend domain (or comma-separated list of allowed frontend origins).
+6. Deploy and test `GET /api/health`.
+
+### Important Vercel Serverless Limits
+1. Socket.IO realtime and long-running schedulers (leaderboard bot, reminders, notification digests) are not guaranteed on Vercel serverless functions.
+2. If you need persistent realtime sockets, run the Socket.IO backend on a persistent host (for example Render/Railway/Fly) and point `VITE_SOCKET_URL` to that host.
+3. REST API endpoints continue to work on Vercel through `backend/api/index.js`.
 
 **Troubleshooting**
 1. If invite links open a blank page on Vercel, verify the rewrite in `frontend/vercel.json`.

@@ -34,14 +34,15 @@ import { startNotificationDigestScheduler } from './utils/notificationDigestSche
 
 const allowedOrigins = (process.env.CLIENT_URL || '')
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean);
 
 app.use(cors({
     origin: (origin, callback) => {
         if (!origin) return callback(null, true); // allow non-browser requests
         if (allowedOrigins.length === 0) return callback(null, true);
-        if (allowedOrigins.includes(origin)) return callback(null, true);
+        const normalizedOrigin = String(origin).trim().replace(/\/+$/, '');
+        if (allowedOrigins.includes(normalizedOrigin)) return callback(null, true);
         return callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
