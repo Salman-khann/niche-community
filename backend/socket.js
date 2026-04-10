@@ -5,20 +5,9 @@ import express from "express";
 const app = express();
 const server = http.createServer(app);
 
-const allowedOrigins = (process.env.CLIENT_URL || '')
-    .split(',')
-    .map((origin) => origin.trim().replace(/\/+$/, ''))
-    .filter(Boolean);
-
 const io = new Server(server, {
     cors: {
-        origin: (origin, callback) => {
-            if (!origin) return callback(null, true);
-            if (allowedOrigins.length === 0) return callback(null, true);
-            const normalizedOrigin = String(origin).trim().replace(/\/+$/, '');
-            if (allowedOrigins.includes(normalizedOrigin)) return callback(null, true);
-            return callback(new Error('Not allowed by CORS'));
-        },
+        origin: (_origin, callback) => callback(null, true),
         credentials: true,
     },
 });
