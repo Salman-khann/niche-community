@@ -63,6 +63,7 @@ const DmPanel = ({
     const [showEmoji, setShowEmoji] = useState(false);
     const [hoveredMessageId, setHoveredMessageId] = useState(null);
     const [openMessageMenuId, setOpenMessageMenuId] = useState(null);
+    const [reactionPickerMessageId, setReactionPickerMessageId] = useState(null);
     const [copiedMessageId, setCopiedMessageId] = useState(null);
     const dmMenuRef = useRef(null);
     const sendLockRef = useRef(false);
@@ -170,6 +171,7 @@ const DmPanel = ({
         const onOutside = (e) => {
             if (dmMenuRef.current && !dmMenuRef.current.contains(e.target)) {
                 setOpenMessageMenuId(null);
+                setReactionPickerMessageId(null);
             }
         };
         document.addEventListener('mousedown', onOutside);
@@ -568,9 +570,7 @@ const DmPanel = ({
                                                     <button
                                                         type="button"
                                                         onClick={() => {
-                                                            onChange?.(`${value || ''}${CHAT_REACTION_EMOJIS[0]}`);
-                                                            onTyping?.();
-                                                            setOpenMessageMenuId(null);
+                                                            setReactionPickerMessageId((prev) => (prev === m._id ? null : m._id));
                                                         }}
                                                         className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
                                                     >
@@ -620,6 +620,17 @@ const DmPanel = ({
                                                         Speak Message <Volume2 className="w-4 h-4 text-discord-faint" />
                                                     </button>
                                                 </div>
+                                            )}
+                                            {reactionPickerMessageId === m._id && (
+                                                <EmojiPicker
+                                                    onSelect={(emoji) => {
+                                                        onChange?.(`${value || ''}${emoji}`);
+                                                        onTyping?.();
+                                                        setReactionPickerMessageId(null);
+                                                        setOpenMessageMenuId(null);
+                                                    }}
+                                                    onClose={() => setReactionPickerMessageId(null)}
+                                                />
                                             )}
                                         </div>
                                     </div>

@@ -54,6 +54,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+app.get('/api/health', (_req, res) => {
+    res.status(200).json({ ok: true, service: 'backend' });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/invites', inviteRoutes);
