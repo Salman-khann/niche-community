@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import mongoose from 'mongoose';
 
 import { connectDb } from '../db/connectDb.js';
 import { stripeWebhook } from '../controllers/billing.controller.js';
@@ -53,7 +54,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 app.get('/api/health', (_req, res) => {
-    res.status(200).json({ ok: true, service: 'backend' });
+    const state = mongoose.connection.readyState;
+    const connected = state === 1;
+    res.status(connected ? 200 : 503).json({
+        ok: connected,
+        service: 'backend',
+        db: {
+            connected,
+            readyState: state,
+        },
+    });
 });
 
 app.use('/api/auth', authRoutes);
@@ -76,10 +86,17 @@ app.use('/api/server-invites', serverInviteRoutes);
 let dbConnectPromise;
 const ensureDbConnection = async () => {
     if (!dbConnectPromise) {
-        dbConnectPromise = connectDb().catch((error) => {
-            dbConnectPromise = null;
-            throw error;
-        });
+        dbConnectPromise = connectDb()
+            .then((connected) => {
+                if (!connected) {
+                    throw new Error('MongoDB connection failed');
+                }
+                return true;
+            })
+            .catch((error) => {
+                dbConnectPromise = null;
+                throw error;
+            });
     }
     return dbConnectPromise;
 };
