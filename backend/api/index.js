@@ -31,15 +31,21 @@ dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 const app = express();
 
-const corsOptions = {
-    origin: true,
-    credentials: true,
-    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
-};
+const allowedOrigins = (process.env.CLIENT_URL || '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.length === 0) return callback(null, true);
+        const normalizedOrigin = String(origin).trim().replace(/\/+$/, '');
+        if (allowedOrigins.includes(normalizedOrigin)) return callback(null, true);
+        return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+}));
 
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 
