@@ -31,10 +31,15 @@ dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 const app = express();
 
-app.use(cors({
+const corsOptions = {
     origin: true,
     credentials: true,
-}));
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 

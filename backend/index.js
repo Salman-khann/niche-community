@@ -33,9 +33,10 @@ import { startEventReminderScheduler } from './utils/eventReminderScheduler.js';
 import { startNotificationDigestScheduler } from './utils/notificationDigestScheduler.js';
 
 app.use(cors({
-    origin: true,
-    credentials: true,
+  origin: "*"
 }));
+
+
 
 // Stripe webhook must receive raw body for signature verification.
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
