@@ -1343,3 +1343,25 @@ export const deleteCommunity = async (req, res) => {
         res.status(500).json({ success: false, message: "Server error" });
     }
 };
+
+export const updateNotificationSettings = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+    const updates = req.body;
+    
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    
+    const membership = user.memberships.find(m => m.communityId.toString() === id.toString());
+    if (!membership) return res.status(403).json({ message: 'Not a member' });
+    
+    membership.notificationSettings = { ...membership.notificationSettings, ...updates };
+    await user.save();
+    
+    res.status(200).json({ success: true, notificationSettings: membership.notificationSettings });
+  } catch (error) {
+    console.error('Update Notification Settings Error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};

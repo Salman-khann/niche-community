@@ -24,8 +24,21 @@ const userSchema = new mongoose.Schema({
     joinedAt: { type: Date, default: Date.now },
     warningsCount: { type: Number, default: 0 },
     suspensionEndDate: { type: Date, default: null },
-    isBanned: { type: Boolean, default: false },
-  }],
+    isBanned: { type: Boolean, default: false },    notificationSettings: {
+      serverMuted: { type: Boolean, default: false },
+      serverSetting: { type: String, enum: ["all", "mentions", "nothing"], default: "all" },
+      inAppAlerts: { type: Boolean, default: true },
+      pushNotifications: { type: Boolean, default: true },
+      suppressEveryone: { type: Boolean, default: false },
+      suppressRoles: { type: Boolean, default: false },
+      suppressHighlights: { type: Boolean, default: false },
+      muteNewEvents: { type: Boolean, default: false },
+      mobilePush: { type: Boolean, default: true },
+      channelOverrides: [{
+        channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel" },
+        setting: { type: String, enum: ["default", "all", "mentions", "nothing", "muted"], default: "default" }
+      }]
+    }  }],
   friends: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   friendRequests: {
     incoming: [{

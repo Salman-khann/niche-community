@@ -43,6 +43,16 @@ const ProfilePopout = ({ isOpen, onClose, anchorClassName = '', profile, user, o
         }
     };
 
+    const handleToggleStatusMenu = () => {
+        setShowCustomStatus(false);
+        setShowStatusMenu((value) => !value);
+    };
+
+    const handleToggleCustomStatus = () => {
+        setShowStatusMenu(false);
+        setShowCustomStatus((value) => !value);
+    };
+
     return (
         <div className="fixed inset-0 z-[70]" onClick={onClose}>
             <div
@@ -119,7 +129,7 @@ const ProfilePopout = ({ isOpen, onClose, anchorClassName = '', profile, user, o
                             <span>Edit Profile</span>
                         </button>
                         <button
-                            onClick={() => setShowStatusMenu((v) => !v)}
+                            onClick={handleToggleStatusMenu}
                             className="w-full flex items-center justify-between px-4 py-3 hover:bg-discord-border-light/20 cursor-pointer"
                         >
                             <div className="flex items-center gap-3">
@@ -131,7 +141,7 @@ const ProfilePopout = ({ isOpen, onClose, anchorClassName = '', profile, user, o
                             <ChevronRight className="w-4 h-4 text-discord-faint" />
                         </button>
                         <button
-                            onClick={() => setShowCustomStatus(true)}
+                            onClick={handleToggleCustomStatus}
                             className="w-full flex items-center justify-between px-4 py-3 hover:bg-discord-border-light/20 cursor-pointer"
                         >
                             <div className="flex items-center gap-3">

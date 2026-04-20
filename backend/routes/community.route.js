@@ -1,5 +1,5 @@
 import express from "express";
-import { createCommunity, generateInvite, getInviteCodes, getMyCommunity, getMyCommunities, getAllCommunities, createInviteRequest, getInviteRequests, approveInviteRequest, rejectInviteRequest, getMembers, updateMemberRole, searchMembers, joinCommunity, getRoster, getCommunityProfile, updateCommunityProfile, deleteCommunity, kickMember, getRoles, createRole, updateRole, deleteRole, updateMemberRoles } from "../controllers/community.controller.js";
+import { createCommunity, generateInvite, getInviteCodes, getMyCommunity, getMyCommunities, getAllCommunities, createInviteRequest, getInviteRequests, approveInviteRequest, rejectInviteRequest, getMembers, updateMemberRole, searchMembers, joinCommunity, getRoster, getCommunityProfile, updateCommunityProfile, deleteCommunity, kickMember, getRoles, createRole, updateRole, deleteRole, updateMemberRoles, updateNotificationSettings } from "../controllers/community.controller.js";
 import { sendServerInvite } from "../controllers/serverInvite.controller.js";
 import { verifyToken } from "../middleware/verifyToken.js";
 import { verifyCommunityAccess } from "../middleware/verifyCommunityAccess.js";
@@ -61,5 +61,7 @@ router.get("/:id/roles", verifyToken, verifyCommunityAccess, getRoles);
 router.post("/:id/roles", verifyToken, verifyCommunityAccess, createRole);
 router.put("/:id/roles/:roleId", verifyToken, verifyCommunityAccess, updateRole);
 router.delete("/:id/roles/:roleId", verifyToken, verifyCommunityAccess, deleteRole);
+
+router.put("/:id/notifications", verifyToken, verifyCommunityAccess, updateNotificationSettings);
 
 export default router;

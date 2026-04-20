@@ -9,6 +9,8 @@ import { apiFetch } from '../stores/apiFetch';
 import ChannelCreateModal from './ChannelCreateModal';
 import ServerMenu from './ServerMenu';
 import InviteModal from './InviteModal';
+import NotificationSettingsModal from './NotificationSettingsModal';
+import PrivacySettingsModal from './PrivacySettingsModal';
 import { useFriendStore } from '../stores/friendStore';
 import { useCommunityStore } from '../stores/communityStore';
 import { useEventStore } from '../stores/eventStore';
@@ -32,6 +34,9 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
     const [isTextChannelsOpen, setIsTextChannelsOpen] = useState(true);
     const [isVoiceChannelsOpen, setIsVoiceChannelsOpen] = useState(true);
     const [createError, setCreateError] = useState('');
+    const [hideMutedChannels, setHideMutedChannels] = useState(false);
+    const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+    const [showPrivacySettings, setShowPrivacySettings] = useState(false);
 
     const { channels, activeChannelId, fetchChannels, createChannel, setActiveChannel, isLoading } = useChannelStore();
     const { user } = useAuthStore();
@@ -173,6 +178,10 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                     onServerSettings={() => { setShowServerMenu(false); navigate('/server-settings'); }}
                     onCreateChannel={() => { setShowServerMenu(false); setShowCreateModal(true); }}
                     onCreateEvent={() => { setShowServerMenu(false); setShowEventCreateModal(true); }}
+                    onNotificationSettings={() => { setShowServerMenu(false); setShowNotificationSettings(true); }}
+                    onPrivacySettings={() => { setShowServerMenu(false); setShowPrivacySettings(true); }}
+                    hideMutedChannels={hideMutedChannels}
+                    onToggleHideMuted={() => setHideMutedChannels(!hideMutedChannels)}
                     hideInvite={!canInvite}
                     hideEvent={!canCreateEvents}
                     hideCreateChannel={!canCreateChannels}
@@ -237,6 +246,16 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                 onClose={() => setShowCreateModal(false)}
                 onCreate={handleCreate}
                 isLoading={isLoading}
+            />
+
+            <NotificationSettingsModal
+                isOpen={showNotificationSettings}
+                onClose={() => setShowNotificationSettings(false)}
+            />
+
+            <PrivacySettingsModal
+                isOpen={showPrivacySettings}
+                onClose={() => setShowPrivacySettings(false)}
             />
             <InviteModal
                 isOpen={showInviteModal}
@@ -327,15 +346,32 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                     {isTextChannelsOpen && (
                     <div className="mt-1 space-y-0.5">
                         {/* Channel items */}
-                {channels.filter((ch) => ['text', 'announcement', 'forum'].includes(ch.type || 'text')).map((ch) => {
+                {channels.filter((ch) => {
+                    if (!['text', 'announcement', 'forum'].includes(ch.type || 'text')) return false;
+                    const override = activeMembership?.notificationSettings?.channelOverrides?.find(o => {
+                        const id = typeof o.channelId === 'string' ? o.channelId : o.channelId?._id;
+                        return id === ch._id;
+                    });
+                    const isMuted = override?.setting === 'muted';
+                    if (hideMutedChannels && isMuted) return false;
+                    return true;
+                }).map((ch) => {
                     const isActive = activeChannelId === ch._id;
                     const isAnnouncement = ch.type === 'announcement';
+                    const override = activeMembership?.notificationSettings?.channelOverrides?.find(o => {
+                        const id = typeof o.channelId === 'string' ? o.channelId : o.channelId?._id;
+                        return id === ch._id;
+                    });
+                    const isMuted = override?.setting === 'muted';
+
                     return (
                         <button key={ch._id} onClick={() => handleChannelClick(ch)}
                             className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-all duration-150 cursor-pointer group
                                 ${isActive
                                     ? 'bg-[#3a3d46] text-white font-semibold'
-                                    : 'text-[#9ca1ad] hover:bg-[#1d212b] hover:text-[#e6e8ee]'
+                                    : isMuted
+                                        ? 'text-[#5c5e66] hover:bg-[#1d212b] hover:text-[#9ca1ad]'
+                                        : 'text-[#9ca1ad] hover:bg-[#1d212b] hover:text-[#e6e8ee]'
                                 }`}
                             title={ch.description || ch.name}>
                             {ch.isPremium || ch.isPrivate ? (
@@ -403,7 +439,21 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                     {isVoiceChannelsOpen && (
                     <div className="mt-1 space-y-0.5">
                         {(channels.filter((ch) => ch.type === 'voice').map((ch) => ch.name)).length > 0
-                            ? channels.filter((ch) => ch.type === 'voice').map((ch) => {
+                            ? channels.filter((ch) => {
+                                if (ch.type !== 'voice') return false;
+                                const override = activeMembership?.notificationSettings?.channelOverrides?.find(o => {
+                                    const id = typeof o.channelId === 'string' ? o.channelId : o.channelId?._id;
+                                    return id === ch._id;
+                                });
+                                const isMuted = override?.setting === 'muted';
+                                if (hideMutedChannels && isMuted) return false;
+                                return true;
+                            }).map((ch) => {
+                                const override = activeMembership?.notificationSettings?.channelOverrides?.find(o => {
+                                    const id = typeof o.channelId === 'string' ? o.channelId : o.channelId?._id;
+                                    return id === ch._id;
+                                });
+                                const isMuted = override?.setting === 'muted';
                                 const isActive = voiceState?.activeChannelId === ch._id;
                                 const presenceMembers = voiceState?.voicePresence?.[ch._id] || [];
                                 const allMembers = isActive ? (voiceState?.members || []) : presenceMembers;
@@ -438,7 +488,9 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                                             className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
                                                 isActive
                                                     ? 'bg-[#3a3d46] text-white font-semibold'
-                                                    : 'text-[#9ca1ad] hover:bg-[#1d212b] hover:text-[#e6e8ee]'
+                                                    : isMuted
+                                                        ? 'text-[#5c5e66] hover:bg-[#1d212b] hover:text-[#9ca1ad]'
+                                                        : 'text-[#9ca1ad] hover:bg-[#1d212b] hover:text-[#e6e8ee]'
                                             }`}
                                         >
                                             <Volume2 className="w-4 h-4 shrink-0" strokeWidth={2} />

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Palette, Pencil, X, LogOut, Camera, ShieldCheck, ShieldAlert, QrCode } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore } from '../stores/feedStore';
+import { useNotificationStore } from '../stores/notificationStore';
 import { useDropzone } from 'react-dropzone';
 
 const BANNER_COLORS = [
@@ -18,12 +19,16 @@ const BANNER_COLORS = [
     '#111827',
 ];
 
-const SETTINGS_SECTIONS = [
+const USER_SETTINGS_SECTIONS = [
     { label: 'My Account', key: 'account' },
     { label: 'Security', key: 'security' },
-    { label: 'Language', key: 'language' },
-    { label: 'Data & Privacy', key: 'privacy' },
-    { label: 'Community Essentials', key: 'community' },
+    { label: 'Notifications', key: 'notifications' },
+];
+
+const APP_SETTINGS_SECTIONS = [
+    { label: 'Voice & Video', key: 'voiceVideo' },
+    { label: 'Appearance', key: 'appearance' },
+    { label: 'Accessibility', key: 'accessibility' },
 ];
 
 const BILLING_SECTIONS = [
@@ -33,6 +38,7 @@ const BILLING_SECTIONS = [
 const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const navigate = useNavigate();
     const { logout, getTwoFactorSetup, enableTwoFactor, disableTwoFactor } = useAuthStore();
+    const { prefs: notificationPrefs, fetchPrefs: fetchNotificationPrefs, updatePrefs: updateNotificationPrefs } = useNotificationStore();
     const initial = useMemo(() => ({
         displayName: profile?.displayName || user?.name || '',
         pronouns: profile?.pronouns || '',
@@ -56,6 +62,12 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const [twoFactorError, setTwoFactorError] = useState('');
     const [twoFactorMessage, setTwoFactorMessage] = useState('');
     const [twoFactorBusy, setTwoFactorBusy] = useState(false);
+    const [notificationBusy, setNotificationBusy] = useState(false);
+    const [notificationError, setNotificationError] = useState('');
+    const [notificationMessage, setNotificationMessage] = useState('');
+    const [voiceMode, setVoiceMode] = useState('voice');
+    const [appearanceTheme, setAppearanceTheme] = useState('dark');
+    const [reduceMotion, setReduceMotion] = useState(false);
     const { uploadFile } = useFeedStore();
     const [privacy, setPrivacy] = useState({
         improveData: profile?.dataPrivacy?.improveData ?? true,
@@ -84,6 +96,9 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         setTwoFactorCode('');
         setTwoFactorError('');
         setTwoFactorMessage('');
+        setNotificationError('');
+        setNotificationMessage('');
+        fetchNotificationPrefs().catch(() => { });
     }, [isOpen, initial]);
 
     const onAvatarDrop = useCallback(async (acceptedFiles) => {
@@ -109,6 +124,12 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     });
 
     if (!isOpen) return null;
+
+    const notificationsState = {
+        emailDigestEnabled: notificationPrefs?.emailDigestEnabled ?? false,
+        digestFrequency: notificationPrefs?.digestFrequency ?? 'daily',
+        pushEnabled: notificationPrefs?.pushEnabled ?? false,
+    };
 
     const canSave = displayName.trim().length > 0;
     const handleSave = async () => {
@@ -191,6 +212,20 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         }
     };
 
+    const handleNotificationToggle = async (key, value) => {
+        setNotificationBusy(true);
+        setNotificationError('');
+        setNotificationMessage('');
+        try {
+            await updateNotificationPrefs({ [key]: value });
+            setNotificationMessage('Notification settings updated.');
+        } catch (error) {
+            setNotificationError(error.message || 'Unable to update notifications');
+        } finally {
+            setNotificationBusy(false);
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm" onClick={onClose}>
             <div
@@ -209,7 +244,25 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                         <div>
                             <p className="text-xs uppercase tracking-[0.16em] text-discord-faint mb-2">User Settings</p>
                             <div className="space-y-1">
-                                {SETTINGS_SECTIONS.map((section) => (
+                                {USER_SETTINGS_SECTIONS.map((section) => (
+                                    <button
+                                        key={section.label}
+                                        onClick={() => setActiveSection(section.key)}
+                                        className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
+                                            activeSection === section.key
+                                                ? 'bg-discord-darkest text-white'
+                                                : 'text-discord-faint hover:bg-discord-darkest/60'
+                                        }`}
+                                    >
+                                        {section.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <p className="text-xs uppercase tracking-[0.16em] text-discord-faint mb-2">App Settings</p>
+                            <div className="space-y-1">
+                                {APP_SETTINGS_SECTIONS.map((section) => (
                                     <button
                                         key={section.label}
                                         onClick={() => setActiveSection(section.key)}
@@ -256,7 +309,19 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                         <div className="sticky top-0 z-10 bg-discord-dark/90 backdrop-blur border-b border-discord-border/60 px-5 sm:px-8 py-4 sm:py-5 flex items-center justify-between">
                             <div>
                                 <p className="text-lg font-semibold text-white">
-                                    {activeSection === 'privacy' ? 'Data & Privacy' : 'Profiles'}
+                                    {activeSection === 'account'
+                                        ? 'My Account'
+                                        : activeSection === 'security'
+                                            ? 'Security'
+                                            : activeSection === 'notifications'
+                                                ? 'Notifications'
+                                                : activeSection === 'voiceVideo'
+                                                    ? 'Voice & Video'
+                                                    : activeSection === 'appearance'
+                                                        ? 'Appearance'
+                                                        : activeSection === 'accessibility'
+                                                            ? 'Accessibility'
+                                                            : 'My Account'}
                                 </p>
                                 {activeSection === 'account' && (
                                     <div className="flex flex-wrap items-center gap-4 mt-2">
@@ -300,64 +365,62 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                             </div>
                         </div>
 
-                        <div className="md:hidden border-b border-discord-border/60 px-5 py-3 space-y-3">
-                            <div className="text-[11px] uppercase tracking-[0.16em] text-discord-faint">Settings</div>
-                            <div className="flex flex-wrap gap-2">
-                                {SETTINGS_SECTIONS.map((section) => (
-                                    <button
-                                        key={section.key}
-                                        onClick={() => setActiveSection(section.key)}
-                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                                            activeSection === section.key
-                                                ? 'bg-discord-border-light/30 text-white'
-                                                : 'text-discord-faint hover:bg-discord-darkest/60'
-                                        }`}
-                                    >
-                                        {section.label}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="text-[11px] uppercase tracking-[0.16em] text-discord-faint">Billing</div>
-                            <div className="flex flex-wrap gap-2">
-                                {BILLING_SECTIONS.map((section) => (
-                                    <button
-                                        key={section.id || section.label}
-                                        onClick={() => handleBillingClick(section.id)}
-                                        className="px-3 py-1.5 rounded-full text-xs font-semibold text-discord-faint hover:bg-discord-darkest/60 flex items-center gap-2"
-                                    >
-                                        <span>{section.label}</span>
-                                        {section.badge && (
-                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-discord-border/50 text-discord-light">
-                                                {section.badge}
-                                            </span>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-                            {activeSection === 'account' && (
-                                <div className="flex flex-wrap gap-2 pt-1">
-                                    <button
-                                        onClick={() => setActiveTab('main')}
-                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                                            activeTab === 'main'
-                                                ? 'bg-discord-border-light/30 text-white'
-                                                : 'text-discord-faint hover:bg-discord-darkest/60'
-                                        }`}
-                                    >
-                                        Main Profile
-                                    </button>
-                                    <button
-                                        onClick={() => setActiveTab('server')}
-                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                                            activeTab === 'server'
-                                                ? 'bg-discord-border-light/30 text-white'
-                                                : 'text-discord-faint hover:bg-discord-darkest/60'
-                                        }`}
-                                    >
-                                        Per-server
-                                    </button>
+                        <div className="md:hidden border-b border-discord-border/60 px-5 py-3 space-y-4">
+                            <div>
+                                <div className="text-[11px] uppercase tracking-[0.16em] text-discord-faint mb-2">User Settings</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {USER_SETTINGS_SECTIONS.map((section) => (
+                                        <button
+                                            key={section.label}
+                                            onClick={() => setActiveSection(section.key)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+                                                activeSection === section.key
+                                                    ? 'bg-discord-border-light/30 text-white'
+                                                    : 'text-discord-faint hover:bg-discord-darkest/60'
+                                            }`}
+                                        >
+                                            {section.label}
+                                        </button>
+                                    ))}
                                 </div>
-                            )}
+                            </div>
+                            <div>
+                                <div className="text-[11px] uppercase tracking-[0.16em] text-discord-faint mb-2">App Settings</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {APP_SETTINGS_SECTIONS.map((section) => (
+                                        <button
+                                            key={section.label}
+                                            onClick={() => setActiveSection(section.key)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+                                                activeSection === section.key
+                                                    ? 'bg-discord-border-light/30 text-white'
+                                                    : 'text-discord-faint hover:bg-discord-darkest/60'
+                                            }`}
+                                        >
+                                            {section.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="text-[11px] uppercase tracking-[0.16em] text-discord-faint mb-2">Billing Settings</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {BILLING_SECTIONS.map((section) => (
+                                        <button
+                                            key={section.id || section.label}
+                                            onClick={() => handleBillingClick(section.id)}
+                                            className="px-3 py-1.5 rounded-full text-xs font-semibold text-discord-faint hover:bg-discord-darkest/60 flex items-center gap-2"
+                                        >
+                                            <span>{section.label}</span>
+                                            {section.badge && (
+                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-discord-border/50 text-discord-light">
+                                                    {section.badge}
+                                                </span>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
 
                         {activeSection === 'account' && activeTab === 'main' && (
@@ -502,6 +565,174 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                         {activeSection === 'account' && activeTab === 'server' && (
                             <div className="px-5 sm:px-8 py-10 text-discord-faint text-sm">
                                 Per-server profiles are coming soon.
+                            </div>
+                        )}
+
+                        {activeSection === 'notifications' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto space-y-6">
+                                    <div className="rounded-3xl border border-discord-border/60 bg-discord-darkest/80 p-6 md:p-8">
+                                        <p className="text-[11px] uppercase tracking-[0.3em] text-blurple/80 font-semibold">User Settings</p>
+                                        <h2 className="text-2xl font-semibold text-white mt-2">Notifications</h2>
+                                        <p className="text-sm text-discord-faint mt-2 max-w-2xl">
+                                            Control digest and push preferences for your account.
+                                        </p>
+
+                                        {notificationError && (
+                                            <div className="mt-5 px-4 py-3 bg-discord-red/10 border border-discord-red/20 rounded-lg text-sm text-discord-red font-medium">
+                                                {notificationError}
+                                            </div>
+                                        )}
+                                        {notificationMessage && (
+                                            <div className="mt-5 px-4 py-3 bg-discord-green/10 border border-discord-green/20 rounded-lg text-sm text-discord-green font-medium">
+                                                {notificationMessage}
+                                            </div>
+                                        )}
+
+                                        <div className="mt-6 space-y-4">
+                                            <div className="flex items-center justify-between gap-4 rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-white">Email digest</p>
+                                                    <p className="text-xs text-discord-faint mt-1">Receive a summary of unread updates by email.</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    disabled={notificationBusy}
+                                                    onClick={() => handleNotificationToggle('emailDigestEnabled', !notificationsState.emailDigestEnabled)}
+                                                    className={`relative w-12 h-6 rounded-full transition-colors ${notificationsState.emailDigestEnabled ? 'bg-blurple' : 'bg-discord-darkest'}`}
+                                                >
+                                                    <span className={`absolute top-0.5 ${notificationsState.emailDigestEnabled ? 'right-0.5' : 'left-0.5'} w-5 h-5 rounded-full bg-white transition-all`} />
+                                                </button>
+                                            </div>
+
+                                            <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4">
+                                                <div className="flex items-center justify-between gap-4">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-white">Digest frequency</p>
+                                                        <p className="text-xs text-discord-faint mt-1">Choose how often you want digest emails.</p>
+                                                    </div>
+                                                    <select
+                                                        value={notificationsState.digestFrequency}
+                                                        onChange={(e) => handleNotificationToggle('digestFrequency', e.target.value)}
+                                                        disabled={notificationBusy}
+                                                        className="rounded-lg border border-discord-border/60 bg-[#1e1f22] px-3 py-2 text-sm text-discord-light outline-none"
+                                                    >
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="off">Off</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center justify-between gap-4 rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-white">Push notifications</p>
+                                                    <p className="text-xs text-discord-faint mt-1">Allow browser and mobile push alerts.</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    disabled={notificationBusy}
+                                                    onClick={() => handleNotificationToggle('pushEnabled', !notificationsState.pushEnabled)}
+                                                    className={`relative w-12 h-6 rounded-full transition-colors ${notificationsState.pushEnabled ? 'bg-blurple' : 'bg-discord-darkest'}`}
+                                                >
+                                                    <span className={`absolute top-0.5 ${notificationsState.pushEnabled ? 'right-0.5' : 'left-0.5'} w-5 h-5 rounded-full bg-white transition-all`} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'voiceVideo' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto rounded-3xl border border-discord-border/60 bg-discord-darkest/80 p-6 md:p-8 space-y-6">
+                                    <div>
+                                        <p className="text-[11px] uppercase tracking-[0.3em] text-blurple/80 font-semibold">App Settings</p>
+                                        <h2 className="text-2xl font-semibold text-white mt-2">Voice & Video</h2>
+                                        <p className="text-sm text-discord-faint mt-2">Basic voice and video preferences for the app.</p>
+                                    </div>
+                                    <div className="grid gap-4">
+                                        <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 flex items-center justify-between gap-4">
+                                            <div>
+                                                <p className="text-sm font-semibold text-white">Input mode</p>
+                                                <p className="text-xs text-discord-faint mt-1">Switch between voice activity and push to talk.</p>
+                                            </div>
+                                            <select value={voiceMode} onChange={(e) => setVoiceMode(e.target.value)} className="rounded-lg border border-discord-border/60 bg-[#1e1f22] px-3 py-2 text-sm text-discord-light outline-none">
+                                                <option value="voice">Voice Activity</option>
+                                                <option value="ptt">Push to Talk</option>
+                                            </select>
+                                        </div>
+                                        <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 flex items-center justify-between gap-4">
+                                            <div>
+                                                <p className="text-sm font-semibold text-white">Noise suppression</p>
+                                                <p className="text-xs text-discord-faint mt-1">Reduce background noise in calls.</p>
+                                            </div>
+                                            <div className="text-xs text-discord-faint">Enabled</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'appearance' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto rounded-3xl border border-discord-border/60 bg-discord-darkest/80 p-6 md:p-8 space-y-6">
+                                    <div>
+                                        <p className="text-[11px] uppercase tracking-[0.3em] text-blurple/80 font-semibold">App Settings</p>
+                                        <h2 className="text-2xl font-semibold text-white mt-2">Appearance</h2>
+                                        <p className="text-sm text-discord-faint mt-2">Choose how the app looks and feels.</p>
+                                    </div>
+                                    <div className="grid gap-4">
+                                        <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 flex items-center justify-between gap-4">
+                                            <div>
+                                                <p className="text-sm font-semibold text-white">Theme</p>
+                                                <p className="text-xs text-discord-faint mt-1">The current UI is locked to the dark Discord palette.</p>
+                                            </div>
+                                            <select value={appearanceTheme} onChange={(e) => setAppearanceTheme(e.target.value)} className="rounded-lg border border-discord-border/60 bg-[#1e1f22] px-3 py-2 text-sm text-discord-light outline-none">
+                                                <option value="dark">Dark</option>
+                                                <option value="darker">Darker</option>
+                                            </select>
+                                        </div>
+                                        <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 flex items-center justify-between gap-4">
+                                            <div>
+                                                <p className="text-sm font-semibold text-white">Reduce motion</p>
+                                                <p className="text-xs text-discord-faint mt-1">Minimize animated transitions across the app.</p>
+                                            </div>
+                                            <button type="button" onClick={() => setReduceMotion((value) => !value)} className={`relative w-12 h-6 rounded-full transition-colors ${reduceMotion ? 'bg-blurple' : 'bg-discord-darkest'}`}>
+                                                <span className={`absolute top-0.5 ${reduceMotion ? 'right-0.5' : 'left-0.5'} w-5 h-5 rounded-full bg-white transition-all`} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'accessibility' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto rounded-3xl border border-discord-border/60 bg-discord-darkest/80 p-6 md:p-8 space-y-6">
+                                    <div>
+                                        <p className="text-[11px] uppercase tracking-[0.3em] text-blurple/80 font-semibold">App Settings</p>
+                                        <h2 className="text-2xl font-semibold text-white mt-2">Accessibility</h2>
+                                        <p className="text-sm text-discord-faint mt-2">Accessibility options tuned to the current dark interface.</p>
+                                    </div>
+                                    <div className="grid gap-4">
+                                        <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 flex items-center justify-between gap-4">
+                                            <div>
+                                                <p className="text-sm font-semibold text-white">Text size</p>
+                                                <p className="text-xs text-discord-faint mt-1">Increase text size for readability.</p>
+                                            </div>
+                                            <div className="text-xs text-discord-faint">Default</div>
+                                        </div>
+                                        <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 flex items-center justify-between gap-4">
+                                            <div>
+                                                <p className="text-sm font-semibold text-white">Color contrast</p>
+                                                <p className="text-xs text-discord-faint mt-1">Use the existing high-contrast Discord palette.</p>
+                                            </div>
+                                            <div className="text-xs text-discord-faint">High</div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
 

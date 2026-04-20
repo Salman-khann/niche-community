@@ -53,6 +53,45 @@ export const useMemberStore = create((set, get) => ({
         }
     },
 
+    banMember: async (communityId, userId) => {
+        try {
+            const res = await apiFetch(`/api/moderate/ban/${userId}`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'x-community-id': communityId, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: 'Banned from settings' })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to ban member');
+            set((s) => ({
+                members: s.members.map((m) => m._id === userId ? { ...m, isBanned: true } : m),
+            }));
+            return data;
+        } catch (err) {
+            set({ error: err.message });
+            throw err;
+        }
+    },
+
+    unbanMember: async (communityId, userId) => {
+        try {
+            const res = await apiFetch(`/api/moderate/unban/${userId}`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'x-community-id': communityId, 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to unban member');
+            set((s) => ({
+                members: s.members.map((m) => m._id === userId ? { ...m, isBanned: false } : m),
+            }));
+            return data;
+        } catch (err) {
+            set({ error: err.message });
+            throw err;
+        }
+    },
+
     kickMember: async (communityId, userId) => {
         const prev = get().members;
         set((s) => ({

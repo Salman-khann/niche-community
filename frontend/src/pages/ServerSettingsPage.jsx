@@ -156,7 +156,7 @@ const ServerSettingsPage = () => {
     const { user, setUser } = useAuthStore();
     const { uploadFile } = useFeedStore();
     const { communityProfile, fetchCommunityProfile, updateCommunityProfile, deleteCommunity, isLoading, error, successMessage, clearSuccess, clearError } = useCommunityStore();
-    const { members, fetchMembers, isLoading: isMembersLoading, error: membersError, clearError: clearMembersError, kickMember, removeMember, updateRoles, updateRole } = useMemberStore();
+    const { members, fetchMembers, isLoading: isMembersLoading, error: membersError, clearError: clearMembersError, kickMember, removeMember, updateRoles, updateRole, unbanMember, banMember } = useMemberStore();
     const { requests: inviteRequests, fetchRequests: fetchInviteRequests, approveRequest, rejectRequest, isLoading: isInviteRequestsLoading, error: inviteRequestsError, clearError: clearInviteRequestsError } = useInviteRequestStore();
     const fileRef = useRef(null);
     const [name, setName] = useState('');
@@ -824,9 +824,10 @@ const ServerSettingsPage = () => {
     }, [communityProfile?.createdAt]);
 
     const filteredMembers = useMemo(() => {
-        if (!memberQuery.trim()) return members;
+        const unbanned = members.filter(m => !m.isBanned);
+        if (!memberQuery.trim()) return unbanned;
         const q = memberQuery.trim().toLowerCase();
-        return members.filter((m) => (
+        return unbanned.filter((m) => (
             (m.name || '').toLowerCase().includes(q) ||
             (m.email || '').toLowerCase().includes(q)
         ));
@@ -868,7 +869,7 @@ const ServerSettingsPage = () => {
         if (activeSettingsTab === 'members') return !canManage;
         if (activeSettingsTab === 'invites') return !canReviewInvites;
         if (activeSettingsTab === 'roles') return !canManageRoles;
-        if (activeSettingsTab === 'moderation') return !canModerate;
+        if (activeSettingsTab === 'bans') return !canModerate;
         return false;
     }, [activeSettingsTab, canEditServerProfile, canManage, canManageRoles, canReviewInvites, canModerate]);
 
@@ -898,7 +899,7 @@ const ServerSettingsPage = () => {
             setActiveSettingsTab(firstAllowedTab);
             return;
         }
-        if (activeSettingsTab === 'moderation' && !canModerateTab) {
+        if (activeSettingsTab === 'bans' && !canModerateTab) {
             setActiveSettingsTab(firstAllowedTab);
         }
     }, [activeSettingsTab, canEditServerProfile, canManage, canReviewInvites, canManageRoles, canModerateTab, firstAllowedTab]);
@@ -962,14 +963,14 @@ const ServerSettingsPage = () => {
                         )}
                         {canModerateTab && (
                             <button
-                                onClick={() => setActiveSettingsTab('moderation')}
+                                onClick={() => setActiveSettingsTab('bans')}
                                 className={`w-full text-left px-3 py-2 rounded-md text-sm font-semibold mt-1 ${
-                                    activeSettingsTab === 'moderation'
+                                    activeSettingsTab === 'bans'
                                         ? 'bg-discord-border-light/30 text-discord-white'
                                         : 'text-discord-faint hover:bg-discord-border-light/20'
                                 }`}
                             >
-                                Moderation
+                                Bans
                             </button>
                         )}
                         {canDeleteServer && (
@@ -1000,8 +1001,8 @@ const ServerSettingsPage = () => {
                                                     ? 'Invite Requests'
                                                 : activeSettingsTab === 'roles'
                                                     ? 'Roles'
-                                                    : activeSettingsTab === 'moderation'
-                                                        ? 'Moderation'
+                                                    : activeSettingsTab === 'bans'
+                                                        ? 'Bans'
                                                         : 'Server Profile'}
                                         </h1>
                                     </div>
@@ -1064,9 +1065,9 @@ const ServerSettingsPage = () => {
                                     )}
                                     {canModerateTab && (
                                         <button
-                                            onClick={() => setActiveSettingsTab('moderation')}
+                                            onClick={() => setActiveSettingsTab('bans')}
                                             className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                                                activeSettingsTab === 'moderation'
+                                                activeSettingsTab === 'bans'
                                                     ? 'bg-discord-border-light/30 text-discord-white'
                                                     : 'text-discord-faint hover:bg-discord-border-light/20'
                                             }`}
@@ -1093,7 +1094,7 @@ const ServerSettingsPage = () => {
                                             ? 'Review invite requests and approve or reject them.'
                                         : activeSettingsTab === 'roles'
                                             ? 'Use roles to group members and assign permissions.'
-                                        : activeSettingsTab === 'moderation'
+                                        : activeSettingsTab === 'bans'
                                             ? 'Moderation tools and permissions for this server.'
                                             : 'Customize how your server appears in invite links and community discovery.'}
                                 </p>
@@ -1245,9 +1246,24 @@ const ServerSettingsPage = () => {
                                                                                 setPendingKickMember(member);
                                                                                 setOpenMemberMenuId(null);
                                                                             }}
-                                                                            className="w-full text-left px-3 py-2 text-sm text-discord-red hover:bg-discord-border-light/15"
+                                                                            className="w-full text-left px-3 py-2 text-sm text-[#f2f3f5] hover:bg-discord-border-light/15"
                                                                         >
                                                                             Kick
+                                                                        </button>
+                                                                    )}
+                                                                    {canModerateTab && member.communityRole !== 'admin' && (
+                                                                        <button
+                                                                            onClick={async () => {
+                                                                                try {
+                                                                                    await banMember(activeCommunityId, member._id);
+                                                                                    setOpenMemberMenuId(null);
+                                                                                } catch (err) {
+                                                                                    console.error("Ban failed:", err);
+                                                                                }
+                                                                            }}
+                                                                            className="w-full text-left px-3 py-2 text-sm text-discord-red hover:bg-discord-border-light/15"
+                                                                        >
+                                                                            Ban
                                                                         </button>
                                                                     )}
                                                                 </div>
@@ -1436,104 +1452,55 @@ const ServerSettingsPage = () => {
                                     </div>
                                 </div>
                             </div>
-                        ) : activeSettingsTab === 'moderation' ? (
+                        ) : activeSettingsTab === 'bans' ? (
                             <div className="space-y-6">
-                                <div className="rounded-xl border border-discord-border/40 bg-discord-darkest/60 px-5 py-4 flex flex-wrap gap-2">
-                                    <button
-                                        onClick={() => setModerationSection('reports')}
-                                        className={`px-3 py-2 rounded-md text-xs font-semibold transition ${
-                                            moderationSection === 'reports'
-                                                ? 'bg-blurple text-white'
-                                                : 'bg-discord-darkest text-discord-faint hover:bg-discord-border-light/40'
-                                        }`}
-                                    >
-                                        Reported Content
-                                    </button>
-                                    {canManageBlocklist && (
-                                        <button
-                                            onClick={() => setModerationSection('blocklist')}
-                                            className={`px-3 py-2 rounded-md text-xs font-semibold transition ${
-                                                moderationSection === 'blocklist'
-                                                    ? 'bg-blurple text-white'
-                                                    : 'bg-discord-darkest text-discord-faint hover:bg-discord-border-light/40'
-                                            }`}
-                                        >
-                                            Blocklist Manager
-                                        </button>
-                                    )}
-                                    {canViewAuditLog && (
-                                        <button
-                                            onClick={() => setModerationSection('actions')}
-                                            className={`px-3 py-2 rounded-md text-xs font-semibold transition ${
-                                                moderationSection === 'actions'
-                                                    ? 'bg-blurple text-white'
-                                                    : 'bg-discord-darkest text-discord-faint hover:bg-discord-border-light/40'
-                                            }`}
-                                        >
-                                            Moderation Actions
-                                        </button>
-                                    )}
-                                    <button
-                                        onClick={() => setModerationSection('permissions')}
-                                        className={`px-3 py-2 rounded-md text-xs font-semibold transition ${
-                                            moderationSection === 'permissions'
-                                                ? 'bg-blurple text-white'
-                                                : 'bg-discord-darkest text-discord-faint hover:bg-discord-border-light/40'
-                                        }`}
-                                    >
-                                        Permissions
-                                    </button>
-                                </div>
-
-                                {moderationSection === 'permissions' && (
-                                    <>
-                                        <div className="rounded-xl border border-discord-border/40 bg-discord-darkest/60 px-5 py-4">
-                                            <h3 className="text-sm font-semibold text-discord-white">Moderator Permissions</h3>
-                                            <p className="text-xs text-discord-faint mt-2">
-                                                Admins and Moderators automatically have the permissions below. Use the Roles tab
-                                                to grant these permissions to custom roles.
-                                            </p>
-                                        </div>
-
-                                        <div className="grid gap-4">
-                                            {moderationItems.map((item) => (
-                                                <div key={item.title} className="flex items-start justify-between gap-6 rounded-xl border border-discord-border/40 bg-discord-darkest/60 px-5 py-4">
-                                                    <div>
-                                                        <h4 className="text-sm font-semibold text-discord-white">{item.title}</h4>
-                                                        <p className="text-xs text-discord-faint mt-1">{item.description}</p>
+                                <div className="rounded-xl border border-discord-border/40 bg-discord-darkest/60 px-5 py-4">
+                                    <h3 className="text-sm font-semibold text-discord-white">Banned Members</h3>
+                                    <p className="text-xs text-discord-faint mt-2 mb-4">
+                                        Members who are banned cannot join this server until the ban is revoked.
+                                    </p>
+                                    <div className="divide-y divide-discord-border/30">
+                                        {members.filter(m => m.isBanned).length === 0 ? (
+                                            <div className="text-sm text-discord-faint py-4 text-center">No banned members.</div>
+                                        ) : (
+                                            members.filter(m => m.isBanned).map(m => (
+                                                <div key={m._id} className="py-3 flex flex-row items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-full bg-discord-darkest flex items-center justify-center overflow-hidden text-sm font-semibold relative">
+                                                        {m.avatar ? (
+                                                            <img
+                                                                src={m.avatar}
+                                                                alt={m.name}
+                                                                className="w-full h-full object-cover"
+                                                                referrerPolicy="no-referrer"
+                                                            />
+                                                        ) : (
+                                                            (m.name || 'U').charAt(0).toUpperCase()
+                                                        )}
                                                     </div>
-                                                    <div className="w-7 h-7 rounded-full bg-emerald-500/15 flex items-center justify-center">
-                                                        <Check className="w-4 h-4 text-emerald-400" />
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-discord-white">{m.name}</p>
+                                                            <p className="text-xs text-discord-faint">{m.email}</p>
+                                                        </div>
                                                     </div>
+                                                    <button
+                                                        onClick={async () => {
+                                                            try {
+                                                                await unbanMember(activeCommunityId, m._id);
+                                                            } catch (err) {
+                                                                console.error("Failed to unban:", err);
+                                                            }
+                                                        }}
+                                                        className="px-3 py-1.5 bg-discord-darker border border-discord-border/50 hover:bg-discord-red/10 text-discord-red rounded text-xs font-semibold"
+                                                    >
+                                                        Revoke Ban
+                                                    </button>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    </>
-                                )}
-
-                                {moderationSection === 'reports' && (
-                                    <>
-                                        <div className="rounded-xl border border-discord-border/40 bg-discord-darkest/60 px-5 py-4">
-                                            <h3 className="text-sm font-semibold text-discord-white">Reported Content</h3>
-                                            <p className="text-xs text-discord-faint mt-2">
-                                                Review flagged messages and posts, then take action on members.
-                                            </p>
-                                        </div>
-
-                                        <div className="rounded-xl border border-discord-border/40 overflow-visible">
-                                            {isModerationLoading && (
-                                                <div className="px-5 py-6 text-xs text-discord-faint">Loading reports…</div>
-                                            )}
-                                            {!isModerationLoading && moderationQueue.length === 0 && (
-                                                <div className="px-5 py-6 text-xs text-discord-faint">No reports right now.</div>
-                                            )}
-                                            {!isModerationLoading && moderationQueue.map((item) => (
-                                                <div key={item._id} className="border-b border-discord-border/30 last:border-none px-5 py-5">
-                                                    <div className="flex items-start justify-between gap-4">
-                                                        <div className="flex items-start gap-3">
-                                                            <div className="w-9 h-9 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-semibold">
-                                                                {item.author?.avatar ? (
-                                                                    <img src={item.author.avatar} alt="" className="w-9 h-9 rounded-full object-cover" />
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
                                                                 ) : (
                                                                     (item.author?.name || 'M').charAt(0).toUpperCase()
                                                                 )}

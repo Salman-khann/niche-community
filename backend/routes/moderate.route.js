@@ -1,6 +1,7 @@
 import express from "express";
 import {
     flagPost,
+    unbanUser,
     reportMessage,
     getModerationQueue,
     resolveFlag,
@@ -46,6 +47,9 @@ router.post("/suspend/:userId", verifyToken, verifyCommunityAccess, suspendUser)
 
 // Ban user from community (admin only)
 router.post("/ban/:userId", verifyToken, verifyCommunityAccess, banUser);
+
+// Unban user (admin only)
+router.post("/unban/:userId", verifyToken, verifyCommunityAccess, unbanUser);
 
 // Blocklist (admin / mod)
 router.post("/blocklist", verifyToken, verifyCommunityAccess, addBlocklistEntry);

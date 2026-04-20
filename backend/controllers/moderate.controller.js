@@ -715,3 +715,33 @@ export const getAuditLogs = async (req, res) => {
         res.status(500).json({ success: false, message: "Server error" });
     }
 };
+
+// ── Unban User (Admin only) ──────────────────────────────────────────────────────────
+export const unbanUser = async (req, res) => {
+    try {
+        const perms = await resolveRolePermissions(req);
+        const canBan = req.communityRole === 'admin' || perms.banMembers;
+        if (!canBan) {
+            return res.status(403).json({ success: false, message: "Only admins can unban users" });
+        }
+
+        const { userId } = req.params;
+        const target = await User.findById(userId);
+        if (!target) return res.status(404).json({ success: false, message: "User not found" });
+
+        const membership = target.memberships.find(
+            (m) => m.communityId.toString() === req.communityId
+        );
+        if (!membership) return res.status(404).json({ success: false, message: "User is not a member of this community" });
+
+        membership.isBanned = false;
+        await target.save();
+
+        await logAction(req.communityId, req.userId, userId, 'unban', 'Revoked ban');
+
+        res.status(200).json({ success: true, message: "User has been unbanned from this community", userId });
+    } catch (error) {
+        console.log("Error in unbanUser:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};

@@ -232,12 +232,13 @@ const WorkspaceSwitcher = ({ onHomeClick, onServerSelect, openDirectorySignal = 
                     const id = getId(m);
                     const isActive = id === activeCommunityId;
                     const unreadCount = unreadByCommunity.get(id?.toString?.() || String(id)) || 0;
-                    const hasUnread = unreadCount > 0;
+                    const isMuted = m.notificationSettings?.serverMuted === true;
+                    const hasUnread = unreadCount > 0 && !isMuted;
 
                     return (
                         <div
                             key={id}
-                            className="relative group flex items-center justify-center"
+                            className={`relative group flex items-center justify-center ${isMuted && !isActive ? 'opacity-50 hover:opacity-100' : ''}`}
                             onMouseEnter={(e) => {
                                 const rect = e.currentTarget.getBoundingClientRect();
                                 setHoveredServer({
