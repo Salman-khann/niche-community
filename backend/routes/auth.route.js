@@ -7,6 +7,7 @@ import {
     verifyEmail,
     forgotPassword,
     resetPassword,
+    changePassword,
     checkAuth,
     googleAuth,
     appleStart,
@@ -32,6 +33,7 @@ router.post('/refresh-token', refreshToken);
 router.post('/verify-email', verifyEmail);
 router.post('/forgotpassword', authRateLimit, forgotPassword);
 router.post('/reset-password/:token', authRateLimit, resetPassword);
+router.post('/change-password', verifyToken, changePassword);
 router.post('/google', authRateLimit, googleAuth);
 router.get('/apple/start', appleStart);
 router.all('/apple/callback', appleCallback);

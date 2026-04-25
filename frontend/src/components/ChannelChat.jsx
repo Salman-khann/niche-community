@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Hash, Plus, Send, Smile, Image as ImageIcon, X, Heart, MessageCircle, Pin, Flag, FileText, MoreHorizontal, Reply, Forward, Copy, Link2, ChevronRight, Volume2, Bell } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Hash, Plus, Send, Smile, Image as ImageIcon, X, Heart, MessageCircle, Pin, Flag, FileText, MoreHorizontal, Reply, Forward, Copy, Link2, ChevronRight, Volume2, Bell, AtSign } from 'lucide-react';
 import { useChannelMessageStore } from '../stores/channelMessageStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -31,7 +32,8 @@ const formatTime = (date) => {
     }
 };
 
-const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onClosePins, canEditChannel = false, editSignal = 0 }) => {
+const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], showPins, onClosePins, canEditChannel = false, editSignal = 0 }) => {
+    const navigate = useNavigate();
     const {
         messages,
         isLoading,
@@ -137,14 +139,35 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
     }, [memberMap, currentUser?.id]);
 
     const filteredMentions = useMemo(() => {
-        if (!mentionQuery) return mentionCandidates.slice(0, 6);
+        const list = [...mentionCandidates];
+        
+        // Add special tokens
+        const specialTokens = [
+            { _id: 'everyone', displayName: 'everyone', username: 'everyone', isSpecial: true, isToken: true },
+            { _id: 'here', displayName: 'here', username: 'here', isSpecial: true, isToken: true },
+            { _id: 'all', displayName: 'all', username: 'all', isSpecial: true, isToken: true }
+        ];
+
+        // Add mentionable roles
+        const roleCandidates = (roles || []).filter(r => r.mentionable).map(r => ({
+            _id: `role-${r._id}`,
+            roleId: r._id,
+            displayName: r.name,
+            username: (r.name || '').toLowerCase().replace(/\s+/g, '-'),
+            isRole: true,
+            color: r.color
+        }));
+
+        const candidates = [...specialTokens, ...roleCandidates, ...list];
+
+        if (!mentionQuery) return candidates.slice(0, 10);
         const q = mentionQuery.toLowerCase();
-        return mentionCandidates.filter((m) => {
+        return candidates.filter((m) => {
             const name = (m.displayName || '').toLowerCase();
             const username = (m.username || '').toLowerCase();
             return name.includes(q) || username.includes(q);
-        }).slice(0, 6);
-    }, [mentionCandidates, mentionQuery]);
+        }).slice(0, 10);
+    }, [mentionCandidates, mentionQuery, roles]);
 
     useEffect(() => {
         if (!channel?._id) return;
@@ -289,7 +312,8 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         const after = text.slice(cursor);
         const atIndex = before.lastIndexOf('@');
         if (atIndex === -1) return;
-        const nextText = `${before.slice(0, atIndex)}@${username} ${after}`;
+        const mentionText = member.isSpecial ? member.username : (member.username || (member.displayName || '').toLowerCase().replace(/\s+/g, ''));
+        const nextText = `${before.slice(0, atIndex)}@${mentionText} ${after}`;
         setText(nextText);
         setShowMentions(false);
         setMentionQuery('');
@@ -542,11 +566,53 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
         if (lastIndex < content.length) parts.push({ type: 'text', value: content.slice(lastIndex) });
         return parts.map((part, idx) => {
             if (part.type === 'mention') {
-                const isMe = part.handle.toLowerCase() === (currentUser?.username || '').toLowerCase();
+                const handle = part.handle.toLowerCase();
+                if (handle === 'everyone' || handle === 'all' || handle === 'here') {
+                    return (
+                        <span key={`${part.value}-${idx}`} className="px-1 rounded text-sm font-semibold bg-blurple/20 text-blurple">
+                            @{handle === 'all' ? 'all' : (handle === 'here' ? 'here' : 'everyone')}
+                        </span>
+                    );
+                }
+
+                // Check for role mentions
+                const roleMatch = roles.find((r) => (r.name || '').toLowerCase().replace(/\s+/g, '-') === handle);
+                if (roleMatch && roleMatch.mentionable) {
+                    return (
+                        <span
+                            key={`${part.value}-${idx}`}
+                            className="px-1 rounded text-sm font-semibold bg-blurple/20 transition-all hover:bg-blurple/30 cursor-pointer"
+                            style={{ color: roleMatch.color && roleMatch.color !== '#99aab5' ? roleMatch.color : '#5865f2' }}
+                        >
+                            @{roleMatch.name}
+                        </span>
+                    );
+                }
+
+                const match = mentionCandidates.find((m) => (m.username || '').toLowerCase() === handle);
+                const isMe = handle === (currentUser?.username || '').toLowerCase();
+                
+                // Try to find role color
+                let color = null;
+                if (match?.roleIds?.length > 0) {
+                    const highestRole = roles
+                        .filter(r => match.roleIds.includes(r._id?.toString() || String(r._id)))
+                        .sort((a, b) => (b.position || 0) - (a.position || 0))[0];
+                    if (highestRole?.color && highestRole.color !== '#99aab5') {
+                        color = highestRole.color;
+                    }
+                }
+
                 return (
                     <span
                         key={`${part.value}-${idx}`}
-                        className={`px-1 rounded text-sm font-semibold ${isMe ? 'bg-blurple/20 text-blurple' : 'text-blurple'}`}
+                        className={`px-1 rounded text-sm font-semibold cursor-pointer hover:underline transition-all ${isMe ? 'bg-blurple/25 text-blurple' : 'bg-discord-border-light/20 text-blurple'}`}
+                        style={color ? { color } : {}}
+                        onClick={() => {
+                            if (match?._id) {
+                                navigate(`/profile/${match._id}`);
+                            }
+                        }}
                     >
                         {part.value}
                     </span>
@@ -1076,19 +1142,37 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], showPins, onC
                     {showMentions && filteredMentions.length > 0 && (
                         <div className="absolute left-3 bottom-14 w-64 rounded-lg bg-discord-darkest border border-[#29292d]/55 shadow-lg p-2 z-30">
                             <div className="text-[11px] text-discord-faint font-semibold px-2 py-1">Members</div>
-                            <div className="space-y-1">
+                            <div className="space-y-0.5 max-h-[280px] overflow-y-auto">
                                 {filteredMentions.map((m) => (
                                     <button
                                         key={m._id}
                                         onClick={() => insertMention(m)}
-                                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-discord-border-light/20 text-left"
+                                        className="w-full flex items-center gap-3 px-2 py-1.5 rounded-md hover:bg-discord-border-light/20 text-left group transition-colors"
                                     >
-                                        <div className="w-7 h-7 rounded-full bg-discord-border/40 overflow-hidden flex items-center justify-center text-xs font-semibold text-discord-light">
-                                            {m.avatar ? <img src={m.avatar} alt="" className="w-full h-full object-cover" /> : (m.displayName || 'M').charAt(0).toUpperCase()}
+                                        <div className="w-8 h-8 rounded-full bg-discord-darker flex items-center justify-center overflow-hidden shrink-0">
+                                            {m.isToken ? (
+                                                <div className="w-full h-full bg-blurple/20 flex items-center justify-center">
+                                                    <Hash className="w-4 h-4 text-blurple" />
+                                                </div>
+                                            ) : m.isRole ? (
+                                                <div className="w-full h-full flex items-center justify-center bg-[#232428]" style={{ color: m.color || '#949ba4' }}>
+                                                    <AtSign className="w-4 h-4" />
+                                                </div>
+                                            ) : m.avatar ? (
+                                                <img src={m.avatar} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center bg-discord-border/30 text-xs font-semibold text-discord-light">
+                                                    {(m.displayName || 'M').charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
                                         </div>
-                                        <div className="min-w-0">
-                                            <div className="text-sm text-discord-light truncate">{m.displayName}</div>
-                                            <div className="text-[11px] text-discord-faint truncate">@{m.username}</div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-sm font-semibold truncate group-hover:text-white" style={m.isRole && m.color ? { color: m.color } : { color: '#dbdee1' }}>
+                                                {m.displayName}
+                                            </div>
+                                            <div className="text-[11px] text-discord-faint truncate">
+                                                {m.isRole ? 'Role' : m.isToken ? 'Token' : `@${m.username}`}
+                                            </div>
                                         </div>
                                     </button>
                                 ))}

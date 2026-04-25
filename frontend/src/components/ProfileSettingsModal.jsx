@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Palette, Pencil, X, LogOut, Camera, ShieldCheck, ShieldAlert, QrCode } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useNotificationStore } from '../stores/notificationStore';
+import { getUserPreferences, saveUserPreferences } from '../utils/userPreferences';
 import { useDropzone } from 'react-dropzone';
 
 const BANNER_COLORS = [
@@ -37,8 +38,9 @@ const BILLING_SECTIONS = [
 
 const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const navigate = useNavigate();
-    const { logout, getTwoFactorSetup, enableTwoFactor, disableTwoFactor } = useAuthStore();
+    const { logout, changePassword, getTwoFactorSetup, enableTwoFactor, disableTwoFactor } = useAuthStore();
     const { prefs: notificationPrefs, fetchPrefs: fetchNotificationPrefs, updatePrefs: updateNotificationPrefs } = useNotificationStore();
+    const storedPreferences = useMemo(() => getUserPreferences(), []);
     const initial = useMemo(() => ({
         displayName: profile?.displayName || user?.name || '',
         pronouns: profile?.pronouns || '',
@@ -47,7 +49,6 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         avatar: profile?.avatar || '',
     }), [profile, user]);
 
-    const [activeTab, setActiveTab] = useState('main');
     const [activeSection, setActiveSection] = useState('account');
     const [displayName, setDisplayName] = useState(initial.displayName);
     const [pronouns, setPronouns] = useState(initial.pronouns);
@@ -62,12 +63,40 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const [twoFactorError, setTwoFactorError] = useState('');
     const [twoFactorMessage, setTwoFactorMessage] = useState('');
     const [twoFactorBusy, setTwoFactorBusy] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [passwordBusy, setPasswordBusy] = useState(false);
+    const [passwordError, setPasswordError] = useState('');
+    const [passwordMessage, setPasswordMessage] = useState('');
     const [notificationBusy, setNotificationBusy] = useState(false);
     const [notificationError, setNotificationError] = useState('');
     const [notificationMessage, setNotificationMessage] = useState('');
-    const [voiceMode, setVoiceMode] = useState('voice');
-    const [appearanceTheme, setAppearanceTheme] = useState('dark');
-    const [reduceMotion, setReduceMotion] = useState(false);
+    const [voiceMode, setVoiceMode] = useState(storedPreferences.voice.inputMode || 'voice');
+    const [noiseSuppression, setNoiseSuppression] = useState(storedPreferences.voice.noiseSuppression ?? true);
+    const [cameraPreview, setCameraPreview] = useState(storedPreferences.voice.cameraPreview ?? true);
+    const [autoplayMedia, setAutoplayMedia] = useState(storedPreferences.voice.autoplayMedia ?? true);
+    const [cameraDeviceId, setCameraDeviceId] = useState(storedPreferences.voice.cameraDeviceId || '');
+    const [inputProfile, setInputProfile] = useState('custom');
+    const [autoSensitivity, setAutoSensitivity] = useState(true);
+    const [pttKeybind, setPttKeybind] = useState('No Keybind Set');
+    const [isRecordingKeybind, setIsRecordingKeybind] = useState(false);
+    const [cameraDevices, setCameraDevices] = useState([]);
+    const [microphoneDevices, setMicrophoneDevices] = useState([]);
+    const [speakerDevices, setSpeakerDevices] = useState([]);
+    const [micDeviceId, setMicDeviceId] = useState('');
+    const [speakerDeviceId, setSpeakerDeviceId] = useState('');
+    const [isTestingMic, setIsTestingMic] = useState(false);
+    const [micVolumeLevel, setMicVolumeLevel] = useState(0);
+    const [isTestingVideo, setIsTestingVideo] = useState(false);
+    const [videoStream, setVideoStream] = useState(null);
+    const videoPreviewRef = useRef(null);
+    const micTestRef = useRef({ audioContext: null, analyser: null, source: null, stream: null, rafId: null });
+    const [cameraDevicesLoading, setCameraDevicesLoading] = useState(false);
+    const [appearanceTheme, setAppearanceTheme] = useState(storedPreferences.appearance.theme || 'dark');
+    const [reduceMotion, setReduceMotion] = useState(storedPreferences.appearance.reduceMotion ?? false);
+    const [textSize, setTextSize] = useState(storedPreferences.accessibility.textSize || 'medium');
+    const [colorContrast, setColorContrast] = useState(storedPreferences.accessibility.contrast || 'normal');
     const { uploadFile } = useFeedStore();
     const [privacy, setPrivacy] = useState({
         improveData: profile?.dataPrivacy?.improveData ?? true,
@@ -85,6 +114,21 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         setBio(initial.bio);
         setAvatar(initial.avatar);
         setAvatarError('');
+        const prefs = getUserPreferences();
+        setVoiceMode(prefs.voice.inputMode || 'voice');
+        setNoiseSuppression(prefs.voice.noiseSuppression ?? true);
+        setCameraPreview(prefs.voice.cameraPreview ?? true);
+        setAutoplayMedia(prefs.voice.autoplayMedia ?? true);
+        setCameraDeviceId(prefs.voice.cameraDeviceId || '');
+        setAppearanceTheme(prefs.appearance.theme || 'dark');
+        setReduceMotion(prefs.appearance.reduceMotion ?? false);
+        setTextSize(prefs.accessibility.textSize || 'medium');
+        setColorContrast(prefs.accessibility.contrast || 'normal');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setPasswordError('');
+        setPasswordMessage('');
         setPrivacy({
             improveData: profile?.dataPrivacy?.improveData ?? true,
             personalizeActivity: profile?.dataPrivacy?.personalizeActivity ?? true,
@@ -100,6 +144,203 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         setNotificationMessage('');
         fetchNotificationPrefs().catch(() => { });
     }, [isOpen, initial]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        let cancelled = false;
+
+        const loadMediaDevices = async () => {
+            if (!navigator.mediaDevices?.enumerateDevices) {
+                setCameraDevices([]);
+                setMicrophoneDevices([]);
+                setSpeakerDevices([]);
+                return;
+            }
+            setCameraDevicesLoading(true);
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                if (cancelled) return;
+                
+                const videoInputs = [];
+                const audioInputs = [];
+                const audioOutputs = [];
+
+                devices.forEach((device) => {
+                    if (device.kind === 'videoinput') {
+                        videoInputs.push({ deviceId: device.deviceId, label: device.label || `Camera ${videoInputs.length + 1}` });
+                    } else if (device.kind === 'audioinput') {
+                        audioInputs.push({ deviceId: device.deviceId, label: device.label || `Microphone ${audioInputs.length + 1}` });
+                    } else if (device.kind === 'audiooutput') {
+                        audioOutputs.push({ deviceId: device.deviceId, label: device.label || `Speaker ${audioOutputs.length + 1}` });
+                    }
+                });
+
+                setCameraDevices(videoInputs);
+                setMicrophoneDevices(audioInputs);
+                setSpeakerDevices(audioOutputs);
+                
+                if (!cameraDeviceId && videoInputs[0]?.deviceId) {
+                    setCameraDeviceId(videoInputs[0].deviceId);
+                    saveUserPreferences({ voice: { cameraDeviceId: videoInputs[0].deviceId } });
+                }
+                if (!micDeviceId && audioInputs[0]?.deviceId) setMicDeviceId(audioInputs[0].deviceId);
+                if (!speakerDeviceId && audioOutputs[0]?.deviceId) setSpeakerDeviceId(audioOutputs[0].deviceId);
+                
+            } catch {
+                if (!cancelled) {
+                    setCameraDevices([]);
+                    setMicrophoneDevices([]);
+                    setSpeakerDevices([]);
+                }
+            } finally {
+                if (!cancelled) setCameraDevicesLoading(false);
+            }
+        };
+
+        loadMediaDevices();
+
+        const handleDeviceChange = () => {
+            loadMediaDevices();
+        };
+
+        navigator.mediaDevices?.addEventListener?.('devicechange', handleDeviceChange);
+        return () => {
+            cancelled = true;
+            navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange);
+        };
+    }, [isOpen, cameraDeviceId]);
+
+    useEffect(() => {
+        if (!isRecordingKeybind) return;
+
+        const handleKeyDown = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            let keyName = e.key.toUpperCase();
+            if (keyName === ' ') keyName = 'SPACE';
+            setPttKeybind(keyName);
+            setIsRecordingKeybind(false);
+        };
+
+        const handleMouseDown = (e) => {
+            if (e.target.closest && e.target.closest('.keybind-stop-btn')) {
+                // If they explicitly clicked the 'Stop Recording' button, we let it hit and just abort without bind override
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            const btnName = `MOUSE${parseInt(e.button) + 1}`;
+            setPttKeybind(btnName);
+            setIsRecordingKeybind(false);
+        };
+
+        const handleContextMenu = (e) => { e.preventDefault(); };
+
+        window.addEventListener('keydown', handleKeyDown, { capture: true });
+        window.addEventListener('mousedown', handleMouseDown, { capture: true });
+        window.addEventListener('contextmenu', handleContextMenu, { capture: true });
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown, { capture: true });
+            window.removeEventListener('mousedown', handleMouseDown, { capture: true });
+            window.removeEventListener('contextmenu', handleContextMenu, { capture: true });
+        };
+    }, [isRecordingKeybind]);
+
+    useEffect(() => {
+        return () => {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+            if (micTestRef.current?.stream) {
+                micTestRef.current.stream.getTracks().forEach(track => track.stop());
+            }
+            if (micTestRef.current?.rafId) {
+                cancelAnimationFrame(micTestRef.current.rafId);
+            }
+            if (micTestRef.current?.audioContext && micTestRef.current.audioContext.state !== 'closed') {
+                micTestRef.current.audioContext.close();
+            }
+        };
+    }, []);
+
+    useEffect(() => {
+        if (videoPreviewRef.current && videoStream) {
+            videoPreviewRef.current.srcObject = videoStream;
+        }
+    }, [videoStream, isTestingVideo]);
+
+    const toggleVideoTest = async () => {
+        if (isTestingVideo) {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                setVideoStream(null);
+            }
+            setIsTestingVideo(false);
+        } else {
+            setIsTestingVideo(true);
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: cameraDeviceId ? { deviceId: { exact: cameraDeviceId } } : true
+                });
+                setVideoStream(stream);
+            } catch (err) {
+                console.error("Video test failed:", err);
+                setIsTestingVideo(false);
+            }
+        }
+    };
+
+    const toggleMicTest = async () => {
+        if (isTestingMic) {
+            setIsTestingMic(false);
+            setMicVolumeLevel(0);
+            if (micTestRef.current?.stream) {
+                micTestRef.current.stream.getTracks().forEach(track => track.stop());
+            }
+            if (micTestRef.current?.rafId) {
+                cancelAnimationFrame(micTestRef.current.rafId);
+            }
+            if (micTestRef.current?.audioContext && micTestRef.current.audioContext.state !== 'closed') {
+                micTestRef.current.audioContext.close();
+            }
+            micTestRef.current = { audioContext: null, analyser: null, source: null, stream: null, rafId: null };
+        } else {
+            setIsTestingMic(true);
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: micDeviceId ? { deviceId: { exact: micDeviceId } } : true
+                });
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                
+                const updateVolume = () => {
+                    analyser.getByteFrequencyData(dataArray);
+                    let max = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        if (dataArray[i] > max) max = dataArray[i];
+                    }
+                    setMicVolumeLevel(max);
+                    micTestRef.current.rafId = requestAnimationFrame(updateVolume);
+                };
+                
+                updateVolume();
+
+                micTestRef.current = { audioContext, analyser, source, stream, rafId: micTestRef.current?.rafId };
+            } catch (err) {
+                console.error("Mic test failed:", err);
+                setIsTestingMic(false);
+            }
+        }
+    };
 
     const onAvatarDrop = useCallback(async (acceptedFiles) => {
         if (acceptedFiles.length === 0) return;
@@ -226,14 +467,80 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         }
     };
 
+    const handleVoiceSettingChange = (partial) => {
+        if (partial.voiceMode !== undefined) setVoiceMode(partial.voiceMode);
+        if (partial.noiseSuppression !== undefined) setNoiseSuppression(partial.noiseSuppression);
+        if (partial.cameraPreview !== undefined) setCameraPreview(partial.cameraPreview);
+        if (partial.autoplayMedia !== undefined) setAutoplayMedia(partial.autoplayMedia);
+        if (partial.cameraDeviceId !== undefined) setCameraDeviceId(partial.cameraDeviceId);
+        saveUserPreferences({
+            voice: {
+                inputMode: partial.voiceMode !== undefined ? partial.voiceMode : voiceMode,
+                noiseSuppression: partial.noiseSuppression !== undefined ? partial.noiseSuppression : noiseSuppression,
+                cameraPreview: partial.cameraPreview !== undefined ? partial.cameraPreview : cameraPreview,
+                autoplayMedia: partial.autoplayMedia !== undefined ? partial.autoplayMedia : autoplayMedia,
+                cameraDeviceId: partial.cameraDeviceId !== undefined ? partial.cameraDeviceId : cameraDeviceId,
+            },
+        });
+    };
+
+    const handleAppearanceChange = (partial) => {
+        if (partial.theme !== undefined) setAppearanceTheme(partial.theme);
+        if (partial.reduceMotion !== undefined) setReduceMotion(partial.reduceMotion);
+        saveUserPreferences({
+            appearance: {
+                theme: partial.theme !== undefined ? partial.theme : appearanceTheme,
+                reduceMotion: partial.reduceMotion !== undefined ? partial.reduceMotion : reduceMotion,
+            },
+        });
+    };
+
+    const handleAccessibilityChange = (partial) => {
+        if (partial.textSize !== undefined) setTextSize(partial.textSize);
+        if (partial.contrast !== undefined) setColorContrast(partial.contrast);
+        saveUserPreferences({
+            accessibility: {
+                textSize: partial.textSize !== undefined ? partial.textSize : textSize,
+                contrast: partial.contrast !== undefined ? partial.contrast : colorContrast,
+            },
+        });
+    };
+
+    const handleChangePassword = async () => {
+        setPasswordError('');
+        setPasswordMessage('');
+
+        if (!currentPassword.trim() || !newPassword.trim()) {
+            setPasswordError('Enter your current password and a new password.');
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setPasswordError('The new passwords do not match.');
+            return;
+        }
+
+        setPasswordBusy(true);
+        try {
+            const result = await changePassword(currentPassword, newPassword);
+            setPasswordMessage(result?.message || 'Password changed successfully.');
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+        } catch (error) {
+            setPasswordError(error.message || 'Unable to change password.');
+        } finally {
+            setPasswordBusy(false);
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm" onClick={onClose}>
             <div
-                className="absolute inset-0 md:inset-[5vh] rounded-none md:rounded-2xl bg-discord-dark shadow-2xl border border-discord-border/60 overflow-hidden animate-scale-in"
+                className="absolute inset-0 md:inset-[5vh] rounded-none md:rounded-2xl bg-[#202024] shadow-2xl border border-discord-border/60 overflow-hidden animate-scale-in"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="h-full w-full grid grid-cols-1 md:grid-cols-[280px_1fr]">
-                    <aside className="hidden md:flex h-full bg-[#2b2d31] border-r border-discord-border/50 px-4 py-5 flex-col gap-5 overflow-y-auto">
+                    <aside className="hidden md:flex h-full bg-[#121214] border-r border-discord-border/50 px-4 py-5 flex-col gap-5 overflow-y-auto">
                         <div className="flex items-center justify-between gap-3 rounded-xl bg-discord-darkest/70 px-3 py-2">
                             <div>
                                 <p className="text-sm font-semibold text-white">{profile?.displayName || user?.name || 'User'}</p>
@@ -324,28 +631,9 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                                             : 'My Account'}
                                 </p>
                                 {activeSection === 'account' && (
-                                    <div className="flex flex-wrap items-center gap-4 mt-2">
-                                        <button
-                                            onClick={() => setActiveTab('main')}
-                                            className={`text-sm font-semibold pb-2 border-b-2 ${
-                                                activeTab === 'main'
-                                                    ? 'text-white border-blurple'
-                                                    : 'text-discord-faint border-transparent hover:text-discord-light'
-                                            }`}
-                                        >
-                                            Main Profile
-                                        </button>
-                                        <button
-                                            onClick={() => setActiveTab('server')}
-                                            className={`text-sm font-semibold pb-2 border-b-2 ${
-                                                activeTab === 'server'
-                                                    ? 'text-white border-blurple'
-                                                    : 'text-discord-faint border-transparent hover:text-discord-light'
-                                            }`}
-                                        >
-                                            Per-server Profiles
-                                        </button>
-                                    </div>
+                                    <p className="text-xs text-discord-faint mt-2">
+                                        Manage your profile, password, and account-level preferences here.
+                                    </p>
                                 )}
                             </div>
                             <div className="flex items-center gap-3">
@@ -423,7 +711,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                             </div>
                         </div>
 
-                        {activeSection === 'account' && activeTab === 'main' && (
+                        {activeSection === 'account' && (
                             <div className="px-5 sm:px-8 py-6 grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-8">
                                 <div className="space-y-6">
                                     <div className="rounded-xl bg-gradient-to-r from-[#2c2f36] via-[#254136] to-[#2d6b4f] p-4">
@@ -552,19 +840,106 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                             <p className="mt-4 text-lg font-semibold text-white">{displayName || 'User'}</p>
                                             <p className="text-sm text-discord-faint">{user?._id || user?.username || 'user'}</p>
                                             <div className="mt-4">
-                                                <button className="w-full py-2 rounded-lg bg-blurple text-white text-sm font-semibold">
-                                                    Example Button
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setActiveSection('security')}
+                                                    className="w-full py-2 rounded-lg bg-blurple text-white text-sm font-semibold"
+                                                >
+                                                    Open Security
+                                                </button>
+                                            </div>
+
+                                            <div className="mt-4 rounded-xl border border-discord-border/60 bg-discord-darkest/70 p-4 space-y-3">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-white">Account management</p>
+                                                    <p className="text-xs text-discord-faint mt-1">
+                                                        Manage sign-in details, password security, and recovery settings.
+                                                    </p>
+                                                </div>
+                                                <div className="grid grid-cols-1 gap-2 text-xs text-discord-light">
+                                                    <div className="flex items-center justify-between gap-3 rounded-lg bg-discord-darker px-3 py-2">
+                                                        <span>Email</span>
+                                                        <span className="text-discord-faint">{user?.email || 'Not available'}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-3 rounded-lg bg-discord-darker px-3 py-2">
+                                                        <span>Account status</span>
+                                                        <span className="text-emerald-300">{user?.isVerified ? 'Verified' : 'Unverified'}</span>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setActiveSection('security')}
+                                                    className="w-full rounded-lg bg-discord-border-light/30 px-3 py-2 text-sm font-semibold text-white hover:bg-discord-border-light/50"
+                                                >
+                                                    Manage Password & Security
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        )}
 
-                        {activeSection === 'account' && activeTab === 'server' && (
-                            <div className="px-5 sm:px-8 py-10 text-discord-faint text-sm">
-                                Per-server profiles are coming soon.
+                                    <div className="rounded-3xl border border-discord-border/60 bg-discord-darkest/80 p-6 md:p-8 space-y-4">
+                                        <div>
+                                            <p className="text-[11px] uppercase tracking-[0.3em] text-blurple/80 font-semibold">Account Security</p>
+                                            <h3 className="text-xl font-semibold text-white mt-2">Password management</h3>
+                                            <p className="text-sm text-discord-faint mt-2 max-w-2xl">
+                                                Update your password without leaving settings. This refreshes your session after the change.
+                                            </p>
+                                        </div>
+
+                                        {passwordError && (
+                                            <div className="px-4 py-3 bg-discord-red/10 border border-discord-red/20 rounded-lg text-sm text-discord-red font-medium">
+                                                {passwordError}
+                                            </div>
+                                        )}
+                                        {passwordMessage && (
+                                            <div className="px-4 py-3 bg-discord-green/10 border border-discord-green/20 rounded-lg text-sm text-discord-green font-medium">
+                                                {passwordMessage}
+                                            </div>
+                                        )}
+
+                                        <div className="grid gap-3">
+                                            <input
+                                                type="password"
+                                                value={currentPassword}
+                                                onChange={(e) => setCurrentPassword(e.target.value)}
+                                                placeholder="Current password"
+                                                className="w-full rounded-lg border border-discord-border/60 bg-discord-darkest px-4 py-2.5 text-white outline-none focus:border-blurple"
+                                            />
+                                            <input
+                                                type="password"
+                                                value={newPassword}
+                                                onChange={(e) => setNewPassword(e.target.value)}
+                                                placeholder="New password"
+                                                className="w-full rounded-lg border border-discord-border/60 bg-discord-darkest px-4 py-2.5 text-white outline-none focus:border-blurple"
+                                            />
+                                            <input
+                                                type="password"
+                                                value={confirmPassword}
+                                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                                placeholder="Confirm new password"
+                                                className="w-full rounded-lg border border-discord-border/60 bg-discord-darkest px-4 py-2.5 text-white outline-none focus:border-blurple"
+                                            />
+                                        </div>
+
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={handleChangePassword}
+                                                disabled={passwordBusy}
+                                                className="px-4 py-2 rounded-lg bg-blurple text-white text-sm font-semibold hover:bg-blurple/90 disabled:opacity-60"
+                                            >
+                                                {passwordBusy ? 'Updating...' : 'Change Password'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveSection('account')}
+                                                className="px-4 py-2 rounded-lg border border-discord-border/60 bg-discord-darkest text-sm font-semibold text-discord-light hover:bg-discord-border-light/20"
+                                            >
+                                                Back to Account
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
 
@@ -646,29 +1021,157 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
 
                         {activeSection === 'voiceVideo' && (
                             <div className="px-5 sm:px-8 py-8">
-                                <div className="max-w-3xl mx-auto rounded-3xl border border-discord-border/60 bg-discord-darkest/80 p-6 md:p-8 space-y-6">
-                                    <div>
-                                        <p className="text-[11px] uppercase tracking-[0.3em] text-blurple/80 font-semibold">App Settings</p>
-                                        <h2 className="text-2xl font-semibold text-white mt-2">Voice & Video</h2>
-                                        <p className="text-sm text-discord-faint mt-2">Basic voice and video preferences for the app.</p>
-                                    </div>
-                                    <div className="grid gap-4">
-                                        <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 flex items-center justify-between gap-4">
-                                            <div>
-                                                <p className="text-sm font-semibold text-white">Input mode</p>
-                                                <p className="text-xs text-discord-faint mt-1">Switch between voice activity and push to talk.</p>
+                                <div className="max-w-3xl mx-auto pb-10">
+                                    <h2 className="text-[16px] font-bold text-discord-white mb-6">Voice & Video</h2>
+
+                                    <div className="space-y-8">
+                                        {/* Voice Section */}
+                                        <div className="space-y-6">
+                                            <h3 className="text-xl font-medium text-white">Voice</h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                                <div>
+                                                    <label className="block text-[12px] font-bold text-discord-light mb-2">Microphone</label>
+                                                    <select
+                                                        value={micDeviceId}
+                                                        onChange={(e) => setMicDeviceId(e.target.value)}
+                                                        className="w-full bg-[#1e1f22] border border-[#1e1f22] text-discord-white rounded-[4px] px-3 py-2 outline-none focus:border-blurple text-[14px]"
+                                                    >
+                                                        {microphoneDevices.map((device) => (
+                                                            <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+                                                        ))}
+                                                        {microphoneDevices.length === 0 && <option value="">Default Microphone</option>}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[12px] font-bold text-discord-light mb-2">Speaker</label>
+                                                    <select
+                                                        value={speakerDeviceId}
+                                                        onChange={(e) => setSpeakerDeviceId(e.target.value)}
+                                                        className="w-full bg-[#1e1f22] border border-[#1e1f22] text-discord-white rounded-[4px] px-3 py-2 outline-none focus:border-blurple text-[14px]"
+                                                    >
+                                                        {speakerDevices.map((device) => (
+                                                            <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+                                                        ))}
+                                                        {speakerDevices.length === 0 && <option value="">Default Speaker</option>}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[12px] font-bold text-discord-light mb-2">Microphone Volume</label>
+                                                    <input type="range" min="0" max="100" defaultValue="80" className="w-full mt-1 accent-white bg-blurple rounded-full appearance-none h-1.5" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[12px] font-bold text-discord-light mb-2">Speaker Volume</label>
+                                                    <input type="range" min="0" max="100" defaultValue="60" className="w-full mt-1 accent-white bg-blurple rounded-full appearance-none h-1.5" />
+                                                </div>
                                             </div>
-                                            <select value={voiceMode} onChange={(e) => setVoiceMode(e.target.value)} className="rounded-lg border border-discord-border/60 bg-[#1e1f22] px-3 py-2 text-sm text-discord-light outline-none">
-                                                <option value="voice">Voice Activity</option>
-                                                <option value="ptt">Push to Talk</option>
-                                            </select>
+
+                                            <div className="flex items-center gap-4 mt-6">
+                                                <button 
+                                                    className={`text-white font-medium px-6 py-2 rounded-[4px] text-[14px] ${isTestingMic ? 'bg-red-500 hover:bg-red-600' : 'bg-blurple hover:bg-blurple/90'}`}
+                                                    onClick={toggleMicTest}
+                                                >
+                                                    {isTestingMic ? 'Stop Testing' : 'Mic Test'}
+                                                </button>
+                                                <div className="flex-1 h-6 flex items-center gap-[2px]">
+                                                    {Array.from({ length: 70 }).map((_, i) => {
+                                                        const threshold = (i / 70) * 255;
+                                                        const isActive = isTestingMic && micVolumeLevel > threshold;
+                                                        return (
+                                                            <div key={i} className={`flex-1 h-full rounded-[1px] transition-colors duration-[50ms] ${isActive ? 'bg-discord-green' : 'bg-discord-border/40'}`}></div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 flex items-center justify-between gap-4">
-                                            <div>
-                                                <p className="text-sm font-semibold text-white">Noise suppression</p>
-                                                <p className="text-xs text-discord-faint mt-1">Reduce background noise in calls.</p>
+
+                                        <div className="h-[1px] bg-discord-border/30 w-full my-6" />
+
+                                        {/* Input Mode */}
+                                        <div className="space-y-4">
+                                            <h3 className="text-[16px] font-semibold text-white mb-3">Input Mode</h3>
+                                            <div className="space-y-4">
+                                                <label className="flex items-center gap-3 cursor-pointer group">
+                                                    <div className={`w-5 h-5 rounded-full border-[2px] flex items-center justify-center ${voiceMode === 'voice' ? 'border-discord-white' : 'border-discord-faint group-hover:border-discord-light'}`}>
+                                                        {voiceMode === 'voice' && <div className="w-2.5 h-2.5 bg-discord-white rounded-full" />}
+                                                    </div>
+                                                    <span className="text-discord-white font-medium text-[15px]">Voice Activity</span>
+                                                    <input type="radio" value="voice" checked={voiceMode === 'voice'} onChange={(e) => handleVoiceSettingChange({ voiceMode: e.target.value })} className="hidden" />
+                                                </label>
+                                                <label className="flex items-center gap-3 cursor-pointer group">
+                                                    <div className={`w-5 h-5 rounded-full border-[2px] flex items-center justify-center ${voiceMode === 'ptt' ? 'border-discord-white' : 'border-discord-faint group-hover:border-discord-light'}`}>
+                                                        {voiceMode === 'ptt' && <div className="w-2.5 h-2.5 bg-discord-white rounded-full" />}
+                                                    </div>
+                                                    <span className="text-discord-white font-medium text-[15px]">Push to Talk</span>
+                                                    <input type="radio" value="ptt" checked={voiceMode === 'ptt'} onChange={(e) => handleVoiceSettingChange({ voiceMode: e.target.value })} className="hidden" />
+                                                </label>
                                             </div>
-                                            <div className="text-xs text-discord-faint">Enabled</div>
+                                            
+                                            {voiceMode === 'ptt' && (
+                                                <div className="mt-6">
+                                                    <label className="block text-[12px] font-bold text-discord-light mb-2">SHORTCUT</label>
+                                                    <div className="flex items-stretch max-w-sm">
+                                                        <div 
+                                                            className={`flex-1 border bg-[#1e1f22] rounded-l-[4px] px-3 py-2 text-[14px] flex items-center border-r-0 ${isRecordingKeybind ? 'border-blurple text-blurple shadow-[0_0_0_1px_#5865F2]' : 'border-discord-darker text-discord-white'} cursor-pointer`}
+                                                            onClick={() => setIsRecordingKeybind(!isRecordingKeybind)}
+                                                        >
+                                                            {isRecordingKeybind ? 'Recording...' : pttKeybind}
+                                                        </div>
+                                                        <button 
+                                                            className="keybind-stop-btn text-[14px] px-6 py-2 border border-discord-darker bg-[#2b2d31] text-discord-white hover:bg-discord-border/30 rounded-r-[4px] font-medium"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setIsRecordingKeybind(!isRecordingKeybind);
+                                                            }}
+                                                        >
+                                                            {isRecordingKeybind ? 'Stop Recording' : 'Record Keybind'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="h-[1px] bg-discord-border/30 w-full my-8" />
+
+                                        {/* Camera Section */}
+                                        <div className="space-y-6">
+                                            <h3 className="text-xl font-medium text-white mb-2">Camera</h3>
+                                            
+                                            <div className="relative w-full max-w-3xl h-[280px] bg-[#111214] rounded-[8px] flex items-center justify-center overflow-hidden">
+                                                {videoStream && (
+                                                    <video 
+                                                        ref={videoPreviewRef} 
+                                                        autoPlay 
+                                                        playsInline 
+                                                        muted 
+                                                        className="absolute inset-0 w-full h-full object-cover" 
+                                                    />
+                                                )}
+                                                <button 
+                                                    onClick={toggleVideoTest}
+                                                    className={`z-10 text-white font-medium px-6 py-2 rounded-[4px] text-[14px] ${isTestingVideo ? 'bg-red-500 hover:bg-red-600' : 'bg-blurple hover:bg-blurple/90'}`}
+                                                >
+                                                    {isTestingVideo ? 'Stop Testing' : 'Test Video'}
+                                                </button>
+                                            </div>
+
+                                            <div className="max-w-3xl pt-2">
+                                                <label className="block text-[12px] font-bold text-discord-light mb-2">Camera</label>
+                                                <select
+                                                    value={cameraDeviceId}
+                                                    onChange={(e) => handleVoiceSettingChange({ cameraDeviceId: e.target.value })}
+                                                    className="w-full bg-[#1e1f22] border border-[#1e1f22] text-discord-white rounded-[4px] px-3 py-2 outline-none focus:border-blurple text-[14px] mb-2"
+                                                >
+                                                    {cameraDevices.map((device) => (
+                                                        <option key={device.deviceId} value={device.deviceId}>
+                                                            {device.label}
+                                                        </option>
+                                                    ))}
+                                                    {cameraDevices.length === 0 && <option value="">Default Camera</option>}
+                                                </select>
+                                                <p className="text-[13px] text-discord-faint">
+                                                    Looking for more camera options? <a href="#" className="text-blurple hover:underline">Check out your system camera settings.</a>
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -687,19 +1190,55 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                         <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 flex items-center justify-between gap-4">
                                             <div>
                                                 <p className="text-sm font-semibold text-white">Theme</p>
-                                                <p className="text-xs text-discord-faint mt-1">The current UI is locked to the dark Discord palette.</p>
+                                                <p className="text-xs text-discord-faint mt-1">Change the app shell, accent, and background treatment.</p>
                                             </div>
-                                            <select value={appearanceTheme} onChange={(e) => setAppearanceTheme(e.target.value)} className="rounded-lg border border-discord-border/60 bg-[#1e1f22] px-3 py-2 text-sm text-discord-light outline-none">
+                                            <select value={appearanceTheme} onChange={(e) => handleAppearanceChange({ theme: e.target.value })} className="rounded-lg border border-discord-border/60 bg-[#1e1f22] px-3 py-2 text-sm text-discord-light outline-none">
                                                 <option value="dark">Dark</option>
                                                 <option value="darker">Darker</option>
+                                                <option value="aurora">Aurora</option>
                                             </select>
+                                        </div>
+                                        <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4">
+                                            <div className="flex items-center justify-between gap-4">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-white">Theme preview</p>
+                                                    <p className="text-xs text-discord-faint mt-1">The selected theme updates the shared color tokens used across the app.</p>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {['dark', 'darker', 'aurora'].map((theme) => (
+                                                        <button
+                                                            key={theme}
+                                                            type="button"
+                                                            onClick={() => handleAppearanceChange({ theme })}
+                                                            className={`px-3 py-2 rounded-lg text-xs font-semibold capitalize border ${appearanceTheme === theme ? 'border-blurple bg-blurple/15 text-white' : 'border-discord-border/60 bg-discord-darkest text-discord-faint hover:bg-discord-border-light/20'}`}
+                                                        >
+                                                            {theme}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            {(() => {
+                                                const styles = {
+                                                    dark: { surface: 'bg-[#313338] text-white border-transparent', accent: 'bg-[#5865F2]/20 border-[#5865F2]/50 text-[#5865F2]', glow: 'bg-[#2B2D31] text-[#B5BAC1] border-transparent' },
+                                                    darker: { surface: 'bg-[#111214] text-white border-transparent', accent: 'bg-[#5865F2]/20 border-[#5865F2]/50 text-[#5865F2]', glow: 'bg-[#1E1F22] text-[#B5BAC1] border-transparent' },
+                                                    aurora: { surface: 'bg-gradient-to-br from-[#1c2c36] to-[#0d161b] text-white border-transparent', accent: 'bg-[#40b1ac]/20 border-[#40b1ac]/50 text-[#40b1ac]', glow: 'bg-[#142028] text-[#90b8c0] border-transparent' }
+                                                };
+                                                const current = styles[appearanceTheme] || styles.dark;
+                                                return (
+                                                    <div className="mt-4 grid grid-cols-3 gap-3">
+                                                        <div className={`h-14 rounded-xl border flex items-center justify-center text-xs font-medium ${current.surface}`}>Surface</div>
+                                                        <div className={`h-14 rounded-xl border flex items-center justify-center text-xs font-medium ${current.accent}`}>Accent</div>
+                                                        <div className={`h-14 rounded-xl border flex items-center justify-center text-xs font-medium ${current.glow}`}>Glow</div>
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                         <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 flex items-center justify-between gap-4">
                                             <div>
                                                 <p className="text-sm font-semibold text-white">Reduce motion</p>
                                                 <p className="text-xs text-discord-faint mt-1">Minimize animated transitions across the app.</p>
                                             </div>
-                                            <button type="button" onClick={() => setReduceMotion((value) => !value)} className={`relative w-12 h-6 rounded-full transition-colors ${reduceMotion ? 'bg-blurple' : 'bg-discord-darkest'}`}>
+                                            <button type="button" onClick={() => handleAppearanceChange({ reduceMotion: !reduceMotion })} className={`relative w-12 h-6 rounded-full transition-colors ${reduceMotion ? 'bg-blurple' : 'bg-discord-darkest'}`}>
                                                 <span className={`absolute top-0.5 ${reduceMotion ? 'right-0.5' : 'left-0.5'} w-5 h-5 rounded-full bg-white transition-all`} />
                                             </button>
                                         </div>
@@ -722,14 +1261,23 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                                 <p className="text-sm font-semibold text-white">Text size</p>
                                                 <p className="text-xs text-discord-faint mt-1">Increase text size for readability.</p>
                                             </div>
-                                            <div className="text-xs text-discord-faint">Default</div>
+                                            <select value={textSize} onChange={(e) => handleAccessibilityChange({ textSize: e.target.value })} className="rounded-lg border border-discord-border/60 bg-[#1e1f22] px-3 py-2 text-sm text-discord-light outline-none">
+                                                <option value="small">Small</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="large">Large</option>
+                                                <option value="xlarge">Extra Large</option>
+                                            </select>
                                         </div>
                                         <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 flex items-center justify-between gap-4">
                                             <div>
                                                 <p className="text-sm font-semibold text-white">Color contrast</p>
-                                                <p className="text-xs text-discord-faint mt-1">Use the existing high-contrast Discord palette.</p>
+                                                <p className="text-xs text-discord-faint mt-1">Improve readability across the app shell.</p>
                                             </div>
-                                            <div className="text-xs text-discord-faint">High</div>
+                                            <select value={colorContrast} onChange={(e) => handleAccessibilityChange({ contrast: e.target.value })} className="rounded-lg border border-discord-border/60 bg-[#1e1f22] px-3 py-2 text-sm text-discord-light outline-none">
+                                                <option value="normal">Normal</option>
+                                                <option value="high">High</option>
+                                                <option value="extra">Extra High</option>
+                                            </select>
                                         </div>
                                     </div>
                                 </div>

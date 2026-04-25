@@ -48,6 +48,7 @@ router.get("/:id/members/search", verifyToken, searchMembers);
 
 // Get all members of a community (admin/mod only)
 router.get("/:id/members", verifyToken, verifyCommunityAccess, getMembers);
+router.get("/:id/bans", verifyToken, verifyCommunityAccess, getBans);
 
 // Update a member's community role (admin only)
 router.put("/:id/members/:userId/role", verifyToken, verifyCommunityAccess, updateMemberRole);
@@ -59,6 +60,7 @@ router.delete("/:id/members/:userId", verifyToken, verifyCommunityAccess, kickMe
 // Roles
 router.get("/:id/roles", verifyToken, verifyCommunityAccess, getRoles);
 router.post("/:id/roles", verifyToken, verifyCommunityAccess, createRole);
+router.put("/:id/roles/reorder", verifyToken, verifyCommunityAccess, reorderRoles);
 router.put("/:id/roles/:roleId", verifyToken, verifyCommunityAccess, updateRole);
 router.delete("/:id/roles/:roleId", verifyToken, verifyCommunityAccess, deleteRole);
 

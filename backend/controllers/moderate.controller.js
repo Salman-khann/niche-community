@@ -579,13 +579,33 @@ export const banUser = async (req, res) => {
         if (!membership) return res.status(404).json({ success: false, message: "User is not a member of this community" });
         if (membership.role === 'admin') return res.status(403).json({ success: false, message: "Cannot ban an admin" });
 
-        membership.isBanned = true;
-        membership.suspensionEndDate = null; // clear any active suspension
+        const community = await Community.findById(req.communityId);
+        if (!community) return res.status(404).json({ success: false, message: "Community not found" });
+
+        // Add to bannedUsers
+        community.bannedUsers.push({
+            userId,
+            reason: reason || "No reason provided",
+            executor: req.userId,
+            createdAt: new Date()
+        });
+        
+        // Remove from members
+        community.members = community.members.filter(m => m.toString() !== userId);
+        await community.save();
+
+        // Remove membership from User
+        target.memberships = target.memberships.filter(m => m.communityId.toString() !== req.communityId);
         await target.save();
 
         await logAction(req.communityId, req.userId, userId, 'ban', reason);
 
-        res.status(200).json({ success: true, message: "User has been banned from this community", userId });
+        try {
+            io.to(`community:${req.communityId}`).emit("community:member_banned", { communityId: req.communityId, userId });
+            io.to(`user:${userId}`).emit("community:banned", { communityId: req.communityId });
+        } catch (err) { }
+
+        res.status(200).json({ success: true, message: "User has been banned and removed from this community", userId });
     } catch (error) {
         console.log("Error in banUser:", error);
         res.status(500).json({ success: false, message: "Server error" });
@@ -729,13 +749,11 @@ export const unbanUser = async (req, res) => {
         const target = await User.findById(userId);
         if (!target) return res.status(404).json({ success: false, message: "User not found" });
 
-        const membership = target.memberships.find(
-            (m) => m.communityId.toString() === req.communityId
-        );
-        if (!membership) return res.status(404).json({ success: false, message: "User is not a member of this community" });
+        const community = await Community.findById(req.communityId);
+        if (!community) return res.status(404).json({ success: false, message: "Community not found" });
 
-        membership.isBanned = false;
-        await target.save();
+        community.bannedUsers = (community.bannedUsers || []).filter(b => b.userId?.toString() !== userId);
+        await community.save();
 
         await logAction(req.communityId, req.userId, userId, 'unban', 'Revoked ban');
 

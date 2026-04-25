@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Sparkles, Users, Ticket, CheckCircle, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Sparkles, Users, Ticket, CheckCircle, AlertTriangle, ChevronRight } from 'lucide-react';
 import InputField from '../components/InputField';
 import Button from '../components/Button';
 import { useAuthStore } from '../stores/authStore';
@@ -181,9 +181,20 @@ const JoinCommunityPage = () => {
                         )}
 
                         {/* Info */}
-                        <p className="text-xs text-discord-faint text-center mt-5">
-                            Ask a community admin for an invite code if you don't have one.
-                        </p>
+                        <div className="text-center mt-5 space-y-3">
+                            <p className="text-xs text-discord-faint">
+                                Ask a community admin for an invite code if you don't have one.
+                            </p>
+                            <div className="pt-3 border-t border-discord-border/30">
+                                <p className="text-xs text-discord-faint mb-2">Or find a community to join</p>
+                                <button
+                                    onClick={() => navigate('/feed?openDirectory=true')}
+                                    className="text-xs font-semibold text-blurple hover:text-blurple-hover transition-colors flex items-center justify-center gap-1 mx-auto"
+                                >
+                                    Browse Server Directory <ChevronRight className="w-3 h-3" />
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     {/* Back link */}

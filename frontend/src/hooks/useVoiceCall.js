@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getUserPreferences, saveUserPreferences } from '../utils/userPreferences';
 
 const TURN_URLS = (import.meta.env.VITE_TURN_URL || '').split(',').map((u) => u.trim()).filter(Boolean);
 const TURN_USERNAME = import.meta.env.VITE_TURN_USERNAME || '';
@@ -23,6 +24,22 @@ const AUDIO_CONSTRAINTS = {
     autoGainControl: true,
     channelCount: 1,
 };
+
+const buildCameraConstraints = (deviceId) => ({
+    video: deviceId
+        ? {
+            deviceId: { exact: deviceId },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 },
+        }
+        : {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 },
+        },
+    audio: false,
+});
 
 const buildDisplayCaptureOptions = ({ mode = 'screen', includeAudio = true } = {}) => {
     const normalizedMode = ['screen', 'window', 'tab'].includes(mode) ? mode : 'screen';
@@ -59,6 +76,7 @@ const buildLocalUser = (user, profile) => ({
 
 const useVoiceCall = (socket, user, profile) => {
     const [activeVoiceChannel, setActiveVoiceChannel] = useState(null);
+    const initialPreferences = useMemo(() => getUserPreferences(), []);
     const [participants, setParticipants] = useState([]);
     const [remoteMedia, setRemoteMedia] = useState([]);
     const [remoteVideos, setRemoteVideos] = useState([]);
@@ -70,7 +88,10 @@ const useVoiceCall = (socket, user, profile) => {
     const [isDeafened, setIsDeafened] = useState(false);
     const [isSharing, setIsSharing] = useState(false);
     const [isCameraOn, setIsCameraOn] = useState(false);
-    const [noiseReduction, setNoiseReduction] = useState(false);
+    const [noiseReduction, setNoiseReduction] = useState(initialPreferences?.voice?.noiseSuppression ?? true);
+    const [voiceMode, setVoiceMode] = useState(initialPreferences?.voice?.inputMode || 'voice');
+    const [cameraDevices, setCameraDevices] = useState([]);
+    const [selectedCameraDeviceId, setSelectedCameraDeviceId] = useState(initialPreferences?.voice?.cameraDeviceId || '');
     const [liveReactions, setLiveReactions] = useState([]);
     const [startTime, setStartTime] = useState(null);
     const [elapsed, setElapsed] = useState(0);
@@ -89,6 +110,85 @@ const useVoiceCall = (socket, user, profile) => {
     const audioCtxRef = useRef(null);
     const handleSignalRef = useRef(null);
     const sendOfferRef = useRef(null);
+    const selectedCameraDeviceRef = useRef(initialPreferences?.voice?.cameraDeviceId || '');
+
+    const syncCameraDevices = useCallback(async () => {
+        if (!navigator.mediaDevices?.enumerateDevices) {
+            setCameraDevices([]);
+            return [];
+        }
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const cameras = devices
+                .filter((device) => device.kind === 'videoinput')
+                .map((device, index) => ({
+                    deviceId: device.deviceId,
+                    label: device.label || `Camera ${index + 1}`,
+                }));
+            setCameraDevices(cameras);
+            return cameras;
+        } catch {
+            setCameraDevices([]);
+            return [];
+        }
+    }, []);
+
+    const getCurrentCameraDeviceId = useCallback(() => {
+        const track = cameraStreamRef.current?.getVideoTracks?.()[0];
+        return track?.getSettings?.()?.deviceId || '';
+    }, []);
+
+    useEffect(() => {
+        const handlePreferencesChange = (event) => {
+            const preferences = event?.detail || getUserPreferences();
+            setNoiseReduction(preferences.voice.noiseSuppression ?? true);
+            setVoiceMode(preferences.voice.inputMode || 'voice');
+            const nextDeviceId = preferences.voice.cameraDeviceId || '';
+            selectedCameraDeviceRef.current = nextDeviceId;
+            setSelectedCameraDeviceId(nextDeviceId);
+        };
+
+        window.addEventListener('circlecore:user-preferences-changed', handlePreferencesChange);
+        return () => {
+            window.removeEventListener('circlecore:user-preferences-changed', handlePreferencesChange);
+        };
+    }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const refreshDevices = async () => {
+            const devices = await syncCameraDevices();
+            if (cancelled) return;
+            const preferredId = selectedCameraDeviceRef.current;
+            if (preferredId && devices.some((device) => device.deviceId === preferredId)) {
+                return;
+            }
+            const fallbackDeviceId = devices[0]?.deviceId || '';
+            if (fallbackDeviceId !== preferredId) {
+                selectedCameraDeviceRef.current = fallbackDeviceId;
+                setSelectedCameraDeviceId(fallbackDeviceId);
+                saveUserPreferences({ voice: { cameraDeviceId: fallbackDeviceId } });
+            }
+        };
+
+        refreshDevices();
+
+        const handleDeviceChange = () => {
+            refreshDevices();
+        };
+
+        navigator.mediaDevices?.addEventListener?.('devicechange', handleDeviceChange);
+
+        return () => {
+            cancelled = true;
+            navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange);
+        };
+    }, [syncCameraDevices]);
+
+    useEffect(() => {
+        selectedCameraDeviceRef.current = selectedCameraDeviceId;
+    }, [selectedCameraDeviceId]);
 
     const ensureAudioConstraints = useCallback(async (stream) => {
         const track = stream?.getAudioTracks?.()[0];
@@ -672,11 +772,11 @@ const useVoiceCall = (socket, user, profile) => {
         removeCameraTrackFromPeers();
     }, [removeCameraTrackFromPeers, socket, activeVoiceChannel?._id]);
 
-    const startCamera = useCallback(async () => {
+    const startCamera = useCallback(async (preferredDeviceId = selectedCameraDeviceId) => {
         if (!activeVoiceChannel || !socket) return;
         if (cameraStreamRef.current) return;
         try {
-            const camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            const camStream = await navigator.mediaDevices.getUserMedia(buildCameraConstraints(preferredDeviceId));
             const [track] = camStream.getVideoTracks();
             if (!track) return;
             cameraStreamRef.current = camStream;
@@ -690,7 +790,34 @@ const useVoiceCall = (socket, user, profile) => {
         } catch (err) {
             console.error('Camera access failed', err);
         }
-    }, [activeVoiceChannel, socket, addCameraTrackToPeers, stopCamera]);
+    }, [activeVoiceChannel, socket, addCameraTrackToPeers, stopCamera, selectedCameraDeviceId]);
+
+    const setCameraDevicePreference = useCallback(async (deviceId) => {
+        const nextDeviceId = deviceId || '';
+        selectedCameraDeviceRef.current = nextDeviceId;
+        setSelectedCameraDeviceId(nextDeviceId);
+        saveUserPreferences({ voice: { cameraDeviceId: nextDeviceId } });
+
+        if (!cameraStreamRef.current || !activeVoiceChannel || !socket) return;
+        if (getCurrentCameraDeviceId() === nextDeviceId) return;
+
+        stopCamera();
+        try {
+            const camStream = await navigator.mediaDevices.getUserMedia(buildCameraConstraints(nextDeviceId));
+            const [track] = camStream.getVideoTracks();
+            if (!track) return;
+            cameraStreamRef.current = camStream;
+            setLocalCameraStream(camStream);
+            setIsCameraOn(true);
+            socket.emit('voice:camera-start', { channelId: activeVoiceChannel._id });
+            addCameraTrackToPeers(track, camStream);
+            track.onended = () => {
+                stopCamera();
+            };
+        } catch {
+            setIsCameraOn(false);
+        }
+    }, [activeVoiceChannel, socket, addCameraTrackToPeers, getCurrentCameraDeviceId, stopCamera]);
 
     const startScreenShare = useCallback(async (options = {}) => {
         if (!activeVoiceChannel || !socket) return;
@@ -768,10 +895,17 @@ const useVoiceCall = (socket, user, profile) => {
     const toggleNoiseReduction = useCallback(() => {
         setNoiseReduction((prev) => {
             const next = !prev;
+            saveUserPreferences({ voice: { noiseSuppression: next } });
             refreshLocalAudioStream(next);
             return next;
         });
     }, [refreshLocalAudioStream]);
+
+    const setVoiceModePreference = useCallback((nextMode) => {
+        const normalized = nextMode === 'ptt' ? 'ptt' : 'voice';
+        setVoiceMode(normalized);
+        saveUserPreferences({ voice: { inputMode: normalized } });
+    }, []);
 
     const connectedPeerIds = useMemo(() => {
         const ids = new Set();
@@ -1059,6 +1193,39 @@ const useVoiceCall = (socket, user, profile) => {
         };
     }, [closePeerConnection]);
 
+    useEffect(() => {
+        if (!cameraStreamRef.current) return;
+        const currentDeviceId = getCurrentCameraDeviceId();
+        if (!selectedCameraDeviceId || selectedCameraDeviceId === currentDeviceId) return;
+
+        let cancelled = false;
+        const restart = async () => {
+            const wasCameraOn = !!cameraStreamRef.current;
+            stopCamera();
+            if (cancelled || !wasCameraOn || !activeVoiceChannel || !socket) return;
+            try {
+                const camStream = await navigator.mediaDevices.getUserMedia(buildCameraConstraints(selectedCameraDeviceId));
+                const [track] = camStream.getVideoTracks();
+                if (!track) return;
+                cameraStreamRef.current = camStream;
+                setLocalCameraStream(camStream);
+                setIsCameraOn(true);
+                socket.emit('voice:camera-start', { channelId: activeVoiceChannel._id });
+                addCameraTrackToPeers(track, camStream);
+                track.onended = () => {
+                    stopCamera();
+                };
+            } catch {
+                setIsCameraOn(false);
+            }
+        };
+
+        restart();
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedCameraDeviceId, activeVoiceChannel, socket, addCameraTrackToPeers, getCurrentCameraDeviceId, stopCamera]);
+
     return {
         activeVoiceChannel,
         participants,
@@ -1073,14 +1240,20 @@ const useVoiceCall = (socket, user, profile) => {
         isSharing,
         isCameraOn,
         noiseReduction,
+        voiceMode,
         liveReactions,
         connectedPeerIds,
+        cameraDevices,
+        selectedCameraDeviceId,
+        setCameraDevicePreference,
+        syncCameraDevices,
         elapsed,
         joinVoice,
         leaveVoice,
         toggleMute,
         toggleDeafen,
         toggleNoiseReduction,
+        setVoiceModePreference,
         startCamera,
         stopCamera,
         startScreenShare,

@@ -185,6 +185,28 @@ export const useAuthStore = create((set) => ({
         }
     },
 
+    changePassword: async (currentPassword, newPassword) => {
+        set({ isLoading: true, error: null, message: null });
+        try {
+            const res = await authFetch(`${API_URL}/change-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ currentPassword, newPassword }),
+            });
+            const data = await safeReadJson(res);
+            if (!res.ok) throw new Error(data.message || 'Failed to change password');
+            if (data.user) {
+                set({ user: data.user, tier: data.user?.tier || 'free', isLoading: false, message: data.message || 'Password changed successfully' });
+            } else {
+                set({ isLoading: false, message: data.message || 'Password changed successfully' });
+            }
+            return data;
+        } catch (error) {
+            set({ error: error.message, isLoading: false });
+            throw error;
+        }
+    },
+
     googleLogin: async (credential, inviteCode) => {
         set({ isLoading: true, error: null });
         try {

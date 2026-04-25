@@ -746,13 +746,46 @@ export const getRoles = async (req, res) => {
             _id: r._id,
             name: r.name,
             permissions: r.permissions || {},
+            color: r.color,
+            hoist: r.hoist,
+            mentionable: r.mentionable,
+            position: r.position,
             memberCount: counts[r._id.toString()] || 0,
             createdAt: r.createdAt,
         }));
 
+        roles.sort((a, b) => (b.position || 0) - (a.position || 0)); // Discord-style: higher position first
+
         res.status(200).json({ success: true, roles });
     } catch (error) {
         console.log("Error in getRoles:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── GET /communities/:id/bans ───────────────────────────────────────────────
+export const getBans = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        if (id !== req.communityId) {
+            return res.status(403).json({ success: false, message: "Community ID mismatch" });
+        }
+        if (!['admin', 'moderator'].includes(req.communityRole)) {
+            return res.status(403).json({ success: false, message: "Only admins/mods can view bans" });
+        }
+
+        const community = await Community.findById(id)
+            .select("bannedUsers")
+            .populate("bannedUsers.userId", "name email")
+            .populate("bannedUsers.executor", "name email")
+            .lean();
+
+        if (!community) return res.status(404).json({ success: false, message: "Community not found" });
+
+        res.status(200).json({ success: true, bans: community.bannedUsers || [] });
+    } catch (error) {
+        console.log("Error in getBans:", error);
         res.status(500).json({ success: false, message: "Server error" });
     }
 };
@@ -789,9 +822,14 @@ export const createRole = async (req, res) => {
             return res.status(404).json({ success: false, message: "Community not found" });
         }
 
+        const maxPos = community.roles.reduce((max, r) => Math.max(max, r.position || 0), -1);
         const role = {
             name: name.trim(),
             permissions: permissions || {},
+            color: req.body.color || "#99aab5",
+            hoist: !!req.body.hoist,
+            mentionable: !!req.body.mentionable,
+            position: maxPos + 1,
         };
         community.roles.push(role);
         await community.save();
@@ -807,7 +845,7 @@ export const createRole = async (req, res) => {
 // ── PUT /communities/:id/roles/:roleId ───────────────────────────────────────
 export const updateRole = async (req, res) => {
     const { id, roleId } = req.params;
-    const { name, permissions } = req.body;
+    const { name, permissions, color, hoist, mentionable, position } = req.body;
 
     try {
         if (id !== req.communityId) {
@@ -840,11 +878,46 @@ export const updateRole = async (req, res) => {
 
         if (name !== undefined) role.name = name;
         if (permissions !== undefined) role.permissions = permissions;
+        if (color !== undefined) role.color = color;
+        if (hoist !== undefined) role.hoist = hoist;
+        if (mentionable !== undefined) role.mentionable = mentionable;
+        if (position !== undefined) role.position = position;
         await community.save();
 
         res.status(200).json({ success: true, role });
     } catch (error) {
         console.log("Error in updateRole:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── PUT /communities/:id/roles/reorder ──────────────────────────────────────
+export const reorderRoles = async (req, res) => {
+    const { id } = req.params;
+    const { roles } = req.body; // Array of { _id, position }
+
+    try {
+        if (id !== req.communityId) {
+            return res.status(403).json({ success: false, message: "Community ID mismatch" });
+        }
+        if (req.communityRole !== "admin") {
+            return res.status(403).json({ success: false, message: "Only admins can reorder roles" });
+        }
+
+        const community = await Community.findById(id);
+        if (!community) return res.status(404).json({ success: false, message: "Community not found" });
+
+        roles.forEach((update) => {
+            const role = community.roles.id(update._id);
+            if (role) {
+                role.position = update.position;
+            }
+        });
+
+        await community.save();
+        res.status(200).json({ success: true, message: "Roles reordered" });
+    } catch (error) {
+        console.log("Error in reorderRoles:", error);
         res.status(500).json({ success: false, message: "Server error" });
     }
 };
@@ -1098,6 +1171,14 @@ export const joinCommunity = async (req, res) => {
                 success: false,
                 message: "Invalid or already used invite code",
             });
+        }
+
+        // Ban check
+        const isBanned = (community.bannedUsers || []).some(
+            (b) => b.userId?.toString() === req.userId?.toString()
+        );
+        if (isBanned) {
+            return res.status(403).json({ success: false, message: "You are banned from this community" });
         }
 
         const inviteEntry = community.inviteCodes.find(

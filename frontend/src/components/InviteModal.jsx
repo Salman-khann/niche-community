@@ -14,8 +14,10 @@ const InviteModal = ({ isOpen, onClose, communityName, friends = [], onGenerateI
         try {
             const data = await onGenerateInvite?.(targetEmail || undefined);
             const code = data?.code;
-            const codeText = code || '';
-            setInviteLink(codeText);
+            if (code) {
+                const link = `${window.location.origin}/invite-link?code=${code}`;
+                setInviteLink(link);
+            }
             setMessage(data?.message || 'Invite created');
         } catch (err) {
             setMessage(err.message || 'Failed to create invite');
@@ -92,7 +94,8 @@ const InviteModal = ({ isOpen, onClose, communityName, friends = [], onGenerateI
                             value={inviteLink}
                             readOnly
                             placeholder="Generate an invite code"
-                            className="flex-1 px-3 py-2 rounded-md bg-discord-darkest text-sm text-discord-white placeholder:text-discord-faint/60 border border-discord-darkest"
+                            className="flex-1 px-3 py-2 rounded-md bg-discord-darkest text-sm text-discord-white font-mono placeholder:text-discord-faint/60 border border-discord-darkest"
+                            onFocus={(e) => e.target.select()}
                         />
                         <button
                             onClick={() => handleGenerate()}
@@ -101,7 +104,11 @@ const InviteModal = ({ isOpen, onClose, communityName, friends = [], onGenerateI
                         >
                             Generate
                         </button>
-                        <button onClick={handleCopy} className="px-4 py-2 rounded-md bg-blurple text-sm font-semibold text-white hover:bg-blurple-hover cursor-pointer">
+                        <button 
+                            onClick={handleCopy} 
+                            disabled={!inviteLink}
+                            className="px-4 py-2 rounded-md bg-blurple text-sm font-semibold text-white hover:bg-blurple/90 disabled:opacity-50 cursor-pointer"
+                        >
                             Copy Code
                         </button>
                     </div>

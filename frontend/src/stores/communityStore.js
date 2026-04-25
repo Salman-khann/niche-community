@@ -239,6 +239,41 @@ export const useCommunityStore = create((set, get) => ({
         }
     },
 
+    reorderRoles: async (communityId, roleOrder) => {
+        // roleOrder: [{ _id, position }]
+        try {
+            const res = await apiFetch(`${API_URL}/${communityId}/roles/reorder`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ roles: roleOrder }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to reorder roles');
+            set({ successMessage: 'Role order updated' });
+            return data;
+        } catch (error) {
+            set({ error: error.message });
+            throw error;
+        }
+    },
+
+    getBannedUsers: async (communityId) => {
+        set({ isLoading: true, error: null });
+        try {
+            const res = await apiFetch(`${API_URL}/${communityId}/bans`, {
+                credentials: 'include',
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to fetch bans');
+            set({ isLoading: false });
+            return data.bans || [];
+        } catch (error) {
+            set({ error: error.message, isLoading: false });
+            throw error;
+        }
+    },
+
     deleteCommunity: async (communityId) => {
         set({ isLoading: true, error: null, successMessage: null });
         try {

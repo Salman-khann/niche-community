@@ -21,11 +21,16 @@ const roleSchema = new mongoose.Schema({
     kickMembers: { type: Boolean, default: false },
     banMembers: { type: Boolean, default: false },
     moderateContent: { type: Boolean, default: false },
+    manageMessages: { type: Boolean, default: false },
     warnMembers: { type: Boolean, default: false },
     suspendMembers: { type: Boolean, default: false },
     viewAuditLog: { type: Boolean, default: false },
     editServerProfile: { type: Boolean, default: false },
   },
+  color: { type: String, default: "#99aab5" },
+  hoist: { type: Boolean, default: false },
+  mentionable: { type: Boolean, default: false },
+  position: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
 }, { _id: true });
 
@@ -41,8 +46,15 @@ const communitySchema = new mongoose.Schema({
   template: { type: String, default: "custom" },
   owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  bannedUsers: [{
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    reason: { type: String, default: "" },
+    executor: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    createdAt: { type: Date, default: Date.now }
+  }],
   inviteCodes: { type: [inviteCodeSchema], default: [] },
   roles: { type: [roleSchema], default: [] },
+  inviteRequestsEnabled: { type: Boolean, default: true },
   communityScore: { type: Number, default: 0 },
   scoreSignals: {
     postsCreated: { type: Number, default: 0 },

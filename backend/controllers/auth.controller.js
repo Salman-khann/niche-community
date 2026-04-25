@@ -1259,6 +1259,68 @@ export const resetPassword = async (req, res) => {
     }
 };
 
+// ── Change Password ────────────────────────────────────────────────────────
+export const changePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "Current password and new password are required",
+            });
+        }
+
+        if (String(newPassword).length < 8) {
+            return res.status(400).json({
+                success: false,
+                message: "New password must be at least 8 characters long",
+            });
+        }
+
+        const user = await User.findById(req.userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        const isMatch = await bcrypt.compare(currentPassword, user.password || "");
+        if (!isMatch) {
+            return res.status(400).json({
+                success: false,
+                message: "Current password is incorrect",
+            });
+        }
+
+        user.password = await bcrypt.hash(newPassword, 10);
+        user.refreshTokenHash = null;
+        user.refreshTokenExpiresAt = null;
+        user.sessionVersion = (user.sessionVersion || 1) + 1;
+        user.lastActivityAt = new Date();
+        await user.save();
+
+        generateTokenandSetCookie(res, user);
+
+        await sendResetSuccessEmail(user.email).catch(() => { });
+
+        const updatedUser = await User.findById(user._id).populate('memberships.communityId', 'name slug icon').lean();
+
+        return res.status(200).json({
+            success: true,
+            message: "Password changed successfully",
+            user: updatedUser ? { ...updatedUser, password: undefined } : undefined,
+        });
+    } catch (error) {
+        console.log("Error in changePassword:", error);
+        return res.status(400).json({
+            success: false,
+            message: error.message || "Password change failed",
+        });
+    }
+};
+
 // ── Check Auth ──────────────────────────────────────────────────────────────
 export const checkAuth = async (req, res) => {
     try {
