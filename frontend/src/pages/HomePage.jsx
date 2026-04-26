@@ -430,6 +430,16 @@ const HomePage = () => {
         { q: 'Is CircleCore free?', a: 'CircleCore offers a free tier with all essential features. Premium tiers unlock advanced moderation, analytics, and unlimited channels.' },
         { q: 'Can I create my own community?', a: 'Absolutely! After signing up, you can create your own workspace and start inviting members immediately.' },
         { q: 'How is CircleCore different from Discord?', a: 'CircleCore is built for curated, invite-only communities. We focus on trust, reputation, and meaningful engagement rather than mass scale.' },
+        { q: 'How do I configure my microphone and camera?', a: 'CircleCore allows you to seamlessly select your preferred microphone, speaker, and camera within your User Profile, including live testing tools to verify your AV inputs.' },
+        { q: 'Does CircleCore support Push-to-Talk?', a: 'Yes, you can toggle between Voice Activity and Push-to-Talk input modes, complete with custom keyboard or mouse button keybinds for seamless audio control.' },
+        { q: 'Can I review moderation actions taken in my community?', a: 'Absolutely. Community admins have access to a robust Audit Log where you can instantly track critical moderation events such as member kicks and role adjustments.' },
+        { q: 'How do custom roles and permissions work?', a: 'You can intuitively create custom roles with tailored permissions—such as the ability to manage messages or configure server settings—and assign them directly via the Roster.' },
+        { q: 'Is there support for Two-Factor Authentication (2FA)?', a: 'Yes, to add an extra layer of security, you can enable 2FA directly within your Account Security settings by scanning the generated QR code via any authenticator app.' },
+        { q: 'How can I personalize my app\'s theme?', a: 'Under your Appearance settings, you can toggle between "Dark", "Darker", and "Aurora" gradient themes, while actively previewing the global color token shifts.' },
+        { q: 'Can I disable animations if I find them distracting?', a: 'Yes, the accessibility suite features a "Reduce Motion" component that minimizes animated transitions across the application interface for a more comfortable experience.' },
+        { q: 'How do I invite members directly to my community?', a: 'Server administrators can generate one-time invite codes or directly send server invites to existing platform users through the dedicated Community Invite interface.' },
+        { q: 'Can I customize how often I receive email notifications?', a: 'Yes, your Profile Settings allow you to securely dictate your email digest frequency—choosing between daily digests, weekly summaries, or turning them off entirely.' },
+        { q: 'Who has the power to delete messages?', a: 'Message deletion is strictly governed by custom Server Roles. Only members assigned a role with the exact "Manage Messages" permission enabled are granted chat moderation abilities.' },
     ];
 
     const footerColumns = [

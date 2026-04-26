@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 @theme {
-  /* ── Deep Navy Palette ── */
-  --color-discord-dark: #222734;
-  --color-discord-darker: #1b202b;
-  --color-discord-darkest: #141925;
-  --color-discord-sidebar: #101521;
-  --color-discord-chat: #1e2431;
-  --color-discord-input: #121826;
+  /* ── Exact Discord Palette ── */
+  --color-discord-dark: #313338;
+  --color-discord-darker: #2B2D31;
+  --color-discord-darkest: #1E1F22;
+  --color-discord-sidebar: #2B2D31;
+  --color-discord-chat: #313338;
+  --color-discord-input: #383A40;
 
   /* Accent */
   --color-blurple: #5f73eb;
@@ -111,7 +111,7 @@ html[data-theme='darker'] body {
 }
 
 html[data-theme='dark'] body {
-  background-color: var(--color-discord-dark);
+  background-color: var(--color-discord-darkest);
 }
 
 html[data-theme='darker'] {
@@ -689,20 +689,16 @@ body::before {
 
 /* ── App Surface System ─────────────────────────────────────────────────── */
 .ui-shell {
-  background:
-    radial-gradient(1050px 640px at 10% -14%, rgba(95, 115, 235, 0.14), transparent 62%),
-    radial-gradient(780px 420px at 94% 118%, rgba(69, 91, 180, 0.08), transparent 56%),
-    var(--color-discord-darkest);
+  background: var(--color-discord-darkest);
 }
 
 .ui-panel {
-  background: linear-gradient(180deg, rgba(30, 36, 50, 0.98), rgba(23, 28, 40, 0.99));
+  background: var(--color-discord-dark);
 }
 
 .ui-topbar {
-  background: linear-gradient(180deg, rgba(35, 42, 57, 0.92), rgba(28, 34, 48, 0.94));
-  border-bottom: 1px solid rgba(16, 21, 33, 0.88);
-  backdrop-filter: blur(6px);
+  background: var(--color-discord-dark);
+  border-bottom: 1px solid var(--color-discord-darkest);
 }
 
 .ui-chip {
@@ -746,9 +742,9 @@ body::before {
 }
 
 .ui-search-input {
-  border: 1px solid rgba(42, 51, 69, 0.92);
+  border: 1px solid var(--color-discord-darkest);
   border-radius: 8px;
-  background: rgba(20, 26, 38, 0.95);
+  background: var(--color-discord-input);
   color: var(--color-discord-white);
 }
 

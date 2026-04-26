@@ -1085,7 +1085,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
                     </div>
                 )}
 
-                <div className="relative flex items-center gap-2 h-12 bg-[#1f2229] border border-[#2b2e35] rounded-md px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                <div className="relative flex items-center gap-2 h-12 bg-discord-input rounded-xl px-3 border border-discord-darkest/10">
                     <label className={`w-8 h-8 rounded-md flex items-center justify-center ${canPost ? 'hover:bg-[#2a2d35] cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
                         <Plus className="w-4 h-4 text-discord-muted" />
                         <input

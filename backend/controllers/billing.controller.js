@@ -1,15 +1,15 @@
 import User from "../models/user.model.js";
 import Profile from "../models/profile.model.js";
 
+import Stripe from "stripe";
+
 let stripeClient = undefined;
 
-const resolveStripeClient = async () => {
+const resolveStripeClient = () => {
     if (stripeClient) return stripeClient;
     if (!process.env.STRIPE_SECRET_KEY) return null;
     try {
-        const stripeModule = await import("stripe");
-        const StripeCtor = stripeModule.default;
-        stripeClient = new StripeCtor(process.env.STRIPE_SECRET_KEY);
+        stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);
     } catch (error) {
         console.log("Stripe SDK load error:", error.message);
         stripeClient = null;
@@ -83,7 +83,7 @@ export const createCheckoutSession = async (req, res) => {
                 message: "Stripe is not configured on the server",
             });
         }
-        const stripe = await resolveStripeClient();
+        const stripe = resolveStripeClient();
         if (!stripe) {
             return res.status(500).json({
                 success: false,
@@ -173,7 +173,7 @@ export const verifyCheckoutSession = async (req, res) => {
             return res.status(400).json({ success: false, message: "session_id is required" });
         }
 
-        const stripe = await resolveStripeClient();
+        const stripe = resolveStripeClient();
         if (!stripe) {
             return res.status(500).json({ success: false, message: "Stripe is not configured" });
         }
@@ -222,7 +222,7 @@ export const stripeWebhook = async (req, res) => {
         if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
             return res.status(500).send("Stripe webhook is not configured");
         }
-        const stripe = await resolveStripeClient();
+        const stripe = resolveStripeClient();
         if (!stripe) {
             return res.status(500).send("Stripe webhook is not configured");
         }
@@ -336,7 +336,7 @@ export const getSubscriptionStatus = async (req, res) => {
             });
         }
 
-        const stripe = await resolveStripeClient();
+        const stripe = resolveStripeClient();
         const snapshot = stripe ? await getSubscriptionSnapshot(stripe, profile) : null;
         const subscription = snapshot || {
             tier: profile.tier || "free",
@@ -357,7 +357,7 @@ export const getSubscriptionStatus = async (req, res) => {
 
 export const createPortalSession = async (req, res) => {
     try {
-        const stripe = await resolveStripeClient();
+        const stripe = resolveStripeClient();
         if (!stripe) {
             return res.status(500).json({ success: false, message: "Stripe is not configured" });
         }
@@ -386,7 +386,7 @@ export const setAutoRenewal = async (req, res) => {
             return res.status(400).json({ success: false, message: "enabled must be a boolean" });
         }
 
-        const stripe = await resolveStripeClient();
+        const stripe = resolveStripeClient();
         if (!stripe) {
             return res.status(500).json({ success: false, message: "Stripe is not configured" });
         }
@@ -425,7 +425,7 @@ export const setAutoRenewal = async (req, res) => {
 
 export const getInvoices = async (req, res) => {
     try {
-        const stripe = await resolveStripeClient();
+        const stripe = resolveStripeClient();
         if (!stripe) {
             return res.status(500).json({ success: false, message: "Stripe is not configured" });
         }

@@ -707,7 +707,7 @@ const DmPanel = ({
                     </div>
                 )}
 
-                <div className="relative flex items-center gap-2 ui-search-input rounded-xl px-3 py-2">
+                <div className="relative flex items-center gap-2 bg-discord-input rounded-xl px-3 py-2">
                     <label className="w-8 h-8 rounded-md hover:bg-discord-border-light/20 flex items-center justify-center cursor-pointer">
                         <Plus className="w-4 h-4 text-discord-faint" />
                         <input
