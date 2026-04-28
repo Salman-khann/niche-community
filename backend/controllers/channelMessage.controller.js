@@ -147,6 +147,11 @@ export const getChannelMessages = async (req, res) => {
         const rows = await ChannelMessage.find(filter)
             .sort({ _id: -1 })
             .limit(limit + 1)
+            .populate({
+                path: 'replyTo',
+                select: 'content senderId',
+                populate: { path: 'senderId', select: 'name profileId' }
+            })
             .lean();
 
         const hasMore = rows.length > limit;
@@ -306,7 +311,7 @@ export const searchChannelMessages = async (req, res) => {
 export const createChannelMessage = async (req, res) => {
     try {
         const { channelId } = req.params;
-        const { content, mediaURLs, mentions } = req.body;
+        const { content, mediaURLs, mentions, replyTo } = req.body;
 
         const channel = await Channel.findOne({ _id: channelId, communityId: req.communityId }).select("type").lean();
         if (!channel) {
@@ -342,7 +347,18 @@ export const createChannelMessage = async (req, res) => {
             content: cleanedContent,
             mediaURLs: mediaURLs || [],
             mentions: mentions || [],
+            replyTo: replyTo || null,
         });
+
+        // Populate sender for socket emission if needed, but the model doesn't embed it.
+        // We'll populate replyTo if it exists for the client.
+        if (message.replyTo) {
+            await message.populate({
+                path: 'replyTo',
+                select: 'content senderId',
+                populate: { path: 'senderId', select: 'name profileId' }
+            });
+        }
 
         await trackReputationSignal({
             userId: req.userId,
@@ -825,6 +841,85 @@ export const getPinnedMessages = async (req, res) => {
         res.status(200).json({ success: true, messages });
     } catch (error) {
         console.log("Error in getPinnedMessages:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+export const editChannelMessage = async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const { content } = req.body;
+
+        const message = await ChannelMessage.findById(messageId);
+        if (!message) {
+            return res.status(404).json({ success: false, message: "Message not found" });
+        }
+
+        // Enforcement: 15-minute edit limit
+        const EDIT_LIMIT_MS = 15 * 60 * 1000;
+        const timeElapsed = Date.now() - new Date(message.createdAt).getTime();
+        if (timeElapsed > EDIT_LIMIT_MS) {
+            return res.status(403).json({ success: false, message: "You can no longer edit this message (15 minute limit reached)" });
+        }
+
+        if (message.senderId.toString() !== req.userId) {
+            return res.status(403).json({ success: false, message: "Not authorized to edit this message" });
+        }
+
+        const cleanedContent = filterBadWords(content?.trim() || "");
+        if (!cleanedContent) {
+            return res.status(400).json({ success: false, message: "Content cannot be empty" });
+        }
+
+        message.content = cleanedContent;
+        message.isEdited = true;
+        await message.save();
+
+        // Populate for client
+        if (message.replyTo) {
+            await message.populate({
+                path: 'replyTo',
+                select: 'content senderId',
+                populate: { path: 'senderId', select: 'name profileId' }
+            });
+        }
+
+        res.status(200).json({ success: true, message });
+        io.to(`channel:${message.channelId}`).emit("channel:message_edited", message);
+    } catch (error) {
+        console.log("Error in editChannelMessage:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+export const deleteChannelMessage = async (req, res) => {
+    try {
+        const { channelId, messageId } = req.params;
+        const message = await ChannelMessage.findById(messageId);
+        
+        if (!message || message.channelId.toString() !== channelId) {
+            return res.status(404).json({ success: false, message: "Message not found" });
+        }
+
+        // Check permission: Is owner or is admin/moderator
+        const isOwner = message.senderId.toString() === req.userId;
+        const isAdminMod = ["admin", "moderator"].includes(req.communityRole);
+
+        if (!isOwner && !isAdminMod) {
+            return res.status(403).json({ success: false, message: "You do not have permission to delete this message" });
+        }
+
+        await ChannelMessage.findByIdAndDelete(messageId);
+        
+        // Also delete any comments associated with this message
+        await ChannelMessageComment.deleteMany({ messageId });
+
+        res.status(200).json({ success: true, message: "Message deleted successfully" });
+
+        try {
+            io.to(`channel:${channelId}`).emit("channel:message-deleted", { messageId });
+        } catch { }
+    } catch (error) {
+        console.log("Error in deleteChannelMessage:", error);
         res.status(500).json({ success: false, message: "Server error" });
     }
 };

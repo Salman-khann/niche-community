@@ -6,6 +6,7 @@ const API_URL = apiUrl('/api/channels');
 
 export const useChannelStore = create((set, get) => ({
     channels: [],
+    categories: [],
     activeChannelId: null,
     isLoading: false,
     error: null,
@@ -16,7 +17,7 @@ export const useChannelStore = create((set, get) => ({
             const res = await apiFetch(API_URL, { credentials: 'include' });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Failed to fetch channels');
-            set({ channels: data.channels, isLoading: false });
+            set({ channels: data.channels, categories: data.categories || [], isLoading: false });
             return data.channels;
         } catch (error) {
             set({ error: error.message, isLoading: false });
@@ -32,12 +33,13 @@ export const useChannelStore = create((set, get) => ({
                 isPremium = false,
                 isPrivate = false,
                 type = 'text',
+                categoryId = null,
             } = options;
             const res = await apiFetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({ name, description, isPremium, isPrivate, type }),
+                body: JSON.stringify({ name, description, isPremium, isPrivate, type, categoryId }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Failed to create channel');

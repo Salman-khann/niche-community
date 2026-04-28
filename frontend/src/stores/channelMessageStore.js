@@ -488,5 +488,47 @@ export const useChannelMessageStore = create((set) => ({
         return { messages: updatedMessages, pinnedMessages: updatedPinned };
     }),
 
+    deleteMessage: async (channelId, messageId) => {
+        const res = await apiFetch(`${API_URL}/${channelId}/${messageId}`, {
+            method: 'DELETE',
+            credentials: 'include',
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Failed to delete message');
+        set((state) => ({
+            messages: state.messages.filter((m) => m._id !== messageId),
+            pinnedMessages: state.pinnedMessages.filter((p) => p._id !== messageId),
+        }));
+        return data;
+    },
+
+    handleMessageDeleted: (payload) => set((state) => ({
+        messages: state.messages.filter((m) => m._id !== payload.messageId),
+        pinnedMessages: state.pinnedMessages.filter((p) => p._id !== payload.messageId),
+    })),
+
+    editMessage: async (channelId, messageId, content) => {
+        const res = await apiFetch(`${API_URL}/${channelId}/${messageId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ content }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Failed to edit message');
+        set((state) => ({
+            messages: state.messages.map((m) =>
+                m._id === messageId ? { ...m, content: data.message.content, isEdited: true, replyTo: data.message.replyTo } : m
+            ),
+        }));
+        return data.message;
+    },
+
+    handleMessageEdited: (payload) => set((state) => ({
+        messages: state.messages.map((m) =>
+            m._id === payload._id ? { ...m, content: payload.content, isEdited: true, replyTo: payload.replyTo } : m
+        ),
+    })),
+
     setScrollTarget: (messageId) => set({ scrollToMessageId: messageId }),
 }));

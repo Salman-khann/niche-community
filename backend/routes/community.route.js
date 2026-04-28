@@ -1,5 +1,5 @@
 import express from "express";
-import { createCommunity, generateInvite, getInviteCodes, getMyCommunity, getMyCommunities, getAllCommunities, createInviteRequest, getInviteRequests, approveInviteRequest, rejectInviteRequest, getMembers, updateMemberRole, searchMembers, joinCommunity, getRoster, getCommunityProfile, updateCommunityProfile, deleteCommunity, kickMember, getRoles, createRole, updateRole, deleteRole, updateMemberRoles, updateNotificationSettings, getBans, reorderRoles } from "../controllers/community.controller.js";
+import { createCommunity, generateInvite, getInviteCodes, getMyCommunity, getMyCommunities, getAllCommunities, createInviteRequest, getInviteRequests, approveInviteRequest, rejectInviteRequest, getMembers, updateMemberRole, searchMembers, joinCommunity, getRoster, getCommunityProfile, updateCommunityProfile, deleteCommunity, kickMember, getRoles, createRole, updateRole, deleteRole, updateMemberRoles, updateNotificationSettings, getBans, reorderRoles, createCategory, updateCategory, deleteCategory, updateCategoryOverwrites } from "../controllers/community.controller.js";
 import { sendServerInvite } from "../controllers/serverInvite.controller.js";
 import { verifyToken } from "../middleware/verifyToken.js";
 import { verifyCommunityAccess } from "../middleware/verifyCommunityAccess.js";
@@ -65,5 +65,11 @@ router.put("/:id/roles/:roleId", verifyToken, verifyCommunityAccess, updateRole)
 router.delete("/:id/roles/:roleId", verifyToken, verifyCommunityAccess, deleteRole);
 
 router.put("/:id/notifications", verifyToken, verifyCommunityAccess, updateNotificationSettings);
+
+// Categories
+router.post("/:id/categories", verifyToken, verifyCommunityAccess, createCategory);
+router.put("/:id/categories/:categoryId", verifyToken, verifyCommunityAccess, updateCategory);
+router.put("/:id/categories/:categoryId/overwrites", verifyToken, verifyCommunityAccess, updateCategoryOverwrites);
+router.delete("/:id/categories/:categoryId", verifyToken, verifyCommunityAccess, deleteCategory);
 
 export default router;

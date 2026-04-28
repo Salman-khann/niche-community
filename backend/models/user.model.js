@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema({
   botKey: { type: String, default: null, index: true },
   twoFactorEnabled: { type: Boolean, default: false },
   twoFactorSecret: { type: String, default: null },
+  twoFactorRecoveryCodes: { type: [String], default: [] },
   role: { type: String, enum: ["user", "moderator", "admin"], default: "user" },
   profileId: { type: mongoose.Schema.Types.ObjectId, ref: "Profile" },
   lastLogin: { type: Date, default: Date.now },

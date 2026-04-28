@@ -18,6 +18,8 @@ import {
     twoFactorEnable,
     twoFactorDisable,
     twoFactorVerifyLogin,
+    logoutAllDevices,
+    regenerateRecoveryCodes,
 } from '../controllers/auth.controller.js';
 import { verifyToken } from '../middleware/verifyToken.js';
 import { authRateLimit } from '../middleware/authRateLimit.js';
@@ -43,5 +45,7 @@ router.post('/2fa/setup', verifyToken, twoFactorSetup);
 router.post('/2fa/enable', verifyToken, twoFactorEnable);
 router.post('/2fa/disable', verifyToken, twoFactorDisable);
 router.post('/2fa/verify-login', authRateLimit, twoFactorVerifyLogin);
+router.post('/2fa/recovery-codes', verifyToken, regenerateRecoveryCodes);
+router.post('/logout-all', verifyToken, logoutAllDevices);
 
 export default router;

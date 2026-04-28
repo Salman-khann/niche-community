@@ -150,6 +150,27 @@ const formatAuditLog = (log) => {
             return `${moderator} removed "${log?.metadata?.value || 'item'}" from the blocklist${reason}`;
         case 'dismiss':
             return `${moderator} dismissed a report${reason}`;
+        case 'channel_create':
+            return `${moderator} created channel #${log?.metadata?.channelName || 'unknown'}`;
+        case 'channel_update':
+            return `${moderator} updated channel #${log?.metadata?.channelName || 'unknown'}`;
+        case 'channel_delete':
+            return `${moderator} deleted channel #${log?.metadata?.channelName || 'unknown'}`;
+        case 'category_create':
+            return `${moderator} created category "${log?.metadata?.categoryName || 'unknown'}"`;
+        case 'category_update':
+            return `${moderator} updated category "${log?.metadata?.categoryName || 'unknown'}"`;
+        case 'category_delete':
+            return `${moderator} deleted category "${log?.metadata?.categoryName || 'unknown'}"`;
+        case 'role_create':
+            return `${moderator} created role "${log?.metadata?.roleName || 'unknown'}"`;
+        case 'role_update':
+            return `${moderator} updated role "${log?.metadata?.roleName || 'unknown'}"`;
+        case 'role_delete':
+            return `${moderator} deleted role "${log?.metadata?.roleName || 'ID ' + (log?.metadata?.roleId || 'unknown')}"`;
+        case 'community_update':
+            const changes = log?.metadata?.changes ? Object.keys(log.metadata.changes).filter(k => log.metadata.changes[k] !== undefined).join(', ') : '';
+            return `${moderator} updated server profile${changes ? ` (${changes})` : ''}`;
         default:
             return `${moderator} performed ${log?.actionType || 'an action'}${reason}`;
     }

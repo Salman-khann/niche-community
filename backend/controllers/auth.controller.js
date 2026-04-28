@@ -110,6 +110,13 @@ const buildTwoFactorSecret = async (email, userName = "Member") => {
     };
 };
 
+const generateRecoveryCodes = (count = 10) => {
+    return Array.from({ length: count }, () => 
+        crypto.randomBytes(4).toString('hex').toUpperCase() + '-' + 
+        crypto.randomBytes(4).toString('hex').toUpperCase()
+    );
+};
+
 const ensureHumanSignup = (body = {}) => {
     const honeypot = `${body.website || body.company || body.url || ""}`.trim();
     if (honeypot) {
@@ -938,11 +945,18 @@ export const twoFactorEnable = async (req, res) => {
 
         user.twoFactorEnabled = true;
         user.twoFactorSecret = secret;
+        
+        // Generate recovery codes if they don't exist or as a fresh set
+        const recoveryCodes = generateRecoveryCodes();
+        // Hash them? Usually they are hashed but for simplicity/user convenience we might keep them plain if we don't have a specific hashing strategy for them yet. 
+        // Better to hash them with bcrypt though.
+        user.twoFactorRecoveryCodes = await Promise.all(recoveryCodes.map(code => bcrypt.hash(code, 10)));
         await user.save();
 
         return res.status(200).json({
             success: true,
             message: "Two-factor authentication enabled",
+            recoveryCodes, // Send plain codes ONCE to the user
             user: {
                 ...(await withTier((await User.findById(user._id).populate('memberships.communityId', 'name slug icon').lean()))),
                 password: undefined,
@@ -994,7 +1008,24 @@ export const twoFactorVerifyLogin = async (req, res) => {
             return res.status(400).json({ success: false, message: "Two-factor authentication is not enabled for this account" });
         }
 
-        if (!verifyTotpCode(user.twoFactorSecret, code)) {
+        let isCodeValid = verifyTotpCode(user.twoFactorSecret, code);
+        let usedRecoveryCode = false;
+
+        if (!isCodeValid) {
+            // Check recovery codes
+            for (let i = 0; i < (user.twoFactorRecoveryCodes || []).length; i++) {
+                const isMatch = await bcrypt.compare(code.trim().toUpperCase(), user.twoFactorRecoveryCodes[i]);
+                if (isMatch) {
+                    isCodeValid = true;
+                    usedRecoveryCode = true;
+                    // Remove the used code
+                    user.twoFactorRecoveryCodes.splice(i, 1);
+                    break;
+                }
+            }
+        }
+
+        if (!isCodeValid) {
             return res.status(400).json({ success: false, message: "Invalid verification code" });
         }
 
@@ -1006,7 +1037,7 @@ export const twoFactorVerifyLogin = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            message: "Two-factor authentication verified",
+            message: usedRecoveryCode ? "Logged in with recovery code" : "Two-factor authentication verified",
             user: {
                 ...(await withTier(populatedUser)),
                 password: undefined,
@@ -1015,6 +1046,46 @@ export const twoFactorVerifyLogin = async (req, res) => {
     } catch (error) {
         console.log("Error in twoFactorVerifyLogin:", error);
         return res.status(400).json({ success: false, message: error.message || "Unable to verify 2FA" });
+    }
+};
+
+export const logoutAllDevices = async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+        user.sessionVersion = (user.sessionVersion || 1) + 1;
+        user.refreshTokenHash = null;
+        user.refreshTokenExpiresAt = null;
+        await user.save();
+
+        // Re-issue tokens for the CURRENT device so the user isn't kicked out
+        await generateTokenandSetCookie(res, user);
+        
+        res.status(200).json({ success: true, message: "All other sessions have been logged out." });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+export const regenerateRecoveryCodes = async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user || !user.twoFactorEnabled) {
+            return res.status(400).json({ success: false, message: "2FA is not enabled" });
+        }
+
+        const recoveryCodes = generateRecoveryCodes();
+        user.twoFactorRecoveryCodes = await Promise.all(recoveryCodes.map(code => bcrypt.hash(code, 10)));
+        await user.save();
+
+        res.status(200).json({ 
+            success: true, 
+            message: "Recovery codes regenerated. Please save these in a safe place.",
+            codes: recoveryCodes 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
 

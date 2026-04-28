@@ -1,4 +1,4 @@
-import { Gamepad2, Headphones, Mic, PhoneOff, Radio, ScreenShare, Settings } from 'lucide-react';
+import { Gamepad2, Headphones, MessageCircle, Mic, PhoneOff, Radio, ScreenShare, Settings } from 'lucide-react';
 
 const VoiceConnectedBar = ({
     channelName,
@@ -14,6 +14,7 @@ const VoiceConnectedBar = ({
     onLeave,
     onProfileClick,
     onSettingsClick,
+    onChatClick,
     displayName,
     avatar,
 }) => {
@@ -28,29 +29,31 @@ const VoiceConnectedBar = ({
     }
 
     return (
-        <div className="relative z-40 -ml-16 mr-0 mb-1 w-[calc(100%+4rem)] rounded-xl border border-white/10 bg-[#202024] pl-10 pr-3.5 py-3 shadow-[0_10px_24px_rgba(0,0,0,0.46)] flex flex-col gap-3">
-            <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-discord-green/10 border border-discord-green/20 flex items-center justify-center text-discord-green">
-                    <Radio className="w-4 h-4" />
+        <div className="relative z-40 mx-0.5 mb-1 mr+1 ml+1 rounded-xl border border-white/5 bg-[#202024] px-3 py-3 shadow-[0_12px_32px_rgba(0,0,0,0.5)] flex flex-col gap-4 transition-all hover:border-white/10">
+            <div className="flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0 overflow-hidden">
+                    <div className="w-8 h-8 rounded-lg bg-discord-green/10 border border-discord-green/20 flex items-center justify-center text-discord-green shrink-0">
+                        <Radio className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <p className="text-sm leading-tight font-bold text-discord-green truncate">Voice Connected</p>
+                        <button
+                            onClick={onOpenCallView}
+                            className="mt-0.5 inline-flex items-center gap-1.5 text-[11px] text-discord-faint truncate hover:text-discord-light text-left max-w-full"
+                            title="Open call view"
+                        >
+                            <Gamepad2 className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{channelName}</span>
+                        </button>
+                        {connectionLabel && (
+                            <p className="text-[10px] text-discord-faint truncate">{connectionLabel}</p>
+                        )}
+                    </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                    <p className="text-sm leading-none font-semibold text-discord-green whitespace-nowrap">Voice Connected</p>
-                    <button
-                        onClick={onOpenCallView}
-                        className="mt-0.5 inline-flex items-center gap-1.5 text-[11px] text-discord-faint truncate hover:text-discord-light text-left"
-                        title="Open call view"
-                    >
-                        <Gamepad2 className="w-3 h-3 shrink-0" />
-                        <span className="truncate">{channelName}</span>
-                    </button>
-                    {connectionLabel && (
-                        <p className="text-[10px] text-discord-faint mt-0.5">{connectionLabel}</p>
-                    )}
-                </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                     <button
                         onClick={onLeave}
-                        className="w-8 h-8 rounded-full bg-red-500/15 text-red-300 flex items-center justify-center hover:bg-red-500/30"
+                        className="w-8 h-8 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center hover:bg-red-500/25 transition-colors"
                         title="Disconnect"
                     >
                         <PhoneOff className="w-3.5 h-3.5" />
@@ -61,22 +64,20 @@ const VoiceConnectedBar = ({
             <div className={`grid gap-2.5 ${onToggleShare ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <button
                     onClick={onToggleMute}
-                    className={`h-9 rounded-lg border flex items-center justify-center transition-colors ${
-                        isMuted
-                            ? 'bg-red-500/18 border-red-400/25 text-red-300'
-                            : 'bg-[#262d3a] border-[#364055] text-discord-light hover:bg-[#30384a]'
-                    }`}
+                    className={`h-10 rounded-lg border flex items-center justify-center transition-colors ${isMuted
+                        ? 'bg-red-500/18 border-red-400/25 text-red-300'
+                        : 'bg-[#262d3a] border-[#364055] text-discord-light hover:bg-[#30384a]'
+                        }`}
                     title={isMuted ? 'Unmute mic' : 'Mute mic'}
                 >
                     <Mic className="w-4 h-4" />
                 </button>
                 <button
                     onClick={onToggleDeafen}
-                    className={`h-9 rounded-lg border flex items-center justify-center transition-colors ${
-                        isDeafened
-                            ? 'bg-amber-500/18 border-amber-300/25 text-amber-200'
-                            : 'bg-[#262d3a] border-[#364055] text-discord-light hover:bg-[#30384a]'
-                    }`}
+                    className={`h-10 rounded-lg border flex items-center justify-center transition-colors ${isDeafened
+                        ? 'bg-amber-500/18 border-amber-300/25 text-amber-200'
+                        : 'bg-[#262d3a] border-[#364055] text-discord-light hover:bg-[#30384a]'
+                        }`}
                     title={isDeafened ? 'Undeafen' : 'Deafen'}
                 >
                     <Headphones className="w-4 h-4" />
@@ -84,11 +85,10 @@ const VoiceConnectedBar = ({
                 {onToggleShare && (
                     <button
                         onClick={onToggleShare}
-                        className={`h-9 rounded-lg border flex items-center justify-center transition-colors ${
-                            isSharing
-                                ? 'bg-discord-green/18 border-discord-green/25 text-discord-green'
-                                : 'bg-[#262d3a] border-[#364055] text-discord-light hover:bg-[#30384a]'
-                        }`}
+                        className={`h-10 rounded-lg border flex items-center justify-center transition-colors ${isSharing
+                            ? 'bg-discord-green/18 border-discord-green/25 text-discord-green'
+                            : 'bg-[#262d3a] border-[#364055] text-discord-light hover:bg-[#30384a]'
+                            }`}
                         title={isSharing ? 'Stop sharing' : 'Share screen'}
                     >
                         <ScreenShare className="w-4 h-4" />
@@ -96,7 +96,7 @@ const VoiceConnectedBar = ({
                 )}
             </div>
 
-            <div className="flex items-center gap-2.5 rounded-lg border border-discord-border/60 bg-[#1d2330] px-2.5 py-2">
+            <div className="flex items-center gap-2.5 rounded-lg border border-discord-border/50 bg-[#1d2330] px-3 py-2.5">
                 <button
                     type="button"
                     onClick={onProfileClick}

@@ -202,10 +202,14 @@ const WorkspaceSwitcher = ({ onHomeClick, onServerSelect, openDirectorySignal = 
                         onHomeClick?.();
                         navigate('/feed');
                     }}
-                    className="w-11 h-11 rounded-3xl bg-blurple flex items-center justify-center shadow-lg shadow-blurple/40 hover:rounded-2xl transition-all cursor-pointer"
+                    className={`w-11 h-11 rounded-3xl flex items-center justify-center transition-all duration-300 cursor-pointer group/home shadow-md active:translate-y-px ${
+                        location.pathname === '/feed' && !activeCommunityId 
+                        ? 'bg-blurple text-white rounded-2xl' 
+                        : 'bg-discord-darker text-discord-light hover:bg-blurple hover:text-white hover:rounded-2xl'
+                    }`}
                     title="Home"
                 >
-                    <Command className="w-6 h-6 text-white" strokeWidth={2.4} />
+                    <Command className="w-6 h-6" strokeWidth={2.5} />
                 </button>
                 <div className="w-8 h-[2px] bg-discord-border-light/60 rounded-full my-1" />
                 <div className="relative group flex items-center justify-center">

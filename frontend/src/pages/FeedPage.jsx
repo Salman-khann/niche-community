@@ -136,12 +136,19 @@ const FeedPage = () => {
         sendMessage,
         pushMessage,
         upsertThread,
+        deleteMessage: deleteDmMsg,
+        handleMessageDeleted: dmHandleDeleted,
+        handleMessageEdited: dmHandleEdited,
+        editMessage: editDmMessage,
     } = useDmStore();
     const { fetchEvents, handleNewEvent, handleRsvpUpdate, handleDeleteEvent, handleUpdateEvent, handleStartEvent, handleEndEvent } = useEventStore();
     const [activeDm, setActiveDm] = useState(null);
     const [dmText, setDmText] = useState('');
     const [dmFiles, setDmFiles] = useState([]);
     const [dmSending, setDmSending] = useState(false);
+    const [dmReplyingTo, setDmReplyingTo] = useState(null);
+    const [dmEditingMessage, setDmEditingMessage] = useState(null);
+    const [dmEditContent, setDmEditContent] = useState('');
     const [typingUser, setTypingUser] = useState(null);
     const [showStreamViewer, setShowStreamViewer] = useState(true);
     const [fullscreenStream, setFullscreenStream] = useState(null);
@@ -460,7 +467,10 @@ const FeedPage = () => {
         if (!activeVoiceChannel) return;
         setPreviewVoiceChannel(activeVoiceChannel);
         setShowVoiceStageView(true);
-    }, [activeVoiceChannel]);
+        setViewMode('server');
+        // Ensure we don't auto-close by setting the active channel to this voice channel
+        setActiveChannel(activeVoiceChannel._id);
+    }, [activeVoiceChannel, setActiveChannel]);
 
     const closeVoiceStageView = useCallback(() => {
         setShowVoiceStageView(false);
@@ -559,12 +569,16 @@ const FeedPage = () => {
         setShowVoiceInviteModal(false);
     }, [isViewingActiveVoiceChannel]);
 
+    // Close voice stage only if user actively selects a text channel while it's open, 
+    // but not if it was already selected when opening.
     useEffect(() => {
         if (!showVoiceStageView || viewMode !== 'server') return;
         const activeType = (channels.find((ch) => ch._id === activeChannelId) || channels[0])?.type || 'text';
-        if (!['text', 'announcement', 'forum'].includes(activeType)) return;
-        closeVoiceStageView();
-    }, [showVoiceStageView, viewMode, channels, activeChannelId, closeVoiceStageView]);
+        // Only auto-close if we are NOT viewing the active voice channel anymore (user switched away)
+        if (['text', 'announcement', 'forum'].includes(activeType) && activeChannelId !== stageVoiceChannel?._id) {
+            closeVoiceStageView();
+        }
+    }, [showVoiceStageView, viewMode, channels, activeChannelId, closeVoiceStageView, stageVoiceChannel?._id]);
 
     useEffect(() => {
         const channelId = stageVoiceChannel?._id || null;
@@ -643,6 +657,10 @@ const FeedPage = () => {
         };
         const handleDmMessage = (msg) => {
             pushMessage(msg);
+        };
+        const handleDmMessageDeleted = (payload) => {
+            if (!payload?.messageId) return;
+            dmHandleDeleted(payload);
         };
         const handleTyping = ({ threadId: tId, userId, isTyping }) => {
             if (!tId || tId !== threadId) return;
@@ -913,7 +931,12 @@ const FeedPage = () => {
         socket.on('profile:updated', handlePresence);
         socket.on('friends:updated', handleFriends);
         socket.on('friends:requests:update', handleFriends);
+        const handleDmMessageEdited = (payload) => {
+            dmHandleEdited(payload);
+        };
         socket.on('dm:message', handleDmMessage);
+        socket.on('dm:message:edited', handleDmMessageEdited);
+        socket.on('dm:message:deleted', handleDmMessageDeleted);
         socket.on('dm:typing', handleTyping);
         socket.on('dm:thread:updated', handleThreadUpdated);
         socket.on('dm:thread:removed', handleThreadRemoved);
@@ -945,6 +968,8 @@ const FeedPage = () => {
             socket.off('friends:updated', handleFriends);
             socket.off('friends:requests:update', handleFriends);
             socket.off('dm:message', handleDmMessage);
+            socket.off('dm:message:edited', handleDmMessageEdited);
+            socket.off('dm:message:deleted', handleDmMessageDeleted);
             socket.off('dm:typing', handleTyping);
             socket.off('dm:thread:updated', handleThreadUpdated);
             socket.off('dm:thread:removed', handleThreadRemoved);
@@ -1879,7 +1904,7 @@ const FeedPage = () => {
 
     const filteredFriends = useMemo(() => {
         let base = friends;
-        if (activeTab === 'online') base = friends.filter((f) => f.presence === 'online');
+        if (activeTab === 'online') base = friends.filter((f) => f.presence === 'online' || f.presence === 'idle' || f.presence === 'dnd');
         if (activeTab === 'requests') return [];
         if (activeTab === 'blocked') return [];
         const q = friendSearchQuery.trim().toLowerCase();
@@ -1898,7 +1923,7 @@ const FeedPage = () => {
             .slice(0, 3);
     }, [friends]);
 
-    const suggestionCount = Math.max(0, (friends || []).length - onlineCount);
+    const suggestionCount = invites.length;
 
     const pendingCount = incoming.length + outgoing.length;
 
@@ -2002,8 +2027,15 @@ const FeedPage = () => {
             <div className="h-3 border-b border-discord-darkest/80" />
 
             <div className="px-3 pt-3 space-y-1 text-xs font-semibold text-discord-faint">
-                <button className="w-full text-left px-2 py-1.5 rounded-md bg-discord-darkest text-discord-white flex items-center gap-2 cursor-pointer">
-                    <User className="w-4 h-4 text-discord-faint" />
+                <button
+                    onClick={() => {
+                        setViewMode('friends');
+                        setActiveTab('online');
+                        setShowMobileDmList(false);
+                    }}
+                    className={`w-full text-left px-2 py-1.5 rounded-md flex items-center gap-2 cursor-pointer transition-colors ${viewMode === 'friends' ? 'bg-[#3f4147] text-white' : 'text-discord-muted hover:bg-discord-darkest/80 hover:text-discord-light'}`}
+                >
+                    <User className={`w-4 h-4 ${viewMode === 'friends' ? 'text-white' : 'text-discord-faint'}`} />
                     Friends
                     {pendingCount > 0 && (
                         <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-[10px] font-semibold text-white">
@@ -2107,7 +2139,7 @@ const FeedPage = () => {
                 )}
             </div>
 
-            <div className="h-14 px-2 border-t border-discord-darkest/80 flex items-center gap-2 bg-discord-darkest/80 cursor-pointer" onClick={() => setShowProfilePopout(true)}>
+            <div className="relative z-40 mx-0.5 mb-1 rounded-xl border border-white/5 bg-[#202024] px-2.5 py-2.5 shadow-[0_10px_24px_rgba(0,0,0,0.46)] flex items-center gap-2 cursor-pointer transition-all hover:bg-[#28282c] hover:border-white/15" onClick={() => setShowProfilePopout(true)}>
                 <div className="relative">
                     {profile?.avatar ? (
                         <img src={profile.avatar} alt="" className="w-9 h-9 rounded-full object-cover border-2 border-discord-border" />
@@ -2140,8 +2172,8 @@ const FeedPage = () => {
     );
 
     const memberListBody = (
-        <div className="flex-1 min-h-0 flex flex-col bg-discord-sidebar">
-            <div className="px-3 pt-3 pb-2 border-b border-discord-darkest/70 bg-discord-sidebar">
+        <div className="flex-1 min-h-0 flex flex-col bg-[#313338]">
+            <div className="px-3 pt-3 pb-2 border-b border-white/5 bg-[#313338]">
                 <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-discord-faint" />
                     <input
@@ -2167,7 +2199,7 @@ const FeedPage = () => {
                                     <button
                                         key={m._id}
                                         onClick={() => { setSelectedMember(m); setShowMemberPopout(true); }}
-                                        className="w-full flex items-center gap-2 text-sm text-discord-light rounded-lg px-2 py-1.5 hover:bg-discord-darkest/70 transition cursor-pointer text-left"
+                                        className="w-full flex items-center gap-2 text-sm text-discord-light rounded-md px-2 py-1.5 hover:bg-white/5 transition-all group cursor-pointer text-left"
                                     >
                                         <div className="relative w-8 h-8 shrink-0 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-semibold overflow-hidden">
                                             {m.avatar ? (
@@ -2246,8 +2278,10 @@ const FeedPage = () => {
                         onToggleNoiseReduction: toggleNoiseReduction,
                         onToggleShare: handleShareToggle,
                         onOpenCallView: openVoiceStageView,
+                        onChatClick: toggleVoiceChannelChatDrawer,
                         onLeave: handleVoiceBarLeave,
                     }}
+                    roles={roles}
                 />
             ) : (
                 <>
@@ -2335,9 +2369,9 @@ const FeedPage = () => {
                 {viewMode === 'server' ? (
                     <>
                         <div
-                            className="ui-topbar relative z-[140] h-12 flex items-center justify-between px-4 shadow-[0_1px_0_rgba(0,0,0,0.45)]"
+                            className="ui-topbar relative z-[140] h-12 flex items-center justify-between px-4 bg-[#313338] shadow-[0_1px_2px_rgba(0,0,0,0.1),0_1px_0_rgba(255,255,255,0.04)]"
                         >
-                            <div className="flex items-center gap-2 text-sm font-semibold text-discord-light">
+                            <div className="flex items-center gap-2.5 text-sm font-semibold text-discord-light">
                                 <button
                                     onClick={() => setShowMobileServers(true)}
                                     className="md:hidden w-8 h-8 rounded-md hover:bg-[#23262e] text-discord-faint hover:text-discord-light flex items-center justify-center"
@@ -2366,20 +2400,20 @@ const FeedPage = () => {
                                 )}
                             </div>
                             <div className="flex items-center gap-3 text-discord-faint">
-                                <button
-                                    onClick={() => setMobileDirectorySignal((v) => v + 1)}
-                                    className="md:hidden w-8 h-8 rounded-md hover:bg-[#23262e] hover:text-discord-light cursor-pointer flex items-center justify-center"
-                                    title="Discover servers"
-                                >
-                                    <Compass className="w-4 h-4" />
-                                </button>
+                                    <button
+                                        onClick={() => setMobileDirectorySignal((v) => v + 1)}
+                                        className="md:hidden w-8 h-8 rounded-md hover:bg-[#23262e] hover:text-discord-light cursor-pointer flex items-center justify-center"
+                                        title="Discover servers"
+                                    >
+                                        <Compass className="w-4 h-4" />
+                                    </button>
                                 {shouldShowServerMembersPanel && (
                                     <button
                                         onClick={() => setShowMemberList((v) => !v)}
-                                        className={`w-8 h-8 rounded-md hover:bg-[#23262e] hover:text-discord-light cursor-pointer flex items-center justify-center ${showMemberList ? 'text-discord-white' : 'text-discord-faint'}`}
+                                        className={`w-8 h-8 rounded-md hover:bg-discord-darkest/40 hover:text-discord-light cursor-pointer flex items-center justify-center transition-colors ${showMemberList ? 'text-discord-white bg-discord-darkest/30' : 'text-discord-faint'}`}
                                         title="Toggle members list"
                                     >
-                                        <Users className="w-4 h-4" />
+                                        <Users className="w-4 h-4 shadow-sm" />
                                     </button>
                                 )}
                                 <button onClick={() => setShowPins(true)} className="w-8 h-8 rounded-md hover:bg-[#23262e] hover:text-discord-light cursor-pointer flex items-center justify-center">
@@ -2511,11 +2545,13 @@ const FeedPage = () => {
                                         <button
                                             type="button"
                                             onClick={toggleVoiceChannelChatDrawer}
-                                            className={`w-8 h-8 rounded-md text-white flex items-center justify-center transition-colors ${shouldRenderVoiceStageChatDrawer ? 'bg-white/30' : 'bg-white/10 hover:bg-white/20'
+                                            className={`w-9 h-9 rounded-md flex items-center justify-center transition-all ${shouldRenderVoiceStageChatDrawer
+                                                ? 'bg-blurple text-white shadow-[0_0_15px_rgba(88,101,242,0.5)]'
+                                                : 'bg-white/10 hover:bg-white/20 text-white/90'
                                                 }`}
                                             title={shouldRenderVoiceStageChatDrawer ? 'Close channel chat' : 'Open channel chat'}
                                         >
-                                            <MessageCircle className="w-4 h-4" />
+                                            <MessageCircle className="w-5 h-5" />
                                         </button>
                                         <button
                                             type="button"
@@ -2535,11 +2571,13 @@ const FeedPage = () => {
                                                 <button
                                                     type="button"
                                                     onClick={toggleVoiceChannelChatDrawer}
-                                                    className={`w-8 h-8 rounded-md text-white flex items-center justify-center transition-colors ${shouldRenderVoiceStageChatDrawer ? 'bg-white/30' : 'bg-white/10 hover:bg-white/20'
+                                                    className={`w-9 h-9 rounded-md flex items-center justify-center transition-all ${shouldRenderVoiceStageChatDrawer
+                                                        ? 'bg-blurple text-white shadow-[0_0_15px_rgba(88,101,242,0.5)]'
+                                                        : 'bg-white/10 hover:bg-white/20 text-white/90'
                                                         }`}
                                                     title={shouldRenderVoiceStageChatDrawer ? 'Close channel chat' : 'Open channel chat'}
                                                 >
-                                                    <MessageCircle className="w-4 h-4" />
+                                                    <MessageCircle className="w-5 h-5" />
                                                 </button>
                                             </div>
                                             <div className="flex-1 min-h-0 flex gap-3 px-3 pb-3">
@@ -2634,35 +2672,44 @@ const FeedPage = () => {
                                                         </div>
                                                     )}
 
-                                                    <div className="absolute left-3 top-3 rounded-lg bg-black/45 px-2.5 py-1 text-[11px] text-white backdrop-blur">
+                                                    <div className="absolute left-3 top-3 z-30 rounded-lg bg-black/45 px-2.5 py-1.5 text-[11px] text-white backdrop-blur border border-white/5">
                                                         <p className="font-semibold leading-none">{primaryVoiceTile?.title || 'Voice'}</p>
-                                                        <p className="text-[10px] text-white/80 mt-1">{primaryVoiceTile?.subtitle || 'Connected'}</p>
+                                                        <p className="text-[10px] text-white/70 mt-1">{primaryVoiceTile?.subtitle || 'Connected'}</p>
                                                     </div>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => { e.stopPropagation(); toggleVoiceChannelChatDrawer(); }}
+                                                        className={`absolute right-3 top-3 z-30 w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-lg backdrop-blur-md ${shouldRenderVoiceStageChatDrawer
+                                                            ? 'bg-blurple text-white border border-blurple/50'
+                                                            : 'bg-black/35 hover:bg-black/50 text-white/90 border border-white/10 active:scale-95'
+                                                            }`}
+                                                        title={shouldRenderVoiceStageChatDrawer ? 'Close channel chat' : 'Open channel chat'}
+                                                    >
+                                                        <MessageCircle className="w-5 h-5" />
+                                                    </button>
 
                                                     <div className={`absolute left-1/2 -translate-x-1/2 bottom-3 transition-all duration-150 ${hoveredVoiceTile === 'primary' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}>
                                                         <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-black/55 backdrop-blur px-2 py-1.5">
                                                             <button
                                                                 type="button"
-                                                                onClick={() => primaryVoiceTile?.stream && setFullscreenStream(primaryVoiceTile.stream)}
-                                                                className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
-                                                                title="Fullscreen"
-                                                            >
-                                                                <Maximize2 className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={handleShareToggle}
-                                                                className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
-                                                                title={isSharing ? 'Stop share' : 'Share screen'}
+                                                                onClick={(e) => { e.stopPropagation(); handleShareToggle(); }}
+                                                                className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all active:scale-95 ${
+                                                                    isSharing
+                                                                        ? 'bg-discord-green/20 text-discord-green hover:bg-discord-green/30'
+                                                                        : 'bg-white/15 hover:bg-white/25 text-white'
+                                                                }`}
+                                                                title={isSharing ? 'Stop sharing screen' : 'Share your screen'}
                                                             >
                                                                 <MonitorUp className="w-4 h-4" />
                                                             </button>
                                                             <button
                                                                 type="button"
-                                                                className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
-                                                                title="More"
+                                                                onClick={(e) => { e.stopPropagation(); setShowVoiceInviteModal(true); }}
+                                                                className="h-8 w-8 rounded-lg bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+                                                                title="Invite members"
                                                             >
-                                                                <MoreHorizontal className="w-4 h-4" />
+                                                                <UserPlus className="w-4 h-4" />
                                                             </button>
                                                         </div>
                                                         <div className="mt-2 rounded-2xl border border-white/10 bg-black/40 backdrop-blur-md px-2.5 py-2">
@@ -2883,15 +2930,40 @@ const FeedPage = () => {
                                             const url = await uploadFile(f.file);
                                             mediaURLs.push(url);
                                         }
-                                        const payload = { content: normalizedText.trim(), mediaURLs };
+                                        const payload = { 
+                                            content: normalizedText.trim(), 
+                                            mediaURLs,
+                                            replyTo: dmReplyingTo?._id || null
+                                        };
                                         const msg = await sendMessage(threadId, payload);
                                         pushMessage(msg);
                                         setDmText('');
+                                        setDmReplyingTo(null);
                                         dmFiles.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
                                         setDmFiles([]);
                                         socket?.emit('dm:typing', { threadId, userId: user?._id, isTyping: false });
                                     } finally {
                                         setDmSending(false);
+                                    }
+                                }}
+                                onEditMessage={async (msgId, content) => {
+                                    if (!threadId || !msgId) return;
+                                    try {
+                                        const normalizedText = normalizeEmojiShortcodes(content);
+                                        await editDmMessage(threadId, msgId, normalizedText);
+                                    } catch (err) {
+                                        console.error('Failed to edit DM message:', err);
+                                    }
+                                }}
+                                replyingTo={dmReplyingTo}
+                                onSetReplyingTo={setDmReplyingTo}
+                                onCancelReply={() => setDmReplyingTo(null)}
+                                onDeleteMessage={async (msgId) => {
+                                    if (!threadId || !msgId) return;
+                                    try {
+                                        await deleteDmMsg(threadId, msgId);
+                                    } catch (err) {
+                                        console.error('Failed to delete DM message:', err);
                                     }
                                 }}
                                 onOpenSidebar={() => setShowMobileDmList(true)}
@@ -2935,12 +3007,12 @@ const FeedPage = () => {
                                 }}
                             />
                         ) : (
-                            <div className="flex-1 flex items-center justify-center text-discord-faint">Select a friend to start chatting.</div>
+                            <div className="flex-1 flex items-center justify-center text-discord-faint bg-[#313338]">Select a friend to start chatting.</div>
                         )}
                     </>
                 ) : (
                     <>
-                        <div className="ui-topbar px-4 py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                        <div className="ui-topbar px-4 py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2 bg-[#313338] shadow-[0_1px_2px_rgba(0,0,0,0.1),0_1px_0_rgba(255,255,255,0.04)]">
                             <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                                 <button
                                     onClick={() => setShowMobileServers(true)}
@@ -2991,7 +3063,7 @@ const FeedPage = () => {
                                         className={`ui-chip px-2 py-1 text-xs font-semibold cursor-pointer ${activeTab === 'invites' ? 'ui-chip--active' : ''
                                             }`}
                                     >
-                                        Suggestions
+                                        Server Invites
                                         {suggestionCount > 0 && (
                                             <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-blurple/80 text-[10px] font-semibold text-white">
                                                 {suggestionCount}
@@ -3365,7 +3437,7 @@ const FeedPage = () => {
                                         ))}
                                     </div>
                                 </div>
-                                <aside className="hidden lg:block w-80 border-l border-discord-darkest/80 px-4 py-4 bg-discord-chat/40">
+                                <aside className="hidden lg:block w-80 border-l border-white/5 px-4 py-4 bg-[#313338]">
                                     <h3 className="text-2xl font-bold text-white mb-4">Active Now</h3>
                                     {activeNowFriends.length === 0 ? (
                                         <div className="rounded-xl border border-discord-border/60 bg-discord-darkest/40 p-4 text-sm text-discord-faint">
@@ -3401,13 +3473,13 @@ const FeedPage = () => {
 
             {viewMode === 'server' && shouldShowServerMembersPanel && showMemberList && (
                 <>
-                    <aside className="hidden lg:flex w-60 border-l border-discord-darkest/80 bg-[#1a1a1e] flex-col">
+                    <aside className="hidden lg:flex w-60 border-l border-white/5 bg-[#313338] flex-col">
                         {memberListBody}
                     </aside>
                     <div className="lg:hidden">
                         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={() => setShowMemberList(false)} />
-                        <aside className="fixed top-0 right-0 bottom-0 w-72 bg-[#1a1a1e] z-50 shadow-2xl flex flex-col">
-                            <div className="h-12 flex items-center justify-between px-4 border-b border-discord-darkest/80 bg-[#1a1a1e]">
+                        <aside className="fixed top-0 right-0 bottom-0 w-72 bg-[#313338] z-50 shadow-2xl flex flex-col">
+                            <div className="h-12 flex items-center justify-between px-4 border-b border-white/5 bg-[#313338]">
                                 <span className="text-sm font-semibold text-discord-light">Members</span>
                                 <button onClick={() => setShowMemberList(false)} className="text-discord-faint hover:text-white">
                                     <X className="w-4 h-4" />
@@ -3842,18 +3914,46 @@ const FeedPage = () => {
 
             {fullscreenStream && showStreamFullscreen && (
                 <div
-                    className="fixed inset-0 z-[90] bg-black/90 flex items-center justify-center"
+                    className="fixed inset-0 z-[160] bg-black/95 flex items-center justify-center backdrop-blur-md"
                     onClick={() => setFullscreenStream(null)}
                 >
                     <div
-                        className="w-[92vw] h-[92vh] max-w-[1400px] max-h-[880px] rounded-2xl bg-black/80 border border-discord-border/60 shadow-2xl p-3"
+                        className="w-[96vw] h-[92vh] max-w-[1500px] rounded-2xl bg-[#0b0c11] border border-white/10 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.8)] overflow-hidden relative"
                         onClick={(event) => event.stopPropagation()}
                     >
-                        <VoiceVideoPlayer
-                            stream={fullscreenStream}
-                            muted
-                            className="w-full h-full object-contain rounded-xl bg-black"
-                        />
+                        <button
+                            onClick={() => setFullscreenStream(null)}
+                            className="absolute right-5 top-5 z-[170] w-10 h-10 rounded-full bg-black/50 text-white/70 hover:text-white hover:bg-black/70 flex items-center justify-center transition-all"
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+
+                        {(fullscreenStream instanceof MediaStream) ? (
+                            <div className="w-full h-full p-2">
+                                <VoiceVideoPlayer
+                                    stream={fullscreenStream}
+                                    muted
+                                    className="w-full h-full object-contain rounded-xl bg-black"
+                                />
+                            </div>
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center relative bg-[radial-gradient(circle_at_50%_0%,rgba(88,101,242,0.15),transparent_70%)]">
+                                <div className="relative">
+                                    <div className="w-56 h-56 rounded-full bg-discord-darkest border-4 border-white/5 flex items-center justify-center text-6xl font-bold text-white shadow-[0_0_80px_rgba(255,255,255,0.05)] overflow-hidden">
+                                        {fullscreenStream?.avatar ? (
+                                            <img src={fullscreenStream.avatar} className="w-full h-full object-cover" alt="" />
+                                        ) : (
+                                            (fullscreenStream?.title || 'U').charAt(0).toUpperCase()
+                                        )}
+                                    </div>
+                                    <div className="absolute -bottom-2 -right-2 w-10 h-10 rounded-full bg-discord-green border-8 border-[#0b0c11]" />
+                                </div>
+                                <div className="mt-10 text-center">
+                                    <h2 className="text-4xl font-extrabold text-white uppercase tracking-[0.1em]">{fullscreenStream?.title}</h2>
+                                    <p className="mt-3 text-xl text-discord-faint font-medium">{fullscreenStream?.subtitle || 'Active in Voice'}</p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

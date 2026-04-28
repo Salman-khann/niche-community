@@ -693,11 +693,11 @@ body::before {
 }
 
 .ui-panel {
-  background: var(--color-discord-dark);
+  background: var(--color-discord-chat);
 }
 
 .ui-topbar {
-  background: var(--color-discord-dark);
+  background: var(--color-discord-chat);
   border-bottom: 1px solid var(--color-discord-darkest);
 }
 

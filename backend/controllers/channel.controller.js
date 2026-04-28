@@ -3,6 +3,9 @@ import Community from "../models/community.model.js";
 import ChannelMessage from "../models/channelMessage.model.js";
 import ChannelMessageComment from "../models/channelMessageComment.model.js";
 import Post from "../models/post.model.js";
+import User from "../models/user.model.js";
+import { resolveChannelPermissions, PERMISSIONS } from "../utils/permissionUtils.js";
+import { logAction } from "../utils/auditUtils.js";
 
 const resolveRolePermissions = async (req) => {
     const roleIds = req.communityMembership?.roles || [];
@@ -23,8 +26,25 @@ const resolveRolePermissions = async (req) => {
 // ── Get all channels ────────────────────────────────────────────────────────
 export const getChannels = async (req, res) => {
     try {
-        const channels = await Channel.find({ communityId: req.communityId }).sort({ createdAt: 1 }).lean();
-        res.status(200).json({ success: true, channels });
+        const [channels, community, user] = await Promise.all([
+            Channel.find({ communityId: req.communityId }).sort({ position: 1, createdAt: 1 }).lean(),
+            Community.findById(req.communityId).select("categories roles owner").lean(),
+            User.findById(req.userId).select("memberships").lean()
+        ]);
+
+        if (!community || !user) {
+            return res.status(404).json({ success: false, message: "Community or User not found" });
+        }
+
+        // Filter channels based on VIEW_CHANNEL permission
+        const visibleChannels = channels.filter(channel => {
+            const perms = resolveChannelPermissions(user, community, channel);
+            return perms[PERMISSIONS.VIEW_CHANNEL] !== false; 
+            // In Discord, if it's not explicitly denied, it depends on base perms.
+            // But here, if the function returns the merged object, we just check the key.
+        });
+
+        res.status(200).json({ success: true, channels: visibleChannels, categories: community?.categories || [] });
     } catch (error) {
         console.log("Error in getChannels:", error);
         res.status(500).json({ success: false, message: "Server error" });
@@ -46,7 +66,7 @@ export const createChannel = async (req, res) => {
             });
         }
 
-        const { name, description, isPrivate, isPremium, type } = req.body;
+        const { name, description, isPrivate, isPremium, type, categoryId } = req.body;
 
         if (!name || !name.trim()) {
             return res.status(400).json({
@@ -70,6 +90,9 @@ export const createChannel = async (req, res) => {
             });
         }
 
+        const lastChannel = await Channel.findOne({ communityId: req.communityId, categoryId }).sort({ position: -1 }).select("position").lean();
+        const position = lastChannel ? lastChannel.position + 1 : 0;
+
         const channel = await Channel.create({
             communityId: req.communityId,
             name: normalizedName,
@@ -77,6 +100,14 @@ export const createChannel = async (req, res) => {
             type: ["text", "voice", "forum", "announcement"].includes(type) ? type : "text",
             isPrivate: isPrivate || false,
             isPremium: isPremium || false,
+            categoryId: categoryId || null,
+            position,
+        });
+
+        await logAction(req.communityId, req.userId, null, 'channel_create', `Created channel #${normalizedName}`, {
+            channelId: channel._id,
+            channelName: normalizedName,
+            type: channel.type
         });
 
         res.status(201).json({
@@ -94,15 +125,24 @@ export const createChannel = async (req, res) => {
 export const joinChannel = async (req, res) => {
     try {
         const { id } = req.params;
-        const channel = req.targetChannel || await Channel.findOne({
-            _id: id,
-            communityId: req.communityId,
-        }).lean();
+        const [channel, community, user] = await Promise.all([
+            req.targetChannel || Channel.findOne({ _id: id, communityId: req.communityId }).lean(),
+            Community.findById(req.communityId).select("categories roles owner").lean(),
+            User.findById(req.userId).select("memberships").lean()
+        ]);
 
-        if (!channel) {
+        if (!channel || !community || !user) {
             return res.status(404).json({
                 success: false,
-                message: "Channel not found",
+                message: "Channel, Community, or User not found",
+            });
+        }
+
+        const perms = resolveChannelPermissions(user, community, channel);
+        if (perms[PERMISSIONS.VIEW_CHANNEL] === false) {
+            return res.status(403).json({
+                success: false,
+                message: "You do not have permission to view this channel",
             });
         }
 
@@ -110,6 +150,7 @@ export const joinChannel = async (req, res) => {
             success: true,
             message: "Channel access granted",
             channel,
+            permissions: perms, // Optionally send permissions to frontend
         });
     } catch (error) {
         console.log("Error in joinChannel:", error);
@@ -168,6 +209,11 @@ export const updateChannel = async (req, res) => {
             });
         }
 
+        await logAction(req.communityId, req.userId, null, 'channel_update', `Updated channel #${normalizedName}`, {
+            channelId: channel._id,
+            channelName: normalizedName
+        });
+
         res.status(200).json({ success: true, channel });
     } catch (error) {
         console.log("Error in updateChannel:", error);
@@ -208,9 +254,72 @@ export const deleteChannel = async (req, res) => {
         await Post.updateMany({ channelId: id }, { $set: { channelId: null } });
         await Channel.findByIdAndDelete(id);
 
+        await logAction(req.communityId, req.userId, null, 'channel_delete', `Deleted channel #${channel.name}`, {
+            channelId: id,
+            channelName: channel.name
+        });
+
         res.status(200).json({ success: true, message: "Channel deleted", channelId: id });
     } catch (error) {
         console.log("Error in deleteChannel:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── Sync channel permissions ────────────────────────────────────────────────
+export const syncChannelPermissions = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { sync } = req.body; // Boolean
+
+        const rolePermissions = await resolveRolePermissions(req);
+        const canManage = ["admin", "moderator"].includes(req.communityRole) || rolePermissions.manageChannels;
+        if (!canManage) {
+            return res.status(403).json({ success: false, message: "No permission" });
+        }
+
+        const channel = await Channel.findOneAndUpdate(
+            { _id: id, communityId: req.communityId },
+            { isSynced: !!sync },
+            { new: true }
+        );
+
+        if (!channel) return res.status(404).json({ success: false, message: "Channel not found" });
+
+        res.status(200).json({ success: true, channel });
+    } catch (error) {
+        console.log("Error in syncChannelPermissions:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── Update channel overwrites ───────────────────────────────────────────────
+export const updateChannelOverwrites = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { overwrites } = req.body;
+
+        const rolePermissions = await resolveRolePermissions(req);
+        const canManage = ["admin", "moderator"].includes(req.communityRole) || rolePermissions.manageChannels;
+        if (!canManage) {
+            return res.status(403).json({ success: false, message: "No permission" });
+        }
+
+        const channel = await Channel.findOneAndUpdate(
+            { _id: id, communityId: req.communityId },
+            { 
+                permissionOverwrites: overwrites,
+                isSynced: false // Automatically unsync if overwrites are manually set? 
+                // Discord does this if you change them while synced.
+            },
+            { new: true }
+        );
+
+        if (!channel) return res.status(404).json({ success: false, message: "Channel not found" });
+
+        res.status(200).json({ success: true, channel });
+    } catch (error) {
+        console.log("Error in updateChannelOverwrites:", error);
         res.status(500).json({ success: false, message: "Server error" });
     }
 };

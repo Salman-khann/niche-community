@@ -19,7 +19,14 @@ const auditLogSchema = new mongoose.Schema({
     },
     actionType: {
         type: String,
-        enum: ['warn', 'suspend', 'ban', 'unban', 'kick', 'delete_post', 'delete_message', 'blocklist_add', 'blocklist_remove', 'dismiss'],
+        enum: [
+            'warn', 'suspend', 'ban', 'unban', 'kick', 
+            'delete_post', 'delete_message', 'blocklist_add', 'blocklist_remove', 'dismiss',
+            'channel_create', 'channel_update', 'channel_delete',
+            'category_create', 'category_update', 'category_delete',
+            'role_create', 'role_update', 'role_delete',
+            'community_update', 'invite_code_create', 'invite_code_delete'
+        ],
         required: true,
     },
     reason: {

@@ -23,6 +23,8 @@ const channelMessageSchema = new mongoose.Schema({
   flagReason: { type: String, default: "" },
   flagReasons: { type: [String], default: [] },
   flagSource: { type: String, enum: ["user", "auto", "mixed", ""], default: "" },
+  replyTo: { type: mongoose.Schema.Types.ObjectId, ref: "ChannelMessage", default: null },
+  isEdited: { type: Boolean, default: false },
 }, { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } });
 
 channelMessageSchema.index({ channelId: 1, createdAt: 1 });

@@ -168,7 +168,14 @@ export const addParticipants = async (req, res) => {
 export const getMessages = async (req, res) => {
     try {
         const { threadId } = req.params;
-        const messages = await DmMessage.find({ threadId }).sort({ createdAt: 1 }).lean();
+        const messages = await DmMessage.find({ threadId })
+            .sort({ createdAt: 1 })
+            .populate({
+                path: 'replyTo',
+                select: 'content senderId',
+                populate: { path: 'senderId', select: 'name profileId' }
+            })
+            .lean();
         res.status(200).json({ success: true, messages });
     } catch (error) {
         console.log("Error in getMessages:", error);
@@ -179,7 +186,7 @@ export const getMessages = async (req, res) => {
 export const sendMessage = async (req, res) => {
     try {
         const { threadId } = req.params;
-        const { content, mediaURLs } = req.body;
+        const { content, mediaURLs, replyTo } = req.body;
         if ((!content || !content.trim()) && (!mediaURLs || mediaURLs.length === 0)) {
             return res.status(400).json({ success: false, message: "Message or media is required" });
         }
@@ -188,7 +195,17 @@ export const sendMessage = async (req, res) => {
             senderId: req.userId,
             content: content?.trim() || "",
             mediaURLs: mediaURLs || [],
+            replyTo: replyTo || null,
         });
+
+        if (message.replyTo) {
+            await message.populate({
+                path: 'replyTo',
+                select: 'content senderId',
+                populate: { path: 'senderId', select: 'name profileId' }
+            });
+        }
+
         await DmThread.findByIdAndUpdate(threadId, { lastMessageAt: new Date() });
 
         res.status(201).json({ success: true, message });
@@ -199,6 +216,51 @@ export const sendMessage = async (req, res) => {
         } catch { }
     } catch (error) {
         console.log("Error in sendMessage:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+export const editMessage = async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const { content } = req.body;
+        const message = await DmMessage.findById(messageId);
+        if (!message) {
+            return res.status(404).json({ success: false, message: "Message not found" });
+        }
+
+        // Enforcement: 15-minute edit limit
+        const EDIT_LIMIT_MS = 15 * 60 * 1000;
+        const timeElapsed = Date.now() - new Date(message.createdAt).getTime();
+        if (timeElapsed > EDIT_LIMIT_MS) {
+            return res.status(403).json({ success: false, message: "You can no longer edit this message (15 minute limit reached)" });
+        }
+
+        if (message.senderId.toString() !== req.userId.toString()) {
+            return res.status(403).json({ success: false, message: "Not authorized" });
+        }
+        if (!content || !content.trim()) {
+            return res.status(400).json({ success: false, message: "Content is required" });
+        }
+        message.content = content.trim();
+        message.isEdited = true;
+        await message.save();
+
+        if (message.replyTo) {
+            await message.populate({
+                path: 'replyTo',
+                select: 'content senderId',
+                populate: { path: 'senderId', select: 'name profileId' }
+            });
+        }
+
+        res.status(200).json({ success: true, message });
+        try {
+            const { io } = await import("../socket.js");
+            io.to(`dm:${message.threadId}`).emit("dm:message_edited", message);
+        } catch { }
+    } catch (error) {
+        console.log("Error in editMessage:", error);
         res.status(500).json({ success: false, message: "Server error" });
     }
 };
@@ -246,6 +308,27 @@ export const leaveThread = async (req, res) => {
         res.status(200).json({ success: true, thread: shaped });
     } catch (error) {
         console.log("Error in leaveThread:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+export const deleteDmMessage = async (req, res) => {
+    try {
+        const { threadId, messageId } = req.params;
+        const message = await DmMessage.findById(messageId);
+        if (!message || message.threadId.toString() !== threadId) {
+            return res.status(404).json({ success: false, message: "Message not found" });
+        }
+        if (message.senderId.toString() !== req.userId.toString()) {
+            return res.status(403).json({ success: false, message: "Not authorized" });
+        }
+        await DmMessage.findByIdAndDelete(messageId);
+        res.status(200).json({ success: true, message: "Message deleted" });
+        try {
+            const { io } = await import("../socket.js");
+            io.to(`dm:${threadId}`).emit("dm:message:deleted", { messageId });
+        } catch { }
+    } catch (error) {
+        console.log("Error in deleteDmMessage:", error);
         res.status(500).json({ success: false, message: "Server error" });
     }
 };

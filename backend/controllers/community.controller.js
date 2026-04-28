@@ -13,6 +13,7 @@ import InviteRequest from "../models/inviteRequest.model.js";
 import Notification from "../models/notification.model.js";
 import { io } from "../socket.js";
 import { sendInviteEmail } from "../mailtrap/emails.js";
+import { logAction } from "../utils/auditUtils.js";
 
 // ── Helper: generate CIRCLE-XXXX-XXXX code ──────────────────────────────────
 const generateCode = () => {
@@ -338,6 +339,10 @@ export const createCommunity = async (req, res) => {
             template: template || "custom",
             owner: req.userId,
             members: [req.userId],
+            categories: [
+                { name: "TEXT CHANNELS", position: 0 },
+                { name: "VOICE CHANNELS", position: 1 }
+            ],
         });
 
         // Promote user to admin & grant invite-verified access + membership
@@ -352,53 +357,56 @@ export const createCommunity = async (req, res) => {
             .select("-password")
             .populate("memberships.communityId", "name slug icon");
 
+        const textCategoryId = community.categories[0]._id;
+        const voiceCategoryId = community.categories[1]._id;
+
         const templateChannels = {
             gaming: [
-                { name: "lobby", description: "General game chat", type: "text" },
-                { name: "lfg", description: "Find teammates and squads", type: "text" },
-                { name: "1v1-text", description: "Challenge and setup duels", type: "text" },
-                { name: "highlights", description: "Clips, wins, and hype", type: "text" },
-                { name: "general-voice", description: "Main voice channel", type: "voice" },
-                { name: "1v1-voice", description: "Duel voice channel", type: "voice" },
-                { name: "squad-voice", description: "Team voice channel", type: "voice" },
+                { name: "lobby", description: "General game chat", type: "text", categoryId: textCategoryId },
+                { name: "lfg", description: "Find teammates and squads", type: "text", categoryId: textCategoryId },
+                { name: "1v1-text", description: "Challenge and setup duels", type: "text", categoryId: textCategoryId },
+                { name: "highlights", description: "Clips, wins, and hype", type: "text", categoryId: textCategoryId },
+                { name: "general-voice", description: "Main voice channel", type: "voice", categoryId: voiceCategoryId },
+                { name: "1v1-voice", description: "Duel voice channel", type: "voice", categoryId: voiceCategoryId },
+                { name: "squad-voice", description: "Team voice channel", type: "voice", categoryId: voiceCategoryId },
             ],
             friends: [
-                { name: "hangout", description: "Daily chat and updates", type: "text" },
-                { name: "memes", description: "Share memes and laughs", type: "text" },
-                { name: "plans", description: "Plan meetups and games", type: "text" },
-                { name: "chill-voice", description: "Casual voice hangouts", type: "voice" },
-                { name: "party-voice", description: "Group voice room", type: "voice" },
+                { name: "hangout", description: "Daily chat and updates", type: "text", categoryId: textCategoryId },
+                { name: "memes", description: "Share memes and laughs", type: "text", categoryId: textCategoryId },
+                { name: "plans", description: "Plan meetups and games", type: "text", categoryId: textCategoryId },
+                { name: "chill-voice", description: "Casual voice hangouts", type: "voice", categoryId: voiceCategoryId },
+                { name: "party-voice", description: "Group voice room", type: "voice", categoryId: voiceCategoryId },
             ],
             study: [
-                { name: "study-chat", description: "Study discussion", type: "text" },
-                { name: "resources", description: "Notes, links, and guides", type: "text" },
-                { name: "assignments", description: "Homework and deadlines", type: "text" },
-                { name: "focus-room", description: "Quiet focus voice", type: "voice" },
-                { name: "study-group", description: "Group study voice", type: "voice" },
+                { name: "study-chat", description: "Study discussion", type: "text", categoryId: textCategoryId },
+                { name: "resources", description: "Notes, links, and guides", type: "text", categoryId: textCategoryId },
+                { name: "assignments", description: "Homework and deadlines", type: "text", categoryId: textCategoryId },
+                { name: "focus-room", description: "Quiet focus voice", type: "voice", categoryId: voiceCategoryId },
+                { name: "study-group", description: "Group study voice", type: "voice", categoryId: voiceCategoryId },
             ],
             school: [
-                { name: "announcements", description: "Club announcements", type: "announcement" },
-                { name: "club-chat", description: "General club chat", type: "text" },
-                { name: "events", description: "Event planning", type: "text" },
-                { name: "resources", description: "Shared resources", type: "text" },
-                { name: "meetings", description: "Club meetings voice", type: "voice" },
+                { name: "announcements", description: "Club announcements", type: "announcement", categoryId: textCategoryId },
+                { name: "club-chat", description: "General club chat", type: "text", categoryId: textCategoryId },
+                { name: "events", description: "Event planning", type: "text", categoryId: textCategoryId },
+                { name: "resources", description: "Shared resources", type: "text", categoryId: textCategoryId },
+                { name: "meetings", description: "Club meetings voice", type: "voice", categoryId: voiceCategoryId },
             ],
         };
 
         const kindChannels = {
             friends: [
-                { name: "friends-chat", description: "Chat with your friends", type: "text" },
-                { name: "media", description: "Photos and clips", type: "text" },
-                { name: "game-night", description: "Plan game nights", type: "text" },
-                { name: "friends-voice", description: "Friends voice channel", type: "voice" },
-                { name: "hangout-voice", description: "Casual hangout voice", type: "voice" },
+                { name: "friends-chat", description: "Chat with your friends", type: "text", categoryId: textCategoryId },
+                { name: "media", description: "Photos and clips", type: "text", categoryId: textCategoryId },
+                { name: "game-night", description: "Plan game nights", type: "text", categoryId: textCategoryId },
+                { name: "friends-voice", description: "Friends voice channel", type: "voice", categoryId: voiceCategoryId },
+                { name: "hangout-voice", description: "Casual hangout voice", type: "voice", categoryId: voiceCategoryId },
             ],
             community: [
-                { name: "welcome", description: "Start here", type: "text" },
-                { name: "announcements", description: "Community updates", type: "announcement" },
-                { name: "general", description: "Community chat", type: "text" },
-                { name: "events", description: "Upcoming events", type: "text" },
-                { name: "general-voice", description: "Community voice", type: "voice" },
+                { name: "welcome", description: "Start here", type: "text", categoryId: textCategoryId },
+                { name: "announcements", description: "Community updates", type: "announcement", categoryId: textCategoryId },
+                { name: "general", description: "Community chat", type: "text", categoryId: textCategoryId },
+                { name: "events", description: "Upcoming events", type: "text", categoryId: textCategoryId },
+                { name: "general-voice", description: "Community voice", type: "voice", categoryId: voiceCategoryId },
             ],
         };
 
@@ -406,16 +414,19 @@ export const createCommunity = async (req, res) => {
             templateChannels[normalizedTemplate] ||
             kindChannels[normalizedKind] ||
             [
-                { name: "general", description: "General chat", type: "text" },
-                { name: "announcements", description: "Official announcements", type: "announcement" },
-                { name: "general-voice", description: "General voice channel", type: "voice" },
+                { name: "general", description: "General chat", type: "text", categoryId: textCategoryId },
+                { name: "announcements", description: "Official announcements", type: "announcement", categoryId: textCategoryId },
+                { name: "general-voice", description: "General voice channel", type: "voice", categoryId: voiceCategoryId },
             ];
+
         await Channel.insertMany(
-            defaultChannels.map((ch) => ({
+            defaultChannels.map((ch, idx) => ({
                 communityId: community._id,
                 name: ch.name,
                 description: ch.description,
                 type: ch.type,
+                categoryId: ch.categoryId,
+                position: idx,
             }))
         );
 
@@ -554,9 +565,11 @@ export const getMembers = async (req, res) => {
             const isSuspended = membership?.suspensionEndDate
                 ? new Date(membership.suspensionEndDate) > new Date()
                 : false;
+            const username = u.email ? u.email.split('@')[0] : (u.name || 'user').toLowerCase();
             return {
                 _id: u._id,
                 name: u.name,
+                username,
                 email: u.email,
                 globalRole: u.role,
                 communityRole: membership?.role ?? 'member',
@@ -835,6 +848,12 @@ export const createRole = async (req, res) => {
         await community.save();
 
         const created = community.roles[community.roles.length - 1];
+        
+        await logAction(id, req.userId, null, 'role_create', '', { 
+            roleName: created.name, 
+            roleId: created._id 
+        });
+
         res.status(201).json({ success: true, role: created });
     } catch (error) {
         console.log("Error in createRole:", error);
@@ -883,6 +902,12 @@ export const updateRole = async (req, res) => {
         if (mentionable !== undefined) role.mentionable = mentionable;
         if (position !== undefined) role.position = position;
         await community.save();
+
+        await logAction(id, req.userId, null, 'role_update', '', { 
+            roleName: role.name, 
+            roleId: role._id,
+            changes: { name, permissions: !!permissions, color, hoist, mentionable, position }
+        });
 
         res.status(200).json({ success: true, role });
     } catch (error) {
@@ -956,9 +981,14 @@ export const deleteRole = async (req, res) => {
             return res.status(404).json({ success: false, message: "Role not found" });
         }
 
+        const targetRole = communityForPermissions.roles.find(r => r._id.toString() === roleId);
+        const roleName = targetRole?.name || 'unknown';
+
         await Community.findByIdAndUpdate(id, {
             $pull: { roles: { _id: roleId } },
         });
+
+        await logAction(id, req.userId, null, 'role_delete', '', { roleId, roleName });
 
         const users = await User.find({ 'memberships.communityId': id });
         await Promise.all(
@@ -1339,6 +1369,10 @@ export const updateCommunityProfile = async (req, res) => {
 
         await community.save();
 
+        await logAction(id, req.userId, null, 'community_update', '', { 
+            changes: { name, icon: !!icon, bannerColor, traits, profileDescription: !!profileDescription }
+        });
+
         res.status(200).json({
             success: true,
             message: "Server profile updated",
@@ -1401,6 +1435,8 @@ export const deleteCommunity = async (req, res) => {
         await Post.deleteMany({ communityId: id });
 
         await AuditLog.deleteMany({ communityId: id });
+        await InviteRequest.deleteMany({ communityId: id });
+        await Notification.deleteMany({ 'meta.communityId': id });
 
         await User.updateMany(
             { "memberships.communityId": id },
@@ -1445,4 +1481,124 @@ export const updateNotificationSettings = async (req, res) => {
     console.error('Update Notification Settings Error:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
+};
+
+// ── CATEGORIES ─────────────────────────────────────────────────────────────
+
+export const createCategory = async (req, res) => {
+    const { id } = req.params;
+    const { name } = req.body;
+
+    try {
+        if (id !== req.communityId) return res.status(403).json({ success: false, message: "Community ID mismatch" });
+        if (!["admin", "moderator"].includes(req.communityRole)) return res.status(403).json({ success: false, message: "No permission" });
+
+        const community = await Community.findById(id);
+        if (!community) return res.status(404).json({ success: false, message: "Community not found" });
+
+        const position = community.categories.length;
+        community.categories.push({ name, position });
+        await community.save();
+
+        const created = community.categories[community.categories.length - 1];
+        
+        await logAction(id, req.userId, null, 'category_create', `Created category ${name}`, { 
+            categoryId: created._id,
+            categoryName: name
+        });
+
+        res.status(201).json({ success: true, category: created });
+    } catch (error) {
+        console.log("Error in createCategory:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+export const updateCategory = async (req, res) => {
+    const { id, categoryId } = req.params;
+    const { name, position } = req.body;
+
+    try {
+        if (id !== req.communityId) return res.status(403).json({ success: false, message: "Community ID mismatch" });
+        if (!["admin", "moderator"].includes(req.communityRole)) return res.status(403).json({ success: false, message: "No permission" });
+
+        const community = await Community.findById(id);
+        if (!community) return res.status(404).json({ success: false, message: "Community not found" });
+
+        const category = community.categories.id(categoryId);
+        if (!category) return res.status(404).json({ success: false, message: "Category not found" });
+
+        if (name) category.name = name;
+        if (typeof position === "number") category.position = position;
+
+        await community.save();
+
+        await logAction(id, req.userId, null, 'category_update', '', { 
+            categoryId: category._id,
+            categoryName: category.name,
+            changes: { name, position }
+        });
+
+        res.status(200).json({ success: true, category });
+    } catch (error) {
+        console.log("Error in updateCategory:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+export const deleteCategory = async (req, res) => {
+    const { id, categoryId } = req.params;
+
+    try {
+        if (id !== req.communityId) return res.status(403).json({ success: false, message: "Community ID mismatch" });
+        if (req.communityRole !== "admin") return res.status(403).json({ success: false, message: "Only owners can delete categories" });
+
+        const community = await Community.findById(id);
+        if (!community) return res.status(404).json({ success: false, message: "Community not found" });
+
+        const category = community.categories.id(categoryId);
+        const categoryName = category?.name || 'unknown';
+
+        community.categories.pull(categoryId);
+        
+        // Move channels to "Uncategorized" (null)
+        await Channel.updateMany({ communityId: id, categoryId }, { $set: { categoryId: null } });
+
+        await community.save();
+
+        await logAction(id, req.userId, null, 'category_delete', '', { 
+            categoryId,
+            categoryName
+        });
+
+        res.status(200).json({ success: true, message: "Category deleted" });
+    } catch (error) {
+        console.log("Error in deleteCategory:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+export const updateCategoryOverwrites = async (req, res) => {
+    const { id, categoryId } = req.params;
+    const { overwrites } = req.body;
+
+    try {
+        if (id !== req.communityId) return res.status(403).json({ success: false, message: "Community ID mismatch" });
+        if (!["admin", "moderator"].includes(req.communityRole)) return res.status(403).json({ success: false, message: "No permission" });
+
+        const community = await Community.findById(id);
+        if (!community) return res.status(404).json({ success: false, message: "Community not found" });
+
+        const category = community.categories.id(categoryId);
+        if (!category) return res.status(404).json({ success: false, message: "Category not found" });
+
+        // Update overwrites
+        category.permissionOverwrites = overwrites;
+
+        await community.save();
+        res.status(200).json({ success: true, category });
+    } catch (error) {
+        console.log("Error in updateCategoryOverwrites:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
 };

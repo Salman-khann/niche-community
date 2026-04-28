@@ -34,6 +34,13 @@ const roleSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 }, { _id: true });
 
+const permissionOverwriteSchema = new mongoose.Schema({
+  id: { type: mongoose.Schema.Types.ObjectId, required: true }, // Role ID or User ID
+  type: { type: String, enum: ["role", "member"], required: true },
+  allow: { type: [String], default: [] }, // Array of permission keys to allow
+  deny: { type: [String], default: [] },  // Array of permission keys to deny
+}, { _id: true });
+
 const communitySchema = new mongoose.Schema({
   name: { type: String, required: true },
   slug: { type: String, required: true, unique: true },
@@ -79,6 +86,17 @@ const communitySchema = new mongoose.Schema({
       createdAt: { type: Date, default: Date.now },
     }],
     default: [],
+  },
+  categories: {
+    type: [{
+      name: { type: String, required: true },
+      position: { type: Number, default: 0 },
+      permissionOverwrites: { type: [permissionOverwriteSchema], default: [] },
+    }],
+    default: [
+      { name: "TEXT CHANNELS", position: 0, permissionOverwrites: [] },
+      { name: "VOICE CHANNELS", position: 1, permissionOverwrites: [] }
+    ],
   },
 }, { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } });
 

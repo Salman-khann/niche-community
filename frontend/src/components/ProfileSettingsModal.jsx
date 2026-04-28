@@ -38,7 +38,7 @@ const BILLING_SECTIONS = [
 
 const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const navigate = useNavigate();
-    const { logout, changePassword, getTwoFactorSetup, enableTwoFactor, disableTwoFactor } = useAuthStore();
+    const { logout, changePassword, getTwoFactorSetup, enableTwoFactor, disableTwoFactor, regenerateRecoveryCodes, logoutAll } = useAuthStore();
     const { prefs: notificationPrefs, fetchPrefs: fetchNotificationPrefs, updatePrefs: updateNotificationPrefs } = useNotificationStore();
     const storedPreferences = useMemo(() => getUserPreferences(), []);
     const initial = useMemo(() => ({
@@ -62,6 +62,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const [twoFactorCode, setTwoFactorCode] = useState('');
     const [twoFactorError, setTwoFactorError] = useState('');
     const [twoFactorMessage, setTwoFactorMessage] = useState('');
+    const [recoveryCodes, setRecoveryCodes] = useState([]);
     const [twoFactorBusy, setTwoFactorBusy] = useState(false);
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -77,8 +78,6 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const [cameraPreview, setCameraPreview] = useState(storedPreferences.voice.cameraPreview ?? true);
     const [autoplayMedia, setAutoplayMedia] = useState(storedPreferences.voice.autoplayMedia ?? true);
     const [cameraDeviceId, setCameraDeviceId] = useState(storedPreferences.voice.cameraDeviceId || '');
-    const [inputProfile, setInputProfile] = useState('custom');
-    const [autoSensitivity, setAutoSensitivity] = useState(true);
     const [pttKeybind, setPttKeybind] = useState('No Keybind Set');
     const [isRecordingKeybind, setIsRecordingKeybind] = useState(false);
     const [cameraDevices, setCameraDevices] = useState([]);
@@ -92,7 +91,6 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const [videoStream, setVideoStream] = useState(null);
     const videoPreviewRef = useRef(null);
     const micTestRef = useRef({ audioContext: null, analyser: null, source: null, stream: null, rafId: null });
-    const [cameraDevicesLoading, setCameraDevicesLoading] = useState(false);
     const [appearanceTheme, setAppearanceTheme] = useState(storedPreferences.appearance.theme || 'dark');
     const [reduceMotion, setReduceMotion] = useState(storedPreferences.appearance.reduceMotion ?? false);
     const [textSize, setTextSize] = useState(storedPreferences.accessibility.textSize || 'medium');
@@ -140,9 +138,11 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         setTwoFactorCode('');
         setTwoFactorError('');
         setTwoFactorMessage('');
+        setRecoveryCodes([]);
         setNotificationError('');
         setNotificationMessage('');
         fetchNotificationPrefs().catch(() => { });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, initial]);
 
     useEffect(() => {
@@ -156,7 +156,6 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                 setSpeakerDevices([]);
                 return;
             }
-            setCameraDevicesLoading(true);
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 if (cancelled) return;
@@ -192,8 +191,6 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                     setMicrophoneDevices([]);
                     setSpeakerDevices([]);
                 }
-            } finally {
-                if (!cancelled) setCameraDevicesLoading(false);
             }
         };
 
@@ -208,6 +205,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
             cancelled = true;
             navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, cameraDeviceId]);
 
     useEffect(() => {
@@ -262,6 +260,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                 micTestRef.current.audioContext.close();
             }
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -394,7 +393,9 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         try {
             await logout();
             onClose?.();
-        } catch { }
+        } catch {
+            // ignore
+        }
     };
 
     const handleBillingClick = (sectionId) => {
@@ -426,8 +427,9 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         setTwoFactorError('');
         setTwoFactorMessage('');
         try {
-            await enableTwoFactor(twoFactorSetup.secret, twoFactorCode);
-            setTwoFactorMessage('Two-factor authentication is now enabled.');
+            const data = await enableTwoFactor(twoFactorSetup.secret, twoFactorCode);
+            setTwoFactorMessage('Two-factor authentication is now enabled. Please save your recovery codes!');
+            setRecoveryCodes(data.recoveryCodes || []);
             setTwoFactorSetup(null);
             setTwoFactorCode('');
         } catch (error) {
@@ -448,6 +450,34 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
             setTwoFactorSetup(null);
         } catch (error) {
             setTwoFactorError(error.message || 'Unable to disable 2FA');
+        } finally {
+            setTwoFactorBusy(false);
+        }
+    };
+
+    const handleRegenerateRecoveryCodes = async () => {
+        setTwoFactorBusy(true);
+        setTwoFactorError('');
+        setTwoFactorMessage('');
+        try {
+            const data = await regenerateRecoveryCodes();
+            setRecoveryCodes(data.recoveryCodes || []);
+            setTwoFactorMessage('New recovery codes generated.');
+        } catch (error) {
+            setTwoFactorError(error.message || 'Unable to regenerate recovery codes');
+        } finally {
+            setTwoFactorBusy(false);
+        }
+    };
+
+    const handleLogoutAll = async () => {
+        if (!window.confirm('Are you sure you want to log out of all other devices? This will invalidate all active sessions.')) return;
+        setTwoFactorBusy(true);
+        try {
+            await logoutAll();
+            setTwoFactorMessage('All other devices have been logged out.');
+        } catch (error) {
+            setTwoFactorError(error.message || 'Unable to logout from all devices');
         } finally {
             setTwoFactorBusy(false);
         }
@@ -1403,6 +1433,78 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                                         Use the same code to confirm setup or disable 2FA.
                                                     </p>
                                                 </div>
+                                            </div>
+                                        </div>
+
+                                        {user?.twoFactorEnabled && (
+                                            <div className="mt-8 pt-8 border-t border-discord-border/50">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <div>
+                                                        <h4 className="text-sm font-semibold text-white">Recovery Codes</h4>
+                                                        <p className="text-xs text-discord-faint mt-1">
+                                                            If you lose your phone, you can use these codes to log in. Each code can only be used once.
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleRegenerateRecoveryCodes}
+                                                        disabled={twoFactorBusy}
+                                                        className="text-xs font-semibold text-blurple hover:underline"
+                                                    >
+                                                        Regenerate Codes
+                                                    </button>
+                                                </div>
+
+                                                {recoveryCodes.length > 0 ? (
+                                                    <div className="rounded-2xl border border-discord-border/60 bg-discord-darkest/70 p-4">
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {recoveryCodes.map((code, idx) => (
+                                                                <div key={idx} className="font-mono text-xs text-white bg-discord-darker px-3 py-1.5 rounded border border-discord-border/40 select-all transition-all hover:bg-discord-border/10">
+                                                                    {code}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <button 
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                const text = recoveryCodes.join('\n');
+                                                                const blob = new Blob([`CIRCLECORE RECOVERY CODES\nAccount: ${user?.email}\nGenerated: ${new Date().toLocaleString()}\n\n${text}\n\nKeep these secret and store them in a safe place.`], { type: 'text/plain' });
+                                                                const url = URL.createObjectURL(blob);
+                                                                const a = document.createElement('a');
+                                                                a.href = url;
+                                                                a.download = `circlecore_recovery_codes_${user?._id?.slice(-4)}.txt`;
+                                                                a.click();
+                                                                URL.revokeObjectURL(url);
+                                                            }}
+                                                            className="mt-4 w-full py-2 rounded-lg bg-discord-darker hover:bg-discord-border-light/20 text-xs font-semibold text-white transition-colors"
+                                                        >
+                                                            Download Codes (.txt)
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-6 rounded-2xl border border-dashed border-discord-border/60">
+                                                        <p className="text-xs text-discord-faint">No codes to display. Generate new ones above if needed.</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <div className="mt-8 pt-8 border-t border-discord-border/50">
+                                            <h4 className="text-sm font-semibold text-white mb-2">Session Management</h4>
+                                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                                <div className="flex-1">
+                                                    <p className="text-xs text-discord-faint">
+                                                        Logged in as <b>{user?.email}</b>. If you suspect your account has been compromised, you can terminate all other active sessions across different devices.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleLogoutAll}
+                                                    disabled={twoFactorBusy}
+                                                    className="shrink-0 px-4 py-2 rounded-lg border border-discord-red/40 bg-discord-red/5 text-discord-red text-sm font-semibold hover:bg-discord-red/10 transition-colors disabled:opacity-50"
+                                                >
+                                                    Logout All Other Devices
+                                                </button>
                                             </div>
                                         </div>
                                     </div>

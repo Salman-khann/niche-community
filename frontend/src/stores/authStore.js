@@ -304,6 +304,38 @@ export const useAuthStore = create((set) => ({
             throw error;
         }
     },
+    
+    regenerateRecoveryCodes: async () => {
+        set({ isLoading: true, error: null });
+        try {
+            const res = await authFetch(`${API_URL}/2fa/recovery-codes`, {
+                method: 'POST',
+            });
+            const data = await safeReadJson(res);
+            if (!res.ok) throw new Error(data.message || 'Failed to regenerate recovery codes');
+            set({ isLoading: false });
+            return data;
+        } catch (error) {
+            set({ error: error.message, isLoading: false });
+            throw error;
+        }
+    },
+
+    logoutAll: async () => {
+        set({ isLoading: true, error: null });
+        try {
+            const res = await authFetch(`${API_URL}/logout-all`, {
+                method: 'POST',
+            });
+            const data = await safeReadJson(res);
+            if (!res.ok) throw new Error(data.message || 'Failed to logout from all devices');
+            set({ isLoading: false });
+            return data;
+        } catch (error) {
+            set({ error: error.message, isLoading: false });
+            throw error;
+        }
+    },
 
     startAppleLogin: (inviteCode, flow = 'login') => {
         startOAuthRedirect('apple', inviteCode, flow);

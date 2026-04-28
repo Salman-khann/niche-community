@@ -19,8 +19,9 @@ import EventsModal from './EventsModal';
 import EventCreateModal from './EventCreateModal';
 import EventDetailsModal from './EventDetailsModal';
 import VoiceConnectedBar from './VoiceConnectedBar';
+import CategorySettingsModal from './CategorySettingsModal';
 
-const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsClick, onVoiceChannelClick, onVoiceChannelDoubleClick, onOpenChannelSettings, voiceState, animateClassName = '' }) => {
+const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsClick, onVoiceChannelClick, onVoiceChannelDoubleClick, onOpenChannelSettings, voiceState, animateClassName = '', roles = [] }) => {
     const navigate = useNavigate();
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showServerMenu, setShowServerMenu] = useState(false);
@@ -28,17 +29,22 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
     const [showEventsModal, setShowEventsModal] = useState(false);
     const [showEventCreateModal, setShowEventCreateModal] = useState(false);
     const [editingEvent, setEditingEvent] = useState(null);
+    const [showCategorySettings, setShowCategorySettings] = useState(false);
+    const [selectedCategory, setSelectedCategory] = useState(null);
     const [showEventDetails, setShowEventDetails] = useState(false);
     const [activeEvent, setActiveEvent] = useState(null);
     const [dismissedLiveEventId, setDismissedLiveEventId] = useState(null);
     const [isTextChannelsOpen, setIsTextChannelsOpen] = useState(true);
     const [isVoiceChannelsOpen, setIsVoiceChannelsOpen] = useState(true);
+    const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState(true);
     const [createError, setCreateError] = useState('');
     const [hideMutedChannels, setHideMutedChannels] = useState(false);
     const [showNotificationSettings, setShowNotificationSettings] = useState(false);
     const [showPrivacySettings, setShowPrivacySettings] = useState(false);
+    const [collapsedCategories, setCollapsedCategories] = useState({});
+    const [selectedCategoryId, setSelectedCategoryId] = useState(null);
 
-    const { channels, activeChannelId, fetchChannels, createChannel, setActiveChannel, isLoading } = useChannelStore();
+    const { channels, categories, activeChannelId, fetchChannels, createChannel, setActiveChannel, isLoading } = useChannelStore();
     const { user } = useAuthStore();
     const { profile } = useProfileStore();
     const { activeCommunityId } = useWorkspaceStore();
@@ -117,13 +123,39 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
         return active || null;
     }, [events, dismissedLiveEventId]);
 
-    const handleCreate = async ({ name, type, isPrivate, isPremium }) => {
+    const handleCreate = async ({ name, type, isPrivate, isPremium, categoryId }) => {
         setCreateError('');
         try {
-            await createChannel(name, { type, isPrivate, isPremium });
+            await createChannel(name, { type, isPrivate, isPremium, categoryId });
             setShowCreateModal(false);
         } catch (err) {
             setCreateError(err.message);
+        }
+    };
+
+    const handleUpdateCategory = async (updates) => {
+        if (!activeCommunityId || !selectedCategory) return;
+        try {
+            // Update name if changed
+            if (updates.name && updates.name !== selectedCategory.name) {
+                await apiFetch(`/communities/${activeCommunityId}/categories/${selectedCategory._id}`, {
+                    method: 'PUT',
+                    body: { name: updates.name }
+                });
+            }
+            // Update overwrites
+            if (updates.permissionOverwrites) {
+                await apiFetch(`/communities/${activeCommunityId}/categories/${selectedCategory._id}/overwrites`, {
+                    method: 'PUT',
+                    body: { overwrites: updates.permissionOverwrites }
+                });
+            }
+            // Refresh community data
+            await fetchCommunityDetail(activeCommunityId);
+            setShowCategorySettings(false);
+            setSelectedCategory(null);
+        } catch (err) {
+            console.error('Failed to update category:', err);
         }
     };
 
@@ -145,6 +177,170 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
     }, [voiceState?.members]);
     const connectedIdentityName = remoteVoiceMember?.displayName || profile?.displayName || user?.name || 'User';
     const connectedIdentityAvatar = remoteVoiceMember?.avatar || profile?.avatar || '';
+
+    const renderChannelItem = (ch) => {
+        const isVoice = ch.type === 'voice';
+
+        if (isVoice) {
+            const override = activeMembership?.notificationSettings?.channelOverrides?.find(o => {
+                const id = typeof o.channelId === 'string' ? o.channelId : o.channelId?._id;
+                return id === ch._id;
+            });
+            const isMuted = override?.setting === 'muted';
+            const isActive = voiceState?.activeChannelId === ch._id;
+            const presenceMembers = voiceState?.voicePresence?.[ch._id] || [];
+            const allMembers = isActive ? (voiceState?.members || []) : presenceMembers;
+            const connectedIds = isActive ? (voiceState?.connectedPeerIds || []) : [];
+            const dedupedMembers = allMembers.reduce((acc, member) => {
+                if (!member) return acc;
+                const key = member.userId || member.socketId;
+                if (!key) return acc;
+                const current = acc.get(key);
+                const memberConnected = !!member.isLocal || connectedIds.includes(member.socketId);
+                const currentConnected = current ? (!!current.isLocal || connectedIds.includes(current.socketId)) : false;
+                if (!current || (!currentConnected && memberConnected)) {
+                    acc.set(key, member);
+                }
+                return acc;
+            }, new Map());
+            const normalizedMembers = Array.from(dedupedMembers.values()).filter((m) => {
+                if (!m) return false;
+                if (isActive) return true;
+                const uid = m.userId?.toString?.() || String(m.userId || '');
+                const currentUid = user?._id?.toString?.() || String(user?._id || '');
+                if (!uid || !currentUid) return true;
+                return uid !== currentUid;
+            });
+            const nonLocalMembers = normalizedMembers.filter((m) => !(m?.isLocal || m?.socketId === 'local'));
+            const members = isActive && nonLocalMembers.length === 0 ? [] : normalizedMembers;
+
+            return (
+                <div key={ch._id}>
+                    <button
+                        onClick={() => onVoiceChannelClick?.(ch)}
+                        onDoubleClick={() => onVoiceChannelDoubleClick?.(ch)}
+                        className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer group ${isActive
+                            ? 'bg-[#3a3d46] text-white font-semibold'
+                            : isMuted
+                                ? 'text-[#5c5e66] hover:bg-[#1d212b] hover:text-[#9ca1ad]'
+                                : 'text-[#9ca1ad] hover:bg-[#1d212b] hover:text-[#e6e8ee]'
+                            }`}
+                    >
+                        <Volume2 className="w-4 h-4 shrink-0" strokeWidth={2} />
+                        <span className="text-sm font-medium truncate">{ch.name}</span>
+                        {(isActive || members.length > 0) && (
+                            <div className="ml-auto flex items-center gap-2">
+                                {members.length > 0 && (
+                                    <span className="text-[11px] text-discord-faint font-semibold">
+                                        {members.length}
+                                    </span>
+                                )}
+                                {isActive && (
+                                    <span className="text-xs text-discord-green font-semibold">
+                                        {voiceState?.elapsedLabel || '0:00'}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                        {isActive && canEditChannel && (
+                            <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <span
+                                    role="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenChannelSettings?.(ch);
+                                    }}
+                                    className="w-6 h-6 rounded-md hover:bg-discord-border-light/30 flex items-center justify-center transition-colors cursor-pointer"
+                                >
+                                    <Settings className="w-3.5 h-3.5 text-discord-faint" />
+                                </span>
+                            </div>
+                        )}
+                    </button>
+                    {members.length > 0 && (
+                        <div className="mt-1 ml-9 space-y-1">
+                            {members.map((m) => (
+                                <div key={m.userId || m.socketId} className="flex items-center gap-2 text-xs text-discord-light">
+                                    <div className="relative w-6 h-6 rounded-full bg-discord-darkest flex items-center justify-center text-[10px] font-semibold">
+                                        {m.avatar ? (
+                                            <img src={m.avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
+                                        ) : (
+                                            (m.displayName || 'U').charAt(0).toUpperCase()
+                                        )}
+                                        <span
+                                            className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-discord-sidebar ${isActive
+                                                ? (m.isLocal || connectedIds.includes(m.socketId) ? 'bg-discord-green' : 'bg-discord-faint/60')
+                                                : 'bg-discord-green'
+                                                }`}
+                                        />
+                                    </div>
+                                    <span className="truncate text-discord-light">{m.displayName}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        } else {
+            const isActive = activeChannelId === ch._id;
+            const isAnnouncement = ch.type === 'announcement';
+            const override = activeMembership?.notificationSettings?.channelOverrides?.find(o => {
+                const id = typeof o.channelId === 'string' ? o.channelId : o.channelId?._id;
+                return id === ch._id;
+            });
+            const isMuted = override?.setting === 'muted';
+            if (hideMutedChannels && isMuted) return null;
+
+            return (
+                <button key={ch._id} onClick={() => handleChannelClick(ch)}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-all duration-150 cursor-pointer group
+            ${isActive
+                            ? 'bg-[#3a3d46] text-white font-semibold'
+                            : isMuted
+                                ? 'text-[#5c5e66] hover:bg-[#1d212b] hover:text-[#9ca1ad]'
+                                : 'text-[#9ca1ad] hover:bg-[#1d212b] hover:text-[#e6e8ee]'
+                        }`}
+                    title={ch.description || ch.name}>
+                    {ch.isPremium || ch.isPrivate ? (
+                        <Lock className="w-4 h-4 shrink-0" strokeWidth={2} />
+                    ) : isAnnouncement ? (
+                        <Megaphone className="w-4 h-4 shrink-0" strokeWidth={2} />
+                    ) : (
+                        <Hash className="w-4 h-4 shrink-0" strokeWidth={2} />
+                    )}
+                    <span className="text-sm font-medium truncate">{ch.name}</span>
+                    {ch.isPremium && (
+                        <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-200 border border-amber-500/25">
+                            Premium
+                        </span>
+                    )}
+                    {isActive && canEditChannel && (
+                        <div className="ml-auto flex items-center gap-1">
+                            <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenChannelSettings?.(ch);
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        onOpenChannelSettings?.(ch);
+                                    }
+                                }}
+                                className="w-6 h-6 rounded-md hover:bg-discord-border-light/30 flex items-center justify-center transition-colors cursor-pointer"
+                                title="Edit channel"
+                            >
+                                <Settings className="w-3.5 h-3.5 text-discord-faint" />
+                            </span>
+                        </div>
+                    )}
+                </button>
+            );
+        }
+    };
 
     const content = (
         <div className="flex flex-col h-full bg-[#0f1117] text-[#d6d7dc]">
@@ -243,9 +439,14 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
 
             <ChannelCreateModal
                 isOpen={showCreateModal}
-                onClose={() => setShowCreateModal(false)}
+                onClose={() => {
+                    setShowCreateModal(false);
+                    setSelectedCategoryId(null);
+                }}
                 onCreate={handleCreate}
                 isLoading={isLoading}
+                categories={categories}
+                initialCategoryId={selectedCategoryId}
             />
 
             <NotificationSettingsModal
@@ -324,232 +525,176 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
 
             {/* Channel list */}
             <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4 bg-[#0f1117]">
-                <div>
-                    <div className="flex items-center justify-between px-2 text-xs font-semibold tracking-[0.02em] text-[#8f939d]">
-                        <button
-                            type="button"
-                            onClick={() => setIsTextChannelsOpen((prev) => !prev)}
-                            className="flex items-center gap-1 hover:text-discord-light transition-colors"
-                        >
-                            <ChevronDown className={`w-3 h-3 transition-transform ${isTextChannelsOpen ? 'rotate-0' : '-rotate-90'}`} />
-                            Text Channels
-                        </button>
-                        {canCreateChannels && (
-                            <button onClick={() => setShowCreateModal(true)}
-                                className="w-6 h-6 rounded-md hover:bg-discord-border-light/30 flex items-center justify-center transition-colors cursor-pointer"
-                                title="Create channel">
-                                <Plus className="w-3.5 h-3.5 text-discord-muted" strokeWidth={2} />
-                            </button>
-                        )}
-                    </div>
+                {/* 1. Uncategorized Channels Grouped by Type */}
+                {(() => {
+                    const uncategorizedChannels = channels.filter(ch => !ch.categoryId);
+                    if (uncategorizedChannels.length === 0) return null;
 
-                    {isTextChannelsOpen && (
-                    <div className="mt-1 space-y-0.5">
-                        {/* Channel items */}
-                {channels.filter((ch) => {
-                    if (!['text', 'announcement', 'forum'].includes(ch.type || 'text')) return false;
-                    const override = activeMembership?.notificationSettings?.channelOverrides?.find(o => {
-                        const id = typeof o.channelId === 'string' ? o.channelId : o.channelId?._id;
-                        return id === ch._id;
-                    });
-                    const isMuted = override?.setting === 'muted';
-                    if (hideMutedChannels && isMuted) return false;
-                    return true;
-                }).map((ch) => {
-                    const isActive = activeChannelId === ch._id;
-                    const isAnnouncement = ch.type === 'announcement';
-                    const override = activeMembership?.notificationSettings?.channelOverrides?.find(o => {
-                        const id = typeof o.channelId === 'string' ? o.channelId : o.channelId?._id;
-                        return id === ch._id;
-                    });
-                    const isMuted = override?.setting === 'muted';
+                    const announcementChannels = uncategorizedChannels.filter(ch => ch.type === 'announcement');
+                    const textChannels = uncategorizedChannels.filter(ch => ch.type !== 'voice' && ch.type !== 'announcement');
+                    const voiceChannels = uncategorizedChannels.filter(ch => ch.type === 'voice');
 
                     return (
-                        <button key={ch._id} onClick={() => handleChannelClick(ch)}
-                            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-all duration-150 cursor-pointer group
-                                ${isActive
-                                    ? 'bg-[#3a3d46] text-white font-semibold'
-                                    : isMuted
-                                        ? 'text-[#5c5e66] hover:bg-[#1d212b] hover:text-[#9ca1ad]'
-                                        : 'text-[#9ca1ad] hover:bg-[#1d212b] hover:text-[#e6e8ee]'
-                                }`}
-                            title={ch.description || ch.name}>
-                            {ch.isPremium || ch.isPrivate ? (
-                                <Lock className="w-4 h-4 shrink-0" strokeWidth={2} />
-                            ) : isAnnouncement ? (
-                                <Megaphone className="w-4 h-4 shrink-0" strokeWidth={2} />
-                            ) : (
-                                <Hash className="w-4 h-4 shrink-0" strokeWidth={2} />
-                            )}
-                            <span className="text-sm font-medium truncate">{ch.name}</span>
-                            {ch.isPremium && (
-                                <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-200 border border-amber-500/25">
-                                    Premium
-                                </span>
-                            )}
-                            {isActive && canEditChannel && (
-                                <div className="ml-auto flex items-center gap-1">
-                                    <span
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onOpenChannelSettings?.(ch);
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' || e.key === ' ') {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                onOpenChannelSettings?.(ch);
-                                            }
-                                        }}
-                                        className="w-6 h-6 rounded-md hover:bg-discord-border-light/30 flex items-center justify-center transition-colors cursor-pointer"
-                                        title="Edit channel"
-                                    >
-                                        <Settings className="w-3.5 h-3.5 text-discord-faint" />
-                                    </span>
-                                </div>
-                            )}
-                        </button>
-                    );
-                })}
-                    </div>
-                    )}
-                </div>
-
-                <div>
-                    <div className="flex items-center justify-between px-2 text-xs font-semibold tracking-[0.02em] text-[#8f939d]">
-                        <button
-                            type="button"
-                            onClick={() => setIsVoiceChannelsOpen((prev) => !prev)}
-                            className="flex items-center gap-1 hover:text-discord-light transition-colors"
-                        >
-                            <ChevronDown className={`w-3 h-3 transition-transform ${isVoiceChannelsOpen ? 'rotate-0' : '-rotate-90'}`} />
-                            Voice Channels
-                        </button>
-                        {canCreateChannels && (
-                            <button
-                                onClick={() => setShowCreateModal(true)}
-                                className="w-6 h-6 rounded-md hover:bg-discord-border-light/30 flex items-center justify-center transition-colors cursor-pointer"
-                            >
-                                <Plus className="w-3.5 h-3.5 text-discord-muted" strokeWidth={2} />
-                            </button>
-                        )}
-                    </div>
-                    {isVoiceChannelsOpen && (
-                    <div className="mt-1 space-y-0.5">
-                        {(channels.filter((ch) => ch.type === 'voice').map((ch) => ch.name)).length > 0
-                            ? channels.filter((ch) => {
-                                if (ch.type !== 'voice') return false;
-                                const override = activeMembership?.notificationSettings?.channelOverrides?.find(o => {
-                                    const id = typeof o.channelId === 'string' ? o.channelId : o.channelId?._id;
-                                    return id === ch._id;
-                                });
-                                const isMuted = override?.setting === 'muted';
-                                if (hideMutedChannels && isMuted) return false;
-                                return true;
-                            }).map((ch) => {
-                                const override = activeMembership?.notificationSettings?.channelOverrides?.find(o => {
-                                    const id = typeof o.channelId === 'string' ? o.channelId : o.channelId?._id;
-                                    return id === ch._id;
-                                });
-                                const isMuted = override?.setting === 'muted';
-                                const isActive = voiceState?.activeChannelId === ch._id;
-                                const presenceMembers = voiceState?.voicePresence?.[ch._id] || [];
-                                const allMembers = isActive ? (voiceState?.members || []) : presenceMembers;
-                                const connectedIds = isActive ? (voiceState?.connectedPeerIds || []) : [];
-                                const dedupedMembers = allMembers.reduce((acc, member) => {
-                                    if (!member) return acc;
-                                    const key = member.userId || member.socketId;
-                                    if (!key) return acc;
-                                    const current = acc.get(key);
-                                    const memberConnected = !!member.isLocal || connectedIds.includes(member.socketId);
-                                    const currentConnected = current ? (!!current.isLocal || connectedIds.includes(current.socketId)) : false;
-                                    if (!current || (!currentConnected && memberConnected)) {
-                                        acc.set(key, member);
-                                    }
-                                    return acc;
-                                }, new Map());
-                                const normalizedMembers = Array.from(dedupedMembers.values()).filter((m) => {
-                                    if (!m) return false;
-                                    if (isActive) return true;
-                                    const uid = m.userId?.toString?.() || String(m.userId || '');
-                                    const currentUid = user?._id?.toString?.() || String(user?._id || '');
-                                    if (!uid || !currentUid) return true;
-                                    return uid !== currentUid;
-                                });
-                                const nonLocalMembers = normalizedMembers.filter((m) => !(m?.isLocal || m?.socketId === 'local'));
-                                const members = isActive && nonLocalMembers.length === 0 ? [] : normalizedMembers;
-                                return (
-                                    <div key={ch._id}>
+                        <div className="space-y-4">
+                            {announcementChannels.length > 0 && (
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between px-2 text-xs font-semibold tracking-[0.02em] text-[#8f939d] group/uncat-ann">
                                         <button
-                                            onClick={() => onVoiceChannelClick?.(ch)}
-                                            onDoubleClick={() => onVoiceChannelDoubleClick?.(ch)}
-                                            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
-                                                isActive
-                                                    ? 'bg-[#3a3d46] text-white font-semibold'
-                                                    : isMuted
-                                                        ? 'text-[#5c5e66] hover:bg-[#1d212b] hover:text-[#9ca1ad]'
-                                                        : 'text-[#9ca1ad] hover:bg-[#1d212b] hover:text-[#e6e8ee]'
-                                            }`}
+                                            type="button"
+                                            onClick={() => setIsAnnouncementsOpen(prev => !prev)}
+                                            className="flex items-center gap-1 hover:text-discord-light transition-colors uppercase"
                                         >
-                                            <Volume2 className="w-4 h-4 shrink-0" strokeWidth={2} />
-                                            <span className="text-sm font-medium truncate">{ch.name}</span>
-                                            {(isActive || members.length > 0) && (
-                                                <div className="ml-auto flex items-center gap-2">
-                                                    {members.length > 0 && (
-                                                        <span className="text-[11px] text-discord-faint font-semibold">
-                                                            {members.length}
-                                                        </span>
-                                                    )}
-                                                    {isActive && (
-                                                        <span className="text-xs text-discord-green font-semibold">
-                                                            {voiceState?.elapsedLabel || '0:00'}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            )}
+                                            <ChevronDown className={`w-3 h-3 transition-transform ${isAnnouncementsOpen ? 'rotate-0' : '-rotate-90'}`} />
+                                            Announcements
                                         </button>
-                                        {members.length > 0 && (
-                                            <div className="mt-1 ml-7 space-y-1">
-                                                {members.map((m) => (
-                                                    <div key={m.userId || m.socketId} className="flex items-center gap-2 text-xs text-discord-light">
-                                                        <div className="relative w-6 h-6 rounded-full bg-discord-darkest flex items-center justify-center text-[10px] font-semibold">
-                                                            {m.avatar ? (
-                                                                <img src={m.avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
-                                                            ) : (
-                                                                (m.displayName || 'U').charAt(0).toUpperCase()
-                                                            )}
-                                                            <span
-                                                                className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-discord-sidebar ${
-                                                                    isActive
-                                                                        ? (m.isLocal || connectedIds.includes(m.socketId) ? 'bg-discord-green' : 'bg-discord-faint/60')
-                                                                        : 'bg-discord-green'
-                                                                }`}
-                                                                title={
-                                                                    isActive
-                                                                        ? (m.isLocal || connectedIds.includes(m.socketId) ? 'Connected' : 'Connecting')
-                                                                        : 'In voice'
-                                                                }
-                                                            />
-                                                        </div>
-                                                        <span className="truncate text-discord-light">{m.displayName}</span>
-                                                    </div>
-                                                ))}
+                                        {canCreateChannels && (
+                                            <div className="flex items-center gap-0.5 opacity-0 group-hover/uncat-ann:opacity-100 transition-opacity">
+                                                <button 
+                                                    onClick={() => {
+                                                        setSelectedCategoryId(null);
+                                                        setShowCreateModal(true);
+                                                    }}
+                                                    className="w-6 h-6 rounded-md hover:bg-discord-border-light/30 flex items-center justify-center transition-colors"
+                                                    title="Create announcement channel"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5 text-discord-muted" strokeWidth={2} />
+                                                </button>
                                             </div>
                                         )}
                                     </div>
-                                );
-                            })
-                            : ['Lobby', 'Gaming'].map((v) => (
-                                <button key={v} className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left text-discord-muted hover:bg-discord-border-light/15 hover:text-discord-light cursor-pointer">
-                                    <Volume2 className="w-4 h-4 shrink-0" strokeWidth={2} />
-                                    <span className="text-sm font-medium truncate">{v}</span>
+                                    {isAnnouncementsOpen && (
+                                        <div className="mt-1 space-y-0.5">
+                                            {announcementChannels.map(ch => renderChannelItem(ch))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {textChannels.length > 0 && (
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between px-2 text-xs font-semibold tracking-[0.02em] text-[#8f939d] group/uncat-text">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsTextChannelsOpen(prev => !prev)}
+                                            className="flex items-center gap-1 hover:text-discord-light transition-colors uppercase"
+                                        >
+                                            <ChevronDown className={`w-3 h-3 transition-transform ${isTextChannelsOpen ? 'rotate-0' : '-rotate-90'}`} />
+                                            Text Channels
+                                        </button>
+                                        {canCreateChannels && (
+                                            <div className="flex items-center gap-0.5 opacity-0 group-hover/uncat-text:opacity-100 transition-opacity">
+                                                <button 
+                                                    onClick={() => {
+                                                        setSelectedCategoryId(null);
+                                                        setShowCreateModal(true);
+                                                    }}
+                                                    className="w-6 h-6 rounded-md hover:bg-discord-border-light/30 flex items-center justify-center transition-colors"
+                                                    title="Create text channel"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5 text-discord-muted" strokeWidth={2} />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {isTextChannelsOpen && (
+                                        <div className="mt-1 space-y-0.5">
+                                            {textChannels.map(ch => renderChannelItem(ch))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {voiceChannels.length > 0 && (
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between px-2 text-xs font-semibold tracking-[0.02em] text-[#8f939d] group/uncat-voice">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsVoiceChannelsOpen(prev => !prev)}
+                                            className="flex items-center gap-1 hover:text-discord-light transition-colors uppercase"
+                                        >
+                                            <ChevronDown className={`w-3 h-3 transition-transform ${isVoiceChannelsOpen ? 'rotate-0' : '-rotate-90'}`} />
+                                            Voice Channels
+                                        </button>
+                                        {canCreateChannels && (
+                                            <div className="flex items-center gap-0.5 opacity-0 group-hover/uncat-voice:opacity-100 transition-opacity">
+                                                <button 
+                                                    onClick={() => {
+                                                        setSelectedCategoryId(null);
+                                                        setShowCreateModal(true);
+                                                    }}
+                                                    className="w-6 h-6 rounded-md hover:bg-discord-border-light/30 flex items-center justify-center transition-colors"
+                                                    title="Create voice channel"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5 text-discord-muted" strokeWidth={2} />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {isVoiceChannelsOpen && (
+                                        <div className="mt-1 space-y-0.5">
+                                            {voiceChannels.map(ch => renderChannelItem(ch))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
+
+                {/* 2. Map Categorized Channels */}
+                {[...categories].sort((a,b) => (a.position || 0) - (b.position || 0)).map(category => {
+                    const categoryChannels = channels.filter(ch => ch.categoryId === category._id);
+                    const isCollapsed = collapsedCategories[category._id];
+                    
+                    return (
+                        <div key={category._id} className="space-y-1">
+                            <div className="flex items-center justify-between px-2 text-xs font-semibold tracking-[0.02em] text-[#8f939d] group/category">
+                                <button
+                                    type="button"
+                                    onClick={() => setCollapsedCategories(prev => ({ ...prev, [category._id]: !prev[category._id] }))}
+                                    className="flex items-center gap-1 hover:text-discord-light transition-colors uppercase"
+                                >
+                                    <ChevronDown className={`w-3 h-3 transition-transform ${!isCollapsed ? 'rotate-0' : '-rotate-90'}`} />
+                                    {category.name}
                                 </button>
-                            ))}
-                    </div>
-                    )}
-                </div>
+                                {canCreateChannels && (
+                                    <div className="flex items-center gap-0.5 opacity-0 group-hover/category:opacity-100 transition-opacity">
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedCategory(category);
+                                                setShowCategorySettings(true);
+                                            }}
+                                            className="w-6 h-6 rounded-md hover:bg-discord-border-light/30 flex items-center justify-center transition-colors"
+                                            title="Category Settings"
+                                        >
+                                            <Settings className="w-3.5 h-3.5 text-discord-muted" strokeWidth={2} />
+                                        </button>
+                                        <button 
+                                            onClick={() => {
+                                                setSelectedCategoryId(category._id);
+                                                setShowCreateModal(true);
+                                            }}
+                                            className="w-6 h-6 rounded-md hover:bg-discord-border-light/30 flex items-center justify-center transition-colors"
+                                            title="Create channel"
+                                        >
+                                            <Plus className="w-3.5 h-3.5 text-discord-muted" strokeWidth={2} />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            {!isCollapsed && (
+                                <div className="mt-1 space-y-0.5">
+                                    {categoryChannels.map(ch => renderChannelItem(ch))}
+                                    {categoryChannels.length === 0 && (
+                                         <p className="text-[11px] text-discord-faint px-4 py-2 italic">No channels in this category</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
             </nav>
 
             {/* User bar */}
@@ -573,42 +718,52 @@ const Sidebar = ({ isOpen, onClose, onProfileClick, onFriendsClick, onSettingsCl
                     onLeave={voiceState?.onLeave}
                     onProfileClick={onProfileClick}
                     onSettingsClick={onSettingsClick}
+                    onChatClick={voiceState?.onChatClick}
                     displayName={connectedIdentityName}
                     avatar={connectedIdentityAvatar}
                 />
             )}
             {!voiceState?.isConnected && (
-            <div className="relative z-40 -ml-16 mr-0 mb-1 w-[calc(100%+4rem)] rounded-xl border border-white/10 bg-[#202024] pl-10 pr-3.5 py-2.5 shadow-[0_10px_24px_rgba(0,0,0,0.46)] flex items-center gap-2 cursor-pointer" onClick={onProfileClick}>
-                <div className="relative">
-                    {profile?.avatar ? (
-                        <img src={profile.avatar} alt="" className="w-9 h-9 rounded-full object-cover border-2 border-discord-border" />
-                    ) : (
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blurple to-indigo-600 flex items-center justify-center text-xs font-bold">
-                            {(profile?.displayName || user?.name || 'U').charAt(0).toUpperCase()}
-                        </div>
-                    )}
-                    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-discord-darkest ${
-                        profile?.presence === 'dnd' ? 'bg-red-500' : profile?.presence === 'idle' ? 'bg-yellow-400' : profile?.presence === 'offline' ? 'bg-discord-faint/60' : 'bg-discord-green'
-                    }`} />
+                <div className="relative z-40 mx-0 mb-1 rounded-xl border border-white/5 bg-[#202024] px-2.5 py-2.5 shadow-[0_10px_24px_rgba(0,0,0,0.46)] flex items-center gap-2 cursor-pointer transition-all hover:bg-[#28282c] hover:border-white/15" onClick={onProfileClick}>
+                    <div className="relative">
+                        {profile?.avatar ? (
+                            <img src={profile.avatar} alt="" className="w-9 h-9 rounded-full object-cover border-2 border-discord-border" />
+                        ) : (
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blurple to-indigo-600 flex items-center justify-center text-xs font-bold">
+                                {(profile?.displayName || user?.name || 'U').charAt(0).toUpperCase()}
+                            </div>
+                        )}
+                        <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-discord-darkest ${profile?.presence === 'dnd' ? 'bg-red-500' : profile?.presence === 'idle' ? 'bg-yellow-400' : profile?.presence === 'offline' ? 'bg-discord-faint/60' : 'bg-discord-green'
+                            }`} />
+                    </div>
+                    <div className="min-w-0">
+                        <p className="text-xs font-semibold leading-tight truncate text-discord-white">{profile?.displayName || user?.name || 'User'}</p>
+                        <p className="text-[11px] text-discord-faint truncate">{profile?.bio || 'No bio yet'}</p>
+                    </div>
+                    <div className="ml-auto flex items-center gap-1">
+                        <button
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                onSettingsClick?.();
+                            }}
+                            className="w-7 h-7 rounded-md bg-discord-darkest flex items-center justify-center hover:bg-discord-border-light/40 cursor-pointer"
+                            title="Settings"
+                        >
+                            <Settings className="w-3.5 h-3.5 text-discord-muted" />
+                        </button>
+                    </div>
                 </div>
-                <div className="min-w-0">
-                    <p className="text-xs font-semibold leading-tight truncate text-discord-white">{profile?.displayName || user?.name || 'User'}</p>
-                    <p className="text-[11px] text-discord-faint truncate">{profile?.bio || 'No bio yet'}</p>
-                </div>
-                <div className="ml-auto flex items-center gap-1">
-                    <button
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            onSettingsClick?.();
-                        }}
-                        className="w-7 h-7 rounded-md bg-discord-darkest flex items-center justify-center hover:bg-discord-border-light/40 cursor-pointer"
-                        title="Settings"
-                    >
-                        <Settings className="w-3.5 h-3.5 text-discord-muted" />
-                    </button>
-                </div>
-            </div>
             )}
+            <CategorySettingsModal
+                isOpen={showCategorySettings}
+                onClose={() => {
+                    setShowCategorySettings(false);
+                    setSelectedCategory(null);
+                }}
+                category={selectedCategory}
+                roles={roles}
+                onUpdate={handleUpdateCategory}
+            />
         </div>
     );
 

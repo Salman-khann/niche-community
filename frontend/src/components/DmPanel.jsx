@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Phone, Smile, Send, Plus, Image as ImageIcon, X, Menu, Server, Mic, MicOff, ScreenShare, Video, VideoOff, UserPlus, LogOut, MoreHorizontal, Reply, Forward, Copy, Link2, ChevronRight, Bell, Volume2 } from 'lucide-react';
+import { Phone, Smile, Send, Plus, Image as ImageIcon, X, Menu, Server, Mic, MicOff, ScreenShare, Video, VideoOff, UserPlus, LogOut, MoreHorizontal, Reply, Forward, Copy, Link2, ChevronRight, Bell, Volume2, Trash2, Pencil } from 'lucide-react';
 import VoiceVideoPlayer from './VoiceVideoPlayer';
 import EmojiPicker from './EmojiPicker';
 import AttachmentPreviewCard from './AttachmentPreviewCard';
@@ -57,6 +57,11 @@ const DmPanel = ({
     isRemoteScreenShare = false,
     onOpenStreamFullscreen,
     callStatus,
+    onDeleteMessage,
+    onEditMessage,
+    replyingTo,
+    onSetReplyingTo,
+    onCancelReply,
 }) => {
     const headerTitle = activeDm?.displayName || 'Direct Messages';
     const username = activeDm?.subtitle || activeDm?.username || '';
@@ -65,8 +70,12 @@ const DmPanel = ({
     const [openMessageMenuId, setOpenMessageMenuId] = useState(null);
     const [reactionPickerMessageId, setReactionPickerMessageId] = useState(null);
     const [copiedMessageId, setCopiedMessageId] = useState(null);
+    const [editingMessage, setEditingMessage] = useState(null);
+    const [editContent, setEditContent] = useState('');
     const dmMenuRef = useRef(null);
     const sendLockRef = useRef(false);
+    const inputRef = useRef(null);
+    const endRef = useRef(null);
     const hasLocalCamera = !!localCameraStream;
     const hasRemoteCamera = !!remoteCameraStream;
     const cameraStreamMap = useMemo(() => {
@@ -178,11 +187,27 @@ const DmPanel = ({
         return () => document.removeEventListener('mousedown', onOutside);
     }, [openMessageMenuId]);
 
-    const handleReply = (message, senderName) => {
-        const replyText = `> ${senderName}: ${message?.content || ''}\n`;
-        onChange?.(`${value || ''}${replyText}`);
-        onTyping?.();
+    const handleReply = (message) => {
+        onSetReplyingTo?.(message);
         setOpenMessageMenuId(null);
+        inputRef.current?.focus();
+    };
+
+    const handleStartEdit = (m) => {
+        setEditingMessage(m);
+        setEditContent(m.content || '');
+        setOpenMessageMenuId(null);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editingMessage || !editContent.trim()) return;
+        try {
+            await onEditMessage?.(editingMessage._id, editContent);
+            setEditingMessage(null);
+            setEditContent('');
+        } catch (err) {
+            console.error('Failed to save edit:', err);
+        }
     };
 
     const handleForward = (message, senderName) => {
@@ -216,6 +241,11 @@ const DmPanel = ({
         }
     };
 
+    const handleDelete = (messageId) => {
+        onDeleteMessage?.(messageId);
+        setOpenMessageMenuId(null);
+    };
+
     const speakMessage = (content) => {
         if (!content || typeof window === 'undefined' || !window.speechSynthesis) return;
         const utterance = new SpeechSynthesisUtterance(content);
@@ -238,9 +268,9 @@ const DmPanel = ({
     };
 
     return (
-        <div className="flex-1 min-h-0 flex flex-col">
-            <div className="ui-topbar h-12 flex items-center justify-between px-4">
-                <div className="flex items-center gap-2 text-sm font-semibold text-discord-light">
+        <div className="flex-1 min-h-0 flex flex-col bg-[#313338]">
+            <div className="ui-topbar h-12 flex items-center justify-between px-4 bg-[#313338] shadow-[0_1px_2px_rgba(0,0,0,0.1),0_1px_0_rgba(255,255,255,0.04)]">
+                <div className="flex items-center gap-2.5 text-sm font-semibold text-discord-light">
                     <button
                         onClick={() => onOpenServers?.()}
                         className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
@@ -507,7 +537,7 @@ const DmPanel = ({
                 )}
 
                 <div className="space-y-4">
-                    {messages.map((m) => {
+                    {messages.map((m, index) => {
                         const senderKey = m.senderId?.toString?.() || String(m.senderId);
                         const isMe = senderKey === (activeDm?.selfId?.toString?.() || String(activeDm?.selfId));
                         const sender = participantMap.get(senderKey);
@@ -518,12 +548,32 @@ const DmPanel = ({
                         return (
                             <div
                                 key={m._id}
-                                className="group relative flex items-start gap-3"
+                                className={`group relative flex items-start gap-3 transition-colors px-2 py-1 -mx-2 rounded-md ${m.replyTo ? 'mt-6' : 'mt-1'} ${hoveredMessageId === m._id || openMessageMenuId === m._id ? 'bg-[#2e3136]' : 'hover:bg-[#2e3136]/50'}`}
                                 onMouseEnter={() => setHoveredMessageId(m._id)}
                                 onMouseLeave={() => {
-                                    if (openMessageMenuId !== m._id) setHoveredMessageId((prev) => (prev === m._id ? null : prev));
+                                    if (openMessageMenuId !== m._id) setHoveredMessageId(null);
                                 }}
                             >
+                                {m.replyTo && (
+                                    <div className="absolute top-[-20px] left-[20px] flex items-center gap-1.5 opacity-80 pointer-events-none">
+                                        <div className="w-8 h-[16px] border-l-2 border-t-2 border-[#4E5058] rounded-tl-lg" />
+                                        <div className="flex items-center gap-1.5 ml-1 overflow-hidden">
+                                            <div className="w-4 h-4 rounded-full bg-discord-darkest flex items-center justify-center text-[10px] font-bold text-discord-faint overflow-hidden shrink-0">
+                                                {m.replyTo?.senderId?.profileId?.avatar ? (
+                                                    <img src={m.replyTo.senderId.profileId.avatar} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    (m.replyTo?.senderId?.name || 'U').charAt(0).toUpperCase()
+                                                )}
+                                            </div>
+                                            <span className="text-xs font-bold text-discord-light shrink-0">
+                                                {m.replyTo?.senderId?.name || 'Member'}
+                                            </span>
+                                            <span className="text-xs text-discord-muted truncate max-w-[400px]">
+                                                {m.replyTo?.content || 'Original message'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
                                 {(hoveredMessageId === m._id || openMessageMenuId === m._id) && (
                                     <div className="absolute -top-4 right-0 z-20 flex items-center gap-1 rounded-lg border border-[#1f2024] bg-[#2b2d31] p-1 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
                                         {CHAT_REACTION_EMOJIS.map((emoji) => (
@@ -542,7 +592,7 @@ const DmPanel = ({
                                         ))}
                                         <button
                                             type="button"
-                                            onClick={() => handleReply(m, senderName)}
+                                            onClick={() => handleReply(m)}
                                             className="w-8 h-8 rounded-md flex items-center justify-center bg-[#3a3c43] hover:bg-[#4a4d57] text-discord-faint hover:text-discord-light"
                                             title="Reply"
                                         >
@@ -550,7 +600,7 @@ const DmPanel = ({
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={() => handleForward(m, senderName)}
+                                            onClick={() => handleForward(m)}
                                             className="w-8 h-8 rounded-md flex items-center justify-center bg-[#3a3c43] hover:bg-[#4a4d57] text-discord-faint hover:text-discord-light"
                                             title="Forward"
                                         >
@@ -566,59 +616,87 @@ const DmPanel = ({
                                                 <MoreHorizontal className="w-4 h-4" />
                                             </button>
                                             {openMessageMenuId === m._id && (
-                                                <div className="absolute right-0 top-10 w-64 rounded-lg border border-[#141518] bg-[#1e1f22] shadow-2xl p-1.5">
+                                                <div className={`absolute right-4 w-60 rounded-xl border border-white/10 bg-[#111318] shadow-[0_16px_48px_rgba(0,0,0,0.5)] p-1.5 z-[250] ${
+                                                    index === 0 ? 'top-10' : index > messages.length - 4 ? 'bottom-full mb-2' : 'top-10'
+                                                }`}>
                                                     <button
                                                         type="button"
                                                         onClick={() => {
                                                             setReactionPickerMessageId((prev) => (prev === m._id ? null : m._id));
                                                         }}
-                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                     >
-                                                        Add Reaction <ChevronRight className="w-4 h-4 text-discord-faint" />
+                                                        Add Reaction <ChevronRight className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                     </button>
                                                     <div className="my-1 h-px bg-[#2b2d31]" />
                                                     <button
                                                         type="button"
-                                                        onClick={() => handleReply(m, senderName)}
-                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        onClick={() => handleReply(m)}
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                     >
-                                                        Reply <Reply className="w-4 h-4 text-discord-faint" />
+                                                        Reply <Reply className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                     </button>
+                                                    {isMe && (() => {
+                                                        const timeElapsed = Date.now() - new Date(m.createdAt).getTime();
+                                                        const canEdit = timeElapsed <= 15 * 60 * 1000;
+                                                        if (!canEdit) return null;
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleStartEdit(m)}
+                                                                className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
+                                                            >
+                                                                Edit Message <Pencil className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
+                                                            </button>
+                                                        );
+                                                    })()}
                                                     <button
                                                         type="button"
-                                                        onClick={() => handleForward(m, senderName)}
-                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        onClick={() => handleForward(m)}
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                     >
-                                                        Forward <Forward className="w-4 h-4 text-discord-faint" />
+                                                        Forward <Forward className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                     </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => copyText(m._id, m.content || '')}
-                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                     >
-                                                        Copy Text <Copy className="w-4 h-4 text-discord-faint" />
+                                                        Copy Text <Copy className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                     </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => setOpenMessageMenuId(null)}
-                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                     >
-                                                        Mark Unread <Bell className="w-4 h-4 text-discord-faint" />
+                                                        Mark Unread <Bell className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                     </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => copyLink(m._id)}
-                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                     >
-                                                        Copy Message Link <Link2 className="w-4 h-4 text-discord-faint" />
+                                                        Copy Message Link <Link2 className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                     </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => speakMessage(m.content || '')}
-                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                        className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                     >
-                                                        Speak Message <Volume2 className="w-4 h-4 text-discord-faint" />
+                                                        Speak Message <Volume2 className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                     </button>
+                                                    {isMe && (
+                                                        <>
+                                                            <div className="my-1 h-px bg-[#2b2d31]" />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDelete(m._id)}
+                                                                className="w-full px-3 py-2 rounded-md text-left text-sm text-red-400 hover:bg-red-500 hover:text-white transition-all flex items-center justify-between group/delete"
+                                                            >
+                                                                Delete Message <Trash2 className="w-4 h-4 text-red-400 group-hover/delete:text-white" />
+                                                            </button>
+                                                        </>
+                                                    )}
                                                 </div>
                                             )}
                                             {reactionPickerMessageId === m._id && (
@@ -648,10 +726,44 @@ const DmPanel = ({
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-sm font-semibold text-white">{senderName}</span>
+                                        <span className="text-sm font-semibold text-white">
+                                            {senderName}
+                                            {!isMe && sender?.username && <span className="ml-1.5 text-[10px] text-discord-faint font-normal">@{sender?.username}</span>}
+                                        </span>
                                         <span className="text-[11px] text-discord-faint">{formatTime(m.createdAt)}</span>
                                     </div>
-                                    <p className="text-sm text-discord-light">{m.content}</p>
+                                    {editingMessage?._id === m._id ? (
+                                        <div className="mt-2">
+                                            <textarea
+                                                value={editContent}
+                                                onChange={(e) => setEditContent(e.target.value)}
+                                                className="w-full bg-[#383a40] text-discord-white text-sm rounded-md p-2 focus:outline-none focus:ring-1 focus:ring-blurple border-none resize-none"
+                                                rows={Math.max(1, editContent.split('\n').length)}
+                                                autoFocus
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                        e.preventDefault();
+                                                        handleSaveEdit();
+                                                    } else if (e.key === 'Escape') {
+                                                        setEditingMessage(null);
+                                                    }
+                                                }}
+                                            />
+                                            <div className="flex items-center gap-1.5 mt-1.5 text-[11px]">
+                                                <span className="text-discord-muted">escape to</span>
+                                                <button onClick={() => setEditingMessage(null)} className="text-blurple hover:underline">cancel</button>
+                                                <span className="text-discord-muted ml-1">• enter to</span>
+                                                <button onClick={handleSaveEdit} className="text-blurple hover:underline">save</button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-discord-light">
+                                            {m.content}
+                                            {m.isEdited && (
+                                                <span className="ml-1 text-[10px] text-discord-faint font-normal select-none">(edited)</span>
+                                            )}
+                                        </p>
+                                    )}
                                     {copiedMessageId === m._id && (
                                         <div className="mt-1 text-[11px] text-emerald-300">Copied</div>
                                     )}
@@ -707,7 +819,23 @@ const DmPanel = ({
                     </div>
                 )}
 
-                <div className="relative flex items-center gap-2 bg-discord-input rounded-xl px-3 py-2">
+                {replyingTo && (
+                    <div className="flex items-center justify-between px-3 py-2 bg-discord-dark/50 border-x border-t border-discord-darkest/10 rounded-t-xl -mb-1">
+                        <div className="flex items-center gap-1.5 text-xs text-discord-muted truncate">
+                            <span>Replying to</span>
+                            <span className="font-bold text-discord-light">
+                                {replyingTo.senderId?.name || 'Member'}
+                            </span>
+                        </div>
+                        <button
+                            onClick={onCancelReply}
+                            className="p-1 rounded-full hover:bg-discord-dark transition-colors"
+                        >
+                            <X className="w-3 h-3 text-discord-faint" />
+                        </button>
+                    </div>
+                )}
+                <div className={`relative flex items-center gap-2 bg-discord-input ${replyingTo ? 'rounded-b-xl' : 'rounded-xl'} px-3 py-2 border border-discord-darkest/10`}>
                     <label className="w-8 h-8 rounded-md hover:bg-discord-border-light/20 flex items-center justify-center cursor-pointer">
                         <Plus className="w-4 h-4 text-discord-faint" />
                         <input

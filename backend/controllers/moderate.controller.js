@@ -9,6 +9,7 @@ import ChannelMessage from "../models/channelMessage.model.js";
 import ChannelMessageComment from "../models/channelMessageComment.model.js";
 import Notification from "../models/notification.model.js";
 import { io } from "../socket.js";
+import { logAction } from "../utils/auditUtils.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const requireAdmin = (communityRole) => communityRole === 'admin';
@@ -48,8 +49,6 @@ const parseDuration = (dur) => {
     return new Date(Date.now() + hours * 60 * 60 * 1000);
 };
 
-const logAction = (communityId, moderatorId, targetUserId, actionType, reason = '', metadata = {}) =>
-    AuditLog.create({ communityId, moderatorId, targetUserId, actionType, reason, metadata });
 
 // ── Flag Post (any authenticated user) ──────────────────────────────────────
 export const flagPost = async (req, res) => {

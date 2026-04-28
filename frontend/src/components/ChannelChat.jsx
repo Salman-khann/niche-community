@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Hash, Plus, Send, Smile, Image as ImageIcon, X, Heart, MessageCircle, Pin, Flag, FileText, MoreHorizontal, Reply, Forward, Copy, Link2, ChevronRight, Volume2, Bell, AtSign } from 'lucide-react';
+import { Hash, Plus, Send, Smile, Image as ImageIcon, X, Heart, MessageCircle, Pin, Flag, FileText, MoreHorizontal, Reply, Forward, Copy, Link2, ChevronRight, Volume2, Bell, AtSign, Trash2, Settings, Pencil } from 'lucide-react';
 import { useChannelMessageStore } from '../stores/channelMessageStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -11,6 +11,8 @@ import PinnedMessagesModal from './PinnedMessagesModal';
 import ChannelEditModal from './ChannelEditModal';
 import AttachmentPreviewCard from './AttachmentPreviewCard';
 import EmojiArt from './EmojiArt';
+import { useCommunityStore } from '../stores/communityStore';
+import { apiFetch } from '../stores/apiFetch';
 import { CHAT_REACTION_EMOJIS, normalizeEmojiShortcodes } from '../utils/emojiShortcodes';
 
 const isImageUrl = (url) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(url) || url.includes('image/upload');
@@ -59,13 +61,18 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
         pinnedMessages,
         togglePin,
         handlePin,
+        deleteMessage,
+        handleMessageDeleted,
         scrollToMessageId,
         setScrollTarget,
         hasMoreMessages,
+        handleMessageEdited,
+        editMessage,
     } = useChannelMessageStore();
     const { updateChannelName, deleteChannel } = useChannelStore();
     const { uploadFile } = useFeedStore();
     const { activeCommunityId } = useWorkspaceStore();
+    const { fetchCommunityDetail } = useCommunityStore();
     const [text, setText] = useState('');
     const [files, setFiles] = useState([]);
     const [isUploading, setIsUploading] = useState(false);
@@ -92,6 +99,9 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
     const [sendError, setSendError] = useState('');
     const [isSavingEdit, setIsSavingEdit] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [replyingToMessage, setReplyingToMessage] = useState(null);
+    const [editingMessage, setEditingMessage] = useState(null);
+    const [editContent, setEditContent] = useState('');
     const typingTimeoutRef = useRef(null);
     const inputRef = useRef(null);
     const endRef = useRef(null);
@@ -113,7 +123,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
         const all = [
             ...(currentUser?.id ? [{
                 _id: currentUser.id,
-                displayName: currentUser.displayName,
+                displayName: currentUser.displayName || currentUser.name,
                 username: currentUser.username,
                 avatar: currentUser.avatar,
             }] : []),
@@ -232,29 +242,49 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
             if (!payload?.messageId) return;
             handlePin(payload);
         };
+        const handleMessageDeletedSocket = (payload) => {
+            if (!payload?.messageId) return;
+            handleMessageDeleted(payload);
+        };
         const handleCommentReactionSocket = (payload) => {
             if (!payload?.messageId || !payload?.commentId) return;
             applyCommentReactionFromSocket(payload);
         };
+        const handleMessageEditedSocket = (payload) => {
+            if (!payload?._id) return;
+            handleMessageEdited(payload);
+        };
         socket.on('channel:message', handleMessage);
+        socket.on('channel:message_edited', handleMessageEditedSocket);
         socket.on('channel:reaction', handleReactionSocket);
         socket.on('channel:comment', handleCommentSocket);
         socket.on('channel:pin', handlePinSocket);
+        socket.on('channel:message-deleted', handleMessageDeletedSocket);
         socket.on('channel:comment-reaction', handleCommentReactionSocket);
         socket.on('channel:typing', handleTyping);
         return () => {
             socket.off('channel:message', handleMessage);
+            socket.off('channel:message_edited', handleMessageEditedSocket);
             socket.off('channel:reaction', handleReactionSocket);
             socket.off('channel:comment', handleCommentSocket);
             socket.off('channel:pin', handlePinSocket);
+            socket.off('channel:message-deleted', handleMessageDeletedSocket);
             socket.off('channel:comment-reaction', handleCommentReactionSocket);
             socket.off('channel:typing', handleTyping);
         };
-    }, [socket, channel?._id, pushMessage, currentUser?.id, handleReaction, handleComment, handlePin, applyCommentReactionFromSocket]);
+    }, [socket, channel?._id, pushMessage, currentUser?.id, handleReaction, handleComment, handlePin, handleMessageDeleted, applyCommentReactionFromSocket, handleMessageEdited]);
 
+    const prevCountRef = useRef(messages.length);
     useEffect(() => {
-        endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }, [messages]);
+        const currentCount = messages.length;
+        const prevCount = prevCountRef.current;
+        prevCountRef.current = currentCount;
+
+        // Only auto-scroll if messages were added AND we aren't loading older history
+        if (currentCount > prevCount && !isLoadingOlder) {
+            endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+    }, [messages, isLoadingOlder]);
 
     useEffect(() => {
         if (!openMessageMenuId) return;
@@ -395,18 +425,40 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
                 const match = mentionCandidates.find((m) => (m.username || '').toLowerCase() === handle);
                 if (match && !mentionIds.includes(match._id)) mentionIds.push(match._id);
             });
-            const payload = { content: trimmed, mediaURLs, mentions: mentionIds };
+            const payload = { 
+                content: trimmed, 
+                mediaURLs, 
+                mentions: mentionIds,
+                replyTo: replyingToMessage?._id || null 
+            };
             const msg = await sendMessage(channel._id, payload);
             pushMessage(msg);
             setText('');
+            setReplyingToMessage(null);
             files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
             setFiles([]);
             socket?.emit('channel:typing', { channelId: channel._id, userId: currentUser?.id, isTyping: false });
         } catch (err) {
-            setSendError(err?.message || 'Failed to send message with attachment.');
+            setSendError(err?.message || 'Failed to send message.');
         } finally {
             setIsUploading(false);
             sendLockRef.current = false;
+        }
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editingMessage || !editContent.trim()) return;
+        setIsSavingEdit(true);
+        setEditError('');
+        try {
+            const normalizedText = normalizeEmojiShortcodes(editContent);
+            await editMessage(channel._id, editingMessage._id, normalizedText);
+            setEditingMessage(null);
+            setEditContent('');
+        } catch (err) {
+            setEditError(err.message || 'Failed to save edit');
+        } finally {
+            setIsSavingEdit(false);
         }
     };
 
@@ -432,15 +484,15 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
         setCommentDrafts((prev) => ({ ...prev, [messageId]: '' }));
     };
 
-    const handleReplyToMessage = async (messageId) => {
-        setOpenComments((prev) => ({ ...prev, [messageId]: true }));
-        const hasComments = commentsByMessage[messageId];
-        if (!hasComments) {
-            await fetchComments(channel._id, messageId, { limit: 50 });
-        }
-        requestAnimationFrame(() => {
-            commentInputRefs.current[messageId]?.focus?.();
-        });
+    const handleReplyToMessage = (msg) => {
+        setReplyingToMessage(msg);
+        setOpenMessageMenuId(null);
+        inputRef.current?.focus();
+    };
+
+    const handleStartEdit = (msg) => {
+        setEditingMessage(msg);
+        setEditContent(msg.content || '');
         setOpenMessageMenuId(null);
     };
 
@@ -520,6 +572,17 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
         setReportDetails('');
         setReportError('');
         setShowReportModal(true);
+    };
+
+    const handleDeleteMessage = async (messageId) => {
+        if (!channel?._id || !messageId) return;
+        if (!window.confirm('Are you sure you want to delete this message?')) return;
+        try {
+            await deleteMessage(channel._id, messageId);
+            setOpenMessageMenuId(null);
+        } catch (err) {
+            console.error('Failed to delete message:', err);
+        }
     };
 
     const handleReportSubmit = async () => {
@@ -660,12 +723,36 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
         }
     }, [scrollToMessageId, messages, setScrollTarget]);
 
-    const handleSaveChannelName = async (name) => {
+    const handleSaveChannelSettings = async (updates) => {
         if (!channel?._id || isSavingEdit) return;
         setEditError('');
         setIsSavingEdit(true);
         try {
-            await updateChannelName(channel._id, name);
+            // 1. Update name if changed
+            if (updates.name && updates.name !== channel.name) {
+                await updateChannelName(channel._id, updates.name);
+            }
+            
+            // 2. Update Sync status if changed
+            if (updates.isSynced !== channel.isSynced) {
+                await apiFetch(`/channels/${channel._id}/sync`, {
+                    method: 'PUT',
+                    body: { sync: updates.isSynced }
+                });
+            }
+
+            // 3. Update overwrites if not synced and changed
+            if (!updates.isSynced && updates.permissionOverwrites) {
+                await apiFetch(`/channels/${channel._id}/overwrites`, {
+                    method: 'PUT',
+                    body: { overwrites: updates.permissionOverwrites }
+                });
+            }
+
+            // Reload channel data? Simple way is to just refresh the community/channels
+            // But we can just rely on the store if it's updated. 
+            // Better to fetch community detail.
+            await fetchCommunityDetail(activeCommunityId);
             handleCloseEdit();
         } catch (err) {
             setEditError(err.message || 'Failed to update channel');
@@ -692,8 +779,8 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
 
     return (
         <>
-        <div className="flex-1 min-h-0 flex flex-col bg-[#1a1a1e]">
-            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-6 bg-[#1a1a1e]">
+        <div className="flex-1 min-h-0 flex flex-col bg-[#313338]">
+            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-6 bg-[#313338]">
                 {isLoading || isSwitching ? (
                     <div className="text-sm text-discord-faint">Loading messages...</div>
                 ) : error ? (
@@ -740,7 +827,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
                                 </button>
                             </div>
                         )}
-                        {messages.map((m) => {
+                        {messages.map((m, index) => {
                             const sender = memberMap.get(m.senderId) || {};
                             const isMe = m.senderId === currentUser?.id;
                             const isLiked = (m.likedBy || []).some((id) => id === currentUser?.id);
@@ -751,12 +838,32 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
                                 <div
                                     key={m._id}
                                     id={`message-${m._id}`}
-                                    className="group relative flex gap-3 px-2 py-2 -mx-2 border-t border-[#29292d]/45 hover:bg-[#242428] transition-colors"
+                                    className={`group relative flex gap-3 px-2 py-2 -mx-2 transition-colors ${m.replyTo ? 'mt-6' : 'mt-1'} ${hoveredMessageId === m._id || openMessageMenuId === m._id ? 'bg-[#2e3035]' : 'hover:bg-[#2e3035]/50'}`}
                                     onMouseEnter={() => setHoveredMessageId(m._id)}
                                     onMouseLeave={() => {
-                                        if (openMessageMenuId !== m._id) setHoveredMessageId((prev) => (prev === m._id ? null : prev));
+                                        if (openMessageMenuId !== m._id) setHoveredMessageId(null);
                                     }}
                                 >
+                                    {m.replyTo && (
+                                        <div className="absolute top-[-18px] left-[20px] flex items-center gap-1.5 opacity-80 pointer-events-none">
+                                            <div className="w-8 h-[16px] border-l-2 border-t-2 border-[#4E5058] rounded-tl-lg" />
+                                            <div className="flex items-center gap-1.5 ml-1 overflow-hidden">
+                                                <div className="w-4 h-4 rounded-full bg-discord-darkest flex items-center justify-center text-[10px] font-bold text-discord-faint overflow-hidden shrink-0">
+                                                    {m.replyTo?.senderId?.profileId?.avatar ? (
+                                                        <img src={m.replyTo.senderId.profileId.avatar} alt="" className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        (m.replyTo?.senderId?.name || 'U').charAt(0).toUpperCase()
+                                                    )}
+                                                </div>
+                                                <span className="text-xs font-bold text-discord-light shrink-0">
+                                                    {m.replyTo?.senderId?.name || 'Member'}
+                                                </span>
+                                                <span className="text-xs text-discord-muted truncate max-w-[400px]">
+                                                    {m.replyTo?.content || 'Original message'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
                                     {(hoveredMessageId === m._id || openMessageMenuId === m._id) && (
                                             <div className="absolute -top-4 right-0 z-20 flex items-center gap-1 rounded-lg border border-discord-border/70 bg-discord-darker p-1 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
                                             {CHAT_REACTION_EMOJIS.map((emoji) => (
@@ -772,7 +879,7 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
                                             ))}
                                             <button
                                                 type="button"
-                                                onClick={() => handleReplyToMessage(m._id)}
+                                                onClick={() => handleReplyToMessage(m)}
                                                 className="w-8 h-8 rounded-md flex items-center justify-center bg-discord-dark hover:bg-discord-border-light/60 text-discord-faint hover:text-discord-light"
                                                 title="Reply"
                                             >
@@ -796,71 +903,99 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
                                                     <MoreHorizontal className="w-4 h-4" />
                                                 </button>
                                                 {openMessageMenuId === m._id && (
-                                                    <div className="absolute right-0 top-10 w-64 rounded-lg border border-discord-border/80 bg-discord-darkest shadow-2xl p-1.5">
+                                                    <div className={`absolute right-4 w-60 rounded-xl border border-white/10 bg-[#111318] shadow-[0_16px_48px_rgba(0,0,0,0.5)] p-1.5 z-[250] ${
+                                                        index === 0 ? 'top-10' : index > messages.length - 4 ? 'bottom-full mb-2' : 'top-10'
+                                                    }`}>
                                                         <button
                                                             type="button"
                                                             onClick={() => setReactionPickerMessageId((prev) => (prev === m._id ? null : m._id))}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                         >
-                                                            Add Reaction <ChevronRight className="w-4 h-4 text-discord-faint" />
+                                                            Add Reaction <ChevronRight className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                         </button>
                                                         <div className="my-1 h-px bg-discord-border/70" />
                                                         <button
                                                             type="button"
-                                                            onClick={() => handleReplyToMessage(m._id)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
+                                                            onClick={() => handleReplyToMessage(m)}
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                         >
-                                                            Reply <Reply className="w-4 h-4 text-discord-faint" />
+                                                            Reply <Reply className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => handleForwardMessage(m, sender)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                         >
-                                                            Forward <Forward className="w-4 h-4 text-discord-faint" />
+                                                            Forward <Forward className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => copyMessageText(m._id, m.content || '')}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                         >
-                                                            Copy Text <Copy className="w-4 h-4 text-discord-faint" />
+                                                            Copy Text <Copy className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => togglePin(channel._id, m._id)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                         >
-                                                            Pin Message <Pin className="w-4 h-4 text-discord-faint" />
+                                                            Pin Message <Pin className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => setOpenMessageMenuId(null)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                         >
-                                                            Mark Unread <Bell className="w-4 h-4 text-discord-faint" />
+                                                            Mark Unread <Bell className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => copyMessageLink(m._id)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-discord-border-light/30 flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
                                                         >
-                                                            Copy Message Link <Link2 className="w-4 h-4 text-discord-faint" />
+                                                            Copy Message Link <Link2 className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => speakMessage(m.content || '')}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-[#32353b] flex items-center justify-between group/item"
                                                         >
-                                                            Speak Message <Volume2 className="w-4 h-4 text-discord-faint" />
+                                                            Speak Message <Volume2 className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
                                                         </button>
+                                                        {(isMe || canEditChannel) && (
+                                                            <>
+                                                                <div className="my-1 h-px bg-discord-border/70" />
+                                                                {isMe && (() => {
+                                                                    const timeElapsed = Date.now() - new Date(m.createdAt).getTime();
+                                                                    const canEdit = timeElapsed <= 15 * 60 * 1000;
+                                                                    if (!canEdit) return null;
+                                                                    return (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleStartEdit(m)}
+                                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-discord-light hover:bg-blurple hover:text-white transition-all flex items-center justify-between group/item"
+                                                                        >
+                                                                            Edit Message <Pencil className="w-4 h-4 text-discord-faint group-hover/item:text-white" />
+                                                                        </button>
+                                                                    );
+                                                                })()}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDeleteMessage(m._id)}
+                                                                    className="w-full px-3 py-2 rounded-md text-left text-sm text-red-400 hover:bg-red-500 hover:text-white transition-all flex items-center justify-between group/delete"
+                                                                >
+                                                                    Delete Message <Trash2 className="w-4 h-4 text-red-400 group-hover/delete:text-white" />
+                                                                </button>
+                                                            </>
+                                                        )}
                                                         <div className="my-1 h-px bg-[#2b2d31]" />
                                                         <button
                                                             type="button"
                                                             onClick={() => openReportModal(m)}
-                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-red-300 hover:bg-red-500/10 flex items-center justify-between"
+                                                            className="w-full px-3 py-2 rounded-md text-left text-sm text-red-300 hover:bg-red-500/10 transition-all flex items-center justify-between group/report"
                                                         >
-                                                            Report Message <Flag className="w-4 h-4 text-red-300" />
+                                                            Report Message <Flag className="w-4 h-4 text-red-300 group-hover/report:text-red-400" />
                                                         </button>
                                                     </div>
                                                 )}
@@ -887,12 +1022,44 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2">
                                             <span className={`text-sm font-semibold ${isMe ? 'text-white' : 'text-discord-light'}`}>
-                                                {sender.displayName || 'Member'}
+                                                {sender.displayName || sender.name || 'Member'}
+                                                {sender.username && <span className="ml-1.5 text-[11px] text-discord-faint font-normal">@{sender.username}</span>}
                                             </span>
                                             <span className="text-xs text-discord-faint">{formatTime(m.createdAt)}</span>
                                         </div>
                                         <div className="text-sm text-discord-white mt-1 leading-relaxed">
-                                            {renderContent(m.content)}
+                                            {editingMessage?._id === m._id ? (
+                                                <div className="mt-2">
+                                                    <textarea
+                                                        value={editContent}
+                                                        onChange={(e) => setEditContent(e.target.value)}
+                                                        className="w-full bg-[#383a40] text-discord-white text-sm rounded-md p-2 focus:outline-none focus:ring-1 focus:ring-blurple border-none resize-none"
+                                                        rows={Math.max(1, editContent.split('\n').length)}
+                                                        autoFocus
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                                e.preventDefault();
+                                                                handleSaveEdit();
+                                                            } else if (e.key === 'Escape') {
+                                                                setEditingMessage(null);
+                                                            }
+                                                        }}
+                                                    />
+                                                    <div className="flex items-center gap-1.5 mt-1.5 text-[11px]">
+                                                        <span className="text-discord-muted">escape to</span>
+                                                        <button onClick={() => setEditingMessage(null)} className="text-blurple hover:underline">cancel</button>
+                                                        <span className="text-discord-muted ml-1">• enter to</span>
+                                                        <button onClick={handleSaveEdit} className="text-blurple hover:underline">save</button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {renderContent(m.content)}
+                                                    {m.isEdited && (
+                                                        <span className="ml-1 text-[10px] text-discord-faint font-normal select-none">(edited)</span>
+                                                    )}
+                                                </>
+                                            )}
                                         </div>
                                         {copiedMessageId === m._id && (
                                             <div className="mt-1 text-[11px] text-emerald-300">Copied</div>
@@ -1085,7 +1252,24 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
                     </div>
                 )}
 
-                <div className="relative flex items-center gap-2 h-12 bg-discord-input rounded-xl px-3 border border-discord-darkest/10">
+                {replyingToMessage && (
+                    <div className="flex items-center justify-between px-3 py-2 bg-discord-dark/50 border-x border-t border-discord-darkest/10 rounded-t-xl -mb-1 animate-in slide-in-from-bottom-1 duration-150">
+                        <div className="flex items-center gap-1.5 text-xs text-discord-muted truncate">
+                            <span>Replying to</span>
+                            <span className="font-bold text-discord-light">
+                                {memberMap.get(replyingToMessage.senderId)?.displayName || replyingToMessage.senderId?.name || 'Member'}
+                            </span>
+                        </div>
+                        <button
+                            onClick={() => setReplyingToMessage(null)}
+                            className="p-1 rounded-full hover:bg-discord-dark transition-colors"
+                        >
+                            <X className="w-3 h-3 text-discord-faint" />
+                        </button>
+                    </div>
+                )}
+
+                <div className={`relative flex items-center gap-2 h-12 bg-discord-input ${replyingToMessage ? 'rounded-b-xl' : 'rounded-xl'} px-3 border border-discord-darkest/10`}>
                     <label className={`w-8 h-8 rounded-md flex items-center justify-center ${canPost ? 'hover:bg-[#2a2d35] cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
                         <Plus className="w-4 h-4 text-discord-muted" />
                         <input
@@ -1269,8 +1453,9 @@ const ChannelChat = ({ channel, socket, currentUser, members = [], roles = [], s
         <ChannelEditModal
             isOpen={showEditModal}
             onClose={handleCloseEdit}
-            channelName={channel?.name || ''}
-            onSave={handleSaveChannelName}
+            channel={channel}
+            roles={roles}
+            onSave={handleSaveChannelSettings}
             onDelete={handleDeleteChannel}
             isSaving={isSavingEdit}
             isDeleting={isDeleting}

@@ -5,6 +5,8 @@ const dmMessageSchema = new mongoose.Schema({
   senderId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   content: { type: String, default: "", trim: true },
   mediaURLs: { type: [String], default: [] },
+  replyTo: { type: mongoose.Schema.Types.ObjectId, ref: "DmMessage", default: null },
+  isEdited: { type: Boolean, default: false },
 }, { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } });
 
 dmMessageSchema.index({ threadId: 1, createdAt: 1 });
