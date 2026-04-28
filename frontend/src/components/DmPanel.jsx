@@ -240,59 +240,59 @@ const DmPanel = ({
     return (
         <div className="flex-1 min-h-0 flex flex-col">
             <div className="ui-topbar h-12 flex items-center justify-between px-4">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-discord-light">
-                        <button
-                            onClick={() => onOpenServers?.()}
-                            className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
-                            title="Open servers"
-                        >
-                            <Server className="w-4 h-4" />
-                        </button>
-                        <button
-                            onClick={() => onOpenSidebar?.()}
-                            className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
-                            title="Open direct messages"
-                        >
-                            <Menu className="w-4 h-4" />
-                        </button>
-                        <div className="w-6 h-6 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-bold">
-                            {activeDm?.avatar ? (
-                                <img src={activeDm.avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
-                            ) : (
-                                headerTitle.charAt(0).toUpperCase()
-                            )}
-                        </div>
-                        <span>{headerTitle}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {canAddToGroup && (
-                            <button
-                                onClick={() => onAddToGroup?.()}
-                                className="ui-icon-btn w-8 h-8 flex items-center justify-center"
-                                title="Add friends to group"
-                            >
-                                <UserPlus className="w-4 h-4" />
-                            </button>
+                <div className="flex items-center gap-2 text-sm font-semibold text-discord-light">
+                    <button
+                        onClick={() => onOpenServers?.()}
+                        className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
+                        title="Open servers"
+                    >
+                        <Server className="w-4 h-4" />
+                    </button>
+                    <button
+                        onClick={() => onOpenSidebar?.()}
+                        className="ui-icon-btn md:hidden w-8 h-8 flex items-center justify-center"
+                        title="Open direct messages"
+                    >
+                        <Menu className="w-4 h-4" />
+                    </button>
+                    <div className="w-6 h-6 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-bold">
+                        {activeDm?.avatar ? (
+                            <img src={activeDm.avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
+                        ) : (
+                            headerTitle.charAt(0).toUpperCase()
                         )}
-                        {activeDm?.isGroup && (
-                            <button
-                                onClick={() => onLeaveGroup?.()}
-                                className="ui-icon-btn w-8 h-8 flex items-center justify-center"
-                                title="Leave group"
-                            >
-                                <LogOut className="w-4 h-4" />
-                            </button>
-                        )}
-                        <button
-                            onClick={() => (callStatus?.isActive ? onJoinCall?.() : onCall?.())}
-                            disabled={callDisabled}
-                            className="ui-icon-btn w-8 h-8 flex items-center justify-center disabled:opacity-50"
-                            title={callStatus?.isActive ? 'Join call' : 'Call'}
-                        >
-                            <Phone className="w-4 h-4" />
-                        </button>
                     </div>
+                    <span>{headerTitle}</span>
                 </div>
+                <div className="flex items-center gap-2">
+                    {canAddToGroup && (
+                        <button
+                            onClick={() => onAddToGroup?.()}
+                            className="ui-icon-btn w-8 h-8 flex items-center justify-center"
+                            title="Add friends to group"
+                        >
+                            <UserPlus className="w-4 h-4" />
+                        </button>
+                    )}
+                    {activeDm?.isGroup && (
+                        <button
+                            onClick={() => onLeaveGroup?.()}
+                            className="ui-icon-btn w-8 h-8 flex items-center justify-center"
+                            title="Leave group"
+                        >
+                            <LogOut className="w-4 h-4" />
+                        </button>
+                    )}
+                    <button
+                        onClick={() => (callStatus?.isActive ? onJoinCall?.() : onCall?.())}
+                        disabled={callDisabled}
+                        className="ui-icon-btn w-8 h-8 flex items-center justify-center disabled:opacity-50"
+                        title={callStatus?.isActive ? 'Join call' : 'Call'}
+                    >
+                        <Phone className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-6">
                 {!activeCall && callStatus?.isActive && !callStatus?.isInCall && (
@@ -473,15 +473,15 @@ const DmPanel = ({
                                 <p className="text-[10px] uppercase tracking-[0.16em] text-discord-faint text-center mb-2">Quick Reactions</p>
                                 <div className="flex items-center justify-center gap-2">
                                     {['🙋', '👍', '👏', '❤️'].map((emoji) => (
-                                    <button
-                                        key={`dm-call-reaction-${emoji}`}
-                                        type="button"
-                                        onClick={() => onSendReaction(emoji)}
-                                        className="w-10 h-10 rounded-xl border border-discord-border/60 bg-gradient-to-b from-discord-border-light/45 to-discord-darkest text-white hover:from-discord-border-light/60 hover:to-discord-border-light/20 flex items-center justify-center shadow-md transition-all hover:-translate-y-0.5"
-                                        title={`React ${emoji}`}
-                                    >
-                                        <EmojiArt emoji={emoji} className="w-5 h-5" />
-                                    </button>
+                                        <button
+                                            key={`dm-call-reaction-${emoji}`}
+                                            type="button"
+                                            onClick={() => onSendReaction(emoji)}
+                                            className="w-10 h-10 rounded-xl border border-discord-border/60 bg-gradient-to-b from-discord-border-light/45 to-discord-darkest text-white hover:from-discord-border-light/60 hover:to-discord-border-light/20 flex items-center justify-center shadow-md transition-all hover:-translate-y-0.5"
+                                            title={`React ${emoji}`}
+                                        >
+                                            <EmojiArt emoji={emoji} className="w-5 h-5" />
+                                        </button>
                                     ))}
                                 </div>
                             </div>
@@ -662,13 +662,13 @@ const DmPanel = ({
                                                 const docUrls = m.mediaURLs.filter((candidate) => !(candidate.match(/\.(png|jpe?g|gif|webp|bmp)$/i) || candidate.includes('image/upload')));
                                                 const docIndex = docUrls.findIndex((candidate) => candidate === url);
                                                 return (
-                                                (url.match(/\.(png|jpe?g|gif|webp|bmp)$/i) || url.includes('image/upload')) ? (
-                                                    <div key={url} className="rounded-lg border border-discord-border/40 overflow-hidden bg-discord-darkest">
-                                                        <img src={url} alt="" className="w-full h-full object-cover" />
-                                                    </div>
-                                                ) : (
-                                                    <AttachmentPreviewCard key={url} url={url} allUrls={docUrls} initialIndex={Math.max(0, docIndex)} />
-                                                )
+                                                    (url.match(/\.(png|jpe?g|gif|webp|bmp)$/i) || url.includes('image/upload')) ? (
+                                                        <div key={url} className="rounded-lg border border-discord-border/40 overflow-hidden bg-discord-darkest">
+                                                            <img src={url} alt="" className="w-full h-full object-cover" />
+                                                        </div>
+                                                    ) : (
+                                                        <AttachmentPreviewCard key={url} url={url} allUrls={docUrls} initialIndex={Math.max(0, docIndex)} />
+                                                    )
                                                 );
                                             })}
                                         </div>
