@@ -72,35 +72,45 @@ app.use('/api/server-invites', serverInviteRoutes);
 
 const PORT = process.env.PORT || 3000;
 
-// Use the HTTP server (not app.listen) so Socket.io is attached
-server.listen(PORT, () => {
-    (async () => {
+const startServer = async () => {
+    try {
         const dbConnected = await connectDb();
-        if (dbConnected) {
-            try {
-                await ensureRootUser();
-            } catch (error) {
-                console.log("⚠️  Root user seed failed:", error.message || error);
-            }
-
-            try {
-                await startLeaderboardBotScheduler();
-            } catch (error) {
-                console.log("⚠️  Leaderboard bot startup failed:", error.message || error);
-            }
-
-            try {
-                await startEventReminderScheduler();
-            } catch (error) {
-                console.log("⚠️  Event reminder scheduler startup failed:", error.message || error);
-            }
-
-            try {
-                await startNotificationDigestScheduler();
-            } catch (error) {
-                console.log("⚠️  Notification digest scheduler startup failed:", error.message || error);
-            }
+        if (!dbConnected) {
+            console.error("❌ Database connection failed. Exiting...");
+            process.exit(1);
         }
-        console.log(`Server is running on port ${PORT}`);
-    })();
-});
+
+        try {
+            await ensureRootUser();
+        } catch (error) {
+            console.log("⚠️  Root user seed failed:", error.message || error);
+        }
+
+        try {
+            await startLeaderboardBotScheduler();
+        } catch (error) {
+            console.log("⚠️  Leaderboard bot startup failed:", error.message || error);
+        }
+
+        try {
+            await startEventReminderScheduler();
+        } catch (error) {
+            console.log("⚠️  Event reminder scheduler startup failed:", error.message || error);
+        }
+
+        try {
+            await startNotificationDigestScheduler();
+        } catch (error) {
+            console.log("⚠️  Notification digest scheduler startup failed:", error.message || error);
+        }
+
+        server.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
+        });
+    } catch (error) {
+        console.error("❌ Error during server startup:", error);
+        process.exit(1);
+    }
+};
+
+startServer();
