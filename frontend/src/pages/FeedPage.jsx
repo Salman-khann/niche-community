@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Hash, Search, Users, Pin, HelpCircle, User, MessageCircle, Phone, MoreVertical, Settings, Menu, X, Server, Compass, Maximize2, MoreHorizontal, MonitorUp, UserPlus, MoveHorizontal, Lock } from 'lucide-react';
+import { Hash, Search, Users, Pin, HelpCircle, User, MessageCircle, Phone, MoreVertical, Settings, Menu, X, Server, Compass, Maximize2, MoreHorizontal, MonitorUp, UserPlus, MoveHorizontal, Lock, MessageSquare, Inbox } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useProfileStore } from '../stores/profileStore';
@@ -2139,7 +2139,7 @@ const FeedPage = () => {
                 )}
             </div>
 
-            <div className="relative z-40 mx-0.5 mb-1 rounded-xl border border-white/5 bg-[#202024] px-2.5 py-2.5 shadow-[0_10px_24px_rgba(0,0,0,0.46)] flex items-center gap-2 cursor-pointer transition-all hover:bg-[#28282c] hover:border-white/15" onClick={() => setShowProfilePopout(true)}>
+            <div className="relative z-40 mx-0.5 mb-1 rounded-xl border border-white/5 bg-discord-sidebar px-2.5 py-2.5 shadow-[0_10px_24px_rgba(0,0,0,0.46)] flex items-center gap-2 cursor-pointer transition-all hover:bg-discord-darkest/40 hover:border-white/15" onClick={() => setShowProfilePopout(true)}>
                 <div className="relative">
                     {profile?.avatar ? (
                         <img src={profile.avatar} alt="" className="w-9 h-9 rounded-full object-cover border-2 border-discord-border" />
@@ -2172,20 +2172,8 @@ const FeedPage = () => {
     );
 
     const memberListBody = (
-        <div className="flex-1 min-h-0 flex flex-col bg-[#313338]">
-            <div className="px-3 pt-3 pb-2 border-b border-white/5 bg-[#313338]">
-                <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-discord-faint" />
-                    <input
-                        type="text"
-                        value={memberSearchQuery}
-                        onChange={(e) => setMemberSearchQuery(e.target.value)}
-                        placeholder="Search members"
-                        className="w-full pl-8 pr-3 py-2 text-xs rounded-md border border-discord-darkest bg-discord-input text-discord-light placeholder:text-discord-faint/70 focus:outline-none focus:border-discord-border"
-                    />
-                </div>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-5">
+        <div className="flex-1 min-h-0 flex flex-col bg-discord-sidebar">
+            <div className="flex-1 min-h-0 overflow-y-auto px-2 py-3 space-y-5">
                 {memberSections.map((group) => (
                     <div key={group.id}>
                         <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-discord-faint mb-2">
@@ -2199,7 +2187,7 @@ const FeedPage = () => {
                                     <button
                                         key={m._id}
                                         onClick={() => { setSelectedMember(m); setShowMemberPopout(true); }}
-                                        className="w-full flex items-center gap-2 text-sm text-discord-light rounded-md px-2 py-1.5 hover:bg-white/5 transition-all group cursor-pointer text-left"
+                                        className="w-full flex items-center gap-3 text-discord-muted rounded-md px-2 py-1.5 hover:bg-white/5 transition-colors group cursor-pointer text-left"
                                     >
                                         <div className="relative w-8 h-8 shrink-0 rounded-full bg-discord-darkest flex items-center justify-center text-xs font-semibold overflow-hidden">
                                             {m.avatar ? (
@@ -2207,7 +2195,7 @@ const FeedPage = () => {
                                             ) : (
                                                 m.displayName?.charAt(0).toUpperCase()
                                             )}
-                                            <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-discord-darker ${presenceColor(m.presence)}`} />
+                                            <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-[3px] border-discord-sidebar ${presenceColor(m.presence)}`} />
                                         </div>
                                         <div className="min-w-0 flex-1 leading-tight">
                                             <p className="text-sm font-semibold text-discord-white truncate">{m.displayName}</p>
@@ -2369,7 +2357,7 @@ const FeedPage = () => {
                 {viewMode === 'server' ? (
                     <>
                         <div
-                            className="ui-topbar relative z-[140] h-12 flex items-center justify-between px-4 bg-[#313338] shadow-[0_1px_2px_rgba(0,0,0,0.1),0_1px_0_rgba(255,255,255,0.04)]"
+                            className="ui-topbar relative z-[140] h-12 flex items-center justify-between px-4 bg-discord-chat shadow-[0_1px_2px_rgba(0,0,0,0.1),0_1px_0_rgba(255,255,255,0.04)]"
                         >
                             <div className="flex items-center gap-2.5 text-sm font-semibold text-discord-light">
                                 <button
@@ -2399,33 +2387,25 @@ const FeedPage = () => {
                                     <span className="text-discord-faint text-xs uppercase tracking-[0.2em]">Loading channel</span>
                                 )}
                             </div>
-                            <div className="flex items-center gap-3 text-discord-faint">
-                                    <button
-                                        onClick={() => setMobileDirectorySignal((v) => v + 1)}
-                                        className="md:hidden w-8 h-8 rounded-md hover:bg-[#23262e] hover:text-discord-light cursor-pointer flex items-center justify-center"
-                                        title="Discover servers"
-                                    >
-                                        <Compass className="w-4 h-4" />
-                                    </button>
+                            <div className="flex items-center gap-2 text-[#b5bac1]">
+                                <button className="w-8 h-8 rounded-md hover:text-[#dbdee1] cursor-pointer flex items-center justify-center transition-colors" title="Threads">
+                                    <MessageSquare className="w-5 h-5" />
+                                </button>
+                                <NotificationBell />
+                                <button onClick={() => setShowPins(true)} className="w-8 h-8 rounded-md hover:text-[#dbdee1] cursor-pointer flex items-center justify-center transition-colors" title="Pinned Messages">
+                                    <Pin className="w-5 h-5" />
+                                </button>
                                 {shouldShowServerMembersPanel && (
                                     <button
                                         onClick={() => setShowMemberList((v) => !v)}
-                                        className={`w-8 h-8 rounded-md hover:bg-discord-darkest/40 hover:text-discord-light cursor-pointer flex items-center justify-center transition-colors ${showMemberList ? 'text-discord-white bg-discord-darkest/30' : 'text-discord-faint'}`}
-                                        title="Toggle members list"
+                                        className={`w-8 h-8 rounded-md cursor-pointer flex items-center justify-center transition-colors ${showMemberList ? 'text-white' : 'hover:text-[#dbdee1]'}`}
+                                        title="Toggle Member List"
                                     >
-                                        <Users className="w-4 h-4 shadow-sm" />
+                                        <Users className="w-5 h-5" />
                                     </button>
                                 )}
-                                <button onClick={() => setShowPins(true)} className="w-8 h-8 rounded-md hover:bg-[#23262e] hover:text-discord-light cursor-pointer flex items-center justify-center">
-                                    <Pin className="w-4 h-4" />
-                                </button>
-                                <NotificationBell />
-                                <button onClick={() => navigate('/help')} className="w-8 h-8 rounded-md hover:bg-discord-darker hover:text-discord-light cursor-pointer flex items-center justify-center" title="Help">
-                                    <HelpCircle className="w-4 h-4" />
-                                </button>
-                                <div ref={channelSearchPanelRef} className="hidden md:block relative z-[150]">
-                                    <div className="flex items-center gap-2 h-8 w-[300px] rounded-md border border-discord-darkest bg-discord-input px-2.5 text-xs text-discord-faint">
-                                        <Search className="w-3.5 h-3.5 shrink-0" />
+                                <div ref={channelSearchPanelRef} className="hidden md:block relative z-[150] ml-2">
+                                    <div className="flex items-center gap-2 h-6 w-[144px] rounded bg-discord-darkest px-1.5 text-[13px] text-discord-faint transition-all focus-within:w-[240px] focus-within:bg-discord-darkest">
                                         <input
                                             type="text"
                                             value={channelSearchQuery}
@@ -2444,83 +2424,90 @@ const FeedPage = () => {
                                                     handleSelectSearchResult(channelSearchResults[0]);
                                                 }
                                             }}
-                                            placeholder="Search messages"
-                                            className="flex-1 bg-transparent outline-none text-discord-light placeholder:text-discord-faint/80"
+                                            placeholder="Search"
+                                            className="flex-1 bg-transparent outline-none text-[#dbdee1] placeholder:text-[#949ba4]"
                                         />
+                                        <Search className="w-4 h-4 shrink-0" />
+                                    </div>
+                                </div>
+                                <button className="w-8 h-8 rounded-md hover:text-[#dbdee1] cursor-pointer flex items-center justify-center transition-colors ml-1" title="Inbox">
+                                    <Inbox className="w-5 h-5" />
+                                </button>
+                                <button onClick={() => navigate('/help')} className="w-8 h-8 rounded-md hover:text-[#dbdee1] cursor-pointer flex items-center justify-center transition-colors" title="Help">
+                                    <HelpCircle className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {showChannelSearchPanel && (
+                                <div className="absolute right-0 top-10 z-[220] w-[420px] max-w-[70vw] rounded-lg border border-[#2a2d33] bg-[#111318] shadow-2xl overflow-hidden">
+                                    <div className="px-3 py-2 border-b border-[#29292d] text-[11px] uppercase tracking-[0.12em] text-discord-faint font-semibold">
+                                        Search In #{activeChannel?.name || 'channel'}
                                     </div>
 
-                                    {showChannelSearchPanel && (
-                                        <div className="absolute right-0 top-10 z-[220] w-[420px] max-w-[70vw] rounded-lg border border-[#2a2d33] bg-[#111318] shadow-2xl overflow-hidden">
-                                            <div className="px-3 py-2 border-b border-[#29292d] text-[11px] uppercase tracking-[0.12em] text-discord-faint font-semibold">
-                                                Search In #{activeChannel?.name || 'channel'}
+                                    <div className="max-h-[420px] overflow-y-auto">
+                                        {!channelSearchQuery.trim() && (
+                                            <div className="px-3 py-3 text-xs text-discord-faint">
+                                                Use filters like from:name, has:link, has:file, before:2026-01-01, after:2026-01-01.
                                             </div>
+                                        )}
 
-                                            <div className="max-h-[420px] overflow-y-auto">
-                                                {!channelSearchQuery.trim() && (
-                                                    <div className="px-3 py-3 text-xs text-discord-faint">
-                                                        Use filters like from:name, has:link, has:file, before:2026-01-01, after:2026-01-01.
-                                                    </div>
-                                                )}
+                                        {channelSearchQuery.trim() && channelSearchQuery.trim().length < 2 && !channelSearchLoading && (
+                                            <div className="px-3 py-3 text-xs text-discord-faint">Type at least 2 characters to search.</div>
+                                        )}
 
-                                                {channelSearchQuery.trim() && channelSearchQuery.trim().length < 2 && !channelSearchLoading && (
-                                                    <div className="px-3 py-3 text-xs text-discord-faint">Type at least 2 characters to search.</div>
-                                                )}
+                                        {channelSearchLoading && (
+                                            <div className="px-3 py-3 text-xs text-discord-faint">Searching messages...</div>
+                                        )}
 
-                                                {channelSearchLoading && (
-                                                    <div className="px-3 py-3 text-xs text-discord-faint">Searching messages...</div>
-                                                )}
+                                        {!!channelSearchError && !channelSearchLoading && (
+                                            <div className="px-3 py-3 text-xs text-discord-red">{channelSearchError}</div>
+                                        )}
 
-                                                {!!channelSearchError && !channelSearchLoading && (
-                                                    <div className="px-3 py-3 text-xs text-discord-red">{channelSearchError}</div>
-                                                )}
+                                        {!channelSearchLoading && !channelSearchError && channelSearchQuery.trim().length >= 2 && channelSearchResults.length === 0 && (
+                                            <div className="px-3 py-3 text-xs text-discord-faint">No messages matched this search.</div>
+                                        )}
 
-                                                {!channelSearchLoading && !channelSearchError && channelSearchQuery.trim().length >= 2 && channelSearchResults.length === 0 && (
-                                                    <div className="px-3 py-3 text-xs text-discord-faint">No messages matched this search.</div>
-                                                )}
-
-                                                {!channelSearchLoading && channelSearchResults.length > 0 && (
-                                                    <div className="divide-y divide-[#29292d]">
-                                                        {channelSearchResults.map((row) => (
-                                                            <button
-                                                                key={row._id}
-                                                                type="button"
-                                                                onClick={() => handleSelectSearchResult(row)}
-                                                                className="w-full px-3 py-2.5 text-left hover:bg-[#1d2028] transition-colors"
-                                                            >
-                                                                <div className="flex items-center justify-between gap-3">
-                                                                    <div className="text-xs font-semibold text-discord-light truncate">{row.sender?.displayName || 'Member'}</div>
-                                                                    <div className="text-[11px] text-discord-faint shrink-0">{formatSearchTimestamp(row.createdAt)}</div>
-                                                                </div>
-                                                                <div className="mt-1 text-xs text-discord-muted leading-relaxed">
-                                                                    {buildSearchPreview(row.content)}
-                                                                </div>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {channelSearchHasMore && !channelSearchLoading && (
-                                                <div className="px-3 py-2 border-t border-[#29292d]">
+                                        {!channelSearchLoading && channelSearchResults.length > 0 && (
+                                            <div className="divide-y divide-[#29292d]">
+                                                {channelSearchResults.map((row) => (
                                                     <button
+                                                        key={row._id}
                                                         type="button"
-                                                        onClick={() => loadMoreSearchResults(activeChannel?._id, 20)}
-                                                        className="w-full h-8 rounded-md bg-[#1b1e25] border border-[#2a2d33] text-xs text-discord-light hover:bg-[#242833]"
+                                                        onClick={() => handleSelectSearchResult(row)}
+                                                        className="w-full px-3 py-2.5 text-left hover:bg-[#1d2028] transition-colors"
                                                     >
-                                                        Load More Results
+                                                        <div className="flex items-center justify-between gap-3">
+                                                            <div className="text-xs font-semibold text-discord-light truncate">{row.sender?.displayName || 'Member'}</div>
+                                                            <div className="text-[11px] text-discord-faint shrink-0">{formatSearchTimestamp(row.createdAt)}</div>
+                                                        </div>
+                                                        <div className="mt-1 text-xs text-discord-muted leading-relaxed">
+                                                            {buildSearchPreview(row.content)}
+                                                        </div>
                                                     </button>
-                                                </div>
-                                            )}
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
 
-                                            {channelSearchJumpError && (
-                                                <div className="px-3 py-2 border-t border-[#29292d] text-xs text-discord-red">
-                                                    {channelSearchJumpError}
-                                                </div>
-                                            )}
+                                    {channelSearchHasMore && !channelSearchLoading && (
+                                        <div className="px-3 py-2 border-t border-[#29292d]">
+                                            <button
+                                                type="button"
+                                                onClick={() => loadMoreSearchResults(activeChannel?._id, 20)}
+                                                className="w-full h-8 rounded-md bg-[#1b1e25] border border-[#2a2d33] text-xs text-discord-light hover:bg-[#242833]"
+                                            >
+                                                Load More Results
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {channelSearchJumpError && (
+                                        <div className="px-3 py-2 border-t border-[#29292d] text-xs text-discord-red">
+                                            {channelSearchJumpError}
                                         </div>
                                     )}
                                 </div>
-                            </div>
+                            )}
                         </div>
 
                         {showServerVoiceStage && (
@@ -2694,11 +2681,10 @@ const FeedPage = () => {
                                                             <button
                                                                 type="button"
                                                                 onClick={(e) => { e.stopPropagation(); handleShareToggle(); }}
-                                                                className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all active:scale-95 ${
-                                                                    isSharing
-                                                                        ? 'bg-discord-green/20 text-discord-green hover:bg-discord-green/30'
-                                                                        : 'bg-white/15 hover:bg-white/25 text-white'
-                                                                }`}
+                                                                className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all active:scale-95 ${isSharing
+                                                                    ? 'bg-discord-green/20 text-discord-green hover:bg-discord-green/30'
+                                                                    : 'bg-white/15 hover:bg-white/25 text-white'
+                                                                    }`}
                                                                 title={isSharing ? 'Stop sharing screen' : 'Share your screen'}
                                                             >
                                                                 <MonitorUp className="w-4 h-4" />
@@ -2930,8 +2916,8 @@ const FeedPage = () => {
                                             const url = await uploadFile(f.file);
                                             mediaURLs.push(url);
                                         }
-                                        const payload = { 
-                                            content: normalizedText.trim(), 
+                                        const payload = {
+                                            content: normalizedText.trim(),
                                             mediaURLs,
                                             replyTo: dmReplyingTo?._id || null
                                         };
@@ -3437,7 +3423,7 @@ const FeedPage = () => {
                                         ))}
                                     </div>
                                 </div>
-                                <aside className="hidden lg:block w-80 border-l border-white/5 px-4 py-4 bg-[#313338]">
+                                <aside className="hidden lg:block w-80 border-l border-white/5 px-4 py-4 bg-discord-chat">
                                     <h3 className="text-2xl font-bold text-white mb-4">Active Now</h3>
                                     {activeNowFriends.length === 0 ? (
                                         <div className="rounded-xl border border-discord-border/60 bg-discord-darkest/40 p-4 text-sm text-discord-faint">
@@ -3473,12 +3459,12 @@ const FeedPage = () => {
 
             {viewMode === 'server' && shouldShowServerMembersPanel && showMemberList && (
                 <>
-                    <aside className="hidden lg:flex w-60 border-l border-white/5 bg-[#313338] flex-col">
+                    <aside className="hidden lg:flex w-60 bg-discord-sidebar flex-col">
                         {memberListBody}
                     </aside>
                     <div className="lg:hidden">
                         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={() => setShowMemberList(false)} />
-                        <aside className="fixed top-0 right-0 bottom-0 w-72 bg-[#313338] z-50 shadow-2xl flex flex-col">
+                        <aside className="fixed top-0 right-0 bottom-0 w-72 bg-discord-chat z-50 shadow-2xl flex flex-col">
                             <div className="h-12 flex items-center justify-between px-4 border-b border-white/5 bg-[#313338]">
                                 <span className="text-sm font-semibold text-discord-light">Members</span>
                                 <button onClick={() => setShowMemberList(false)} className="text-discord-faint hover:text-white">
