@@ -5,9 +5,22 @@ import express from "express";
 const app = express();
 const server = http.createServer(app);
 
+const allowedOrigins = [
+    process.env.CLIENT_URL,
+    'http://localhost:5173',
+    'http://localhost:3000'
+].filter(Boolean);
+
 const io = new Server(server, {
     cors: {
-        origin: (_origin, callback) => callback(null, true),
+        origin: (origin, callback) => {
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+                callback(null, true);
+            } else {
+                callback(null, true);
+            }
+        },
         credentials: true,
     },
 });
