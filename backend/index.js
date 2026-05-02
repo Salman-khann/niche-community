@@ -32,27 +32,10 @@ import { startLeaderboardBotScheduler } from './utils/leaderboardBot.js';
 import { startEventReminderScheduler } from './utils/eventReminderScheduler.js';
 import { startNotificationDigestScheduler } from './utils/notificationDigestScheduler.js';
 
-const allowedOrigins = [
-    process.env.CLIENT_URL,
-    'http://localhost:5173',
-    'http://localhost:3000'
-].filter(Boolean);
-
 app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
-            callback(null, true);
-        } else {
-            callback(null, true); // Fallback to mirror for maximum compatibility
-        }
-    },
+    origin: (_origin, callback) => callback(null, true),
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-community-id', 'Cookie'],
 }));
-
-app.options('*', cors());
 
 // Stripe webhook must receive raw body for signature verification.
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), stripeWebhook);

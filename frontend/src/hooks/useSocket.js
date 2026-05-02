@@ -21,11 +21,9 @@ const useSocket = (userId, communityId) => {
 
     useEffect(() => {
         // Connect to the Socket.io server
-        const isProd = import.meta.env.PROD;
         const newSocket = io(SOCKET_URL, {
             withCredentials: true,
-            transports: isProd ? ['websocket'] : ['websocket', 'polling'],
-            reconnectionAttempts: 5,
+            transports: ['websocket', 'polling'],
         });
 
         newSocket.on('connect', () => {
