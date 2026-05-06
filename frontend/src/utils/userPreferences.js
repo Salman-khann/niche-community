@@ -16,6 +16,10 @@ const DEFAULT_PREFERENCES = {
         autoplayMedia: true,
         cameraDeviceId: '',
     },
+    languageTime: {
+        language: 'en-US',
+        format: 'auto',
+    },
 };
 
 const deepMerge = (base, patch) => {

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Palette, Pencil, X, LogOut, Camera, ShieldCheck, ShieldAlert, QrCode } from 'lucide-react';
+import { Palette, Pencil, X, LogOut, Camera, ShieldCheck, ShieldAlert, QrCode, EyeOff, Monitor, Smartphone } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useNotificationStore } from '../stores/notificationStore';
 import { getUserPreferences, saveUserPreferences } from '../utils/userPreferences';
+import { TRANSLATIONS } from '../utils/translations';
 import { useDropzone } from 'react-dropzone';
 
 const BANNER_COLORS = [
@@ -23,13 +24,50 @@ const BANNER_COLORS = [
 const USER_SETTINGS_SECTIONS = [
     { label: 'My Account', key: 'account' },
     { label: 'Security', key: 'security' },
+    { label: 'Data & Privacy', key: 'dataPrivacy' },
     { label: 'Notifications', key: 'notifications' },
+    { label: 'Content & Social', key: 'contentSocial' },
+    { label: 'Devices', key: 'devices' },
 ];
 
 const APP_SETTINGS_SECTIONS = [
+    { label: 'Keybinds', key: 'keybinds' },
+    { label: 'Language & Time', key: 'languageTime' },
     { label: 'Voice & Video', key: 'voiceVideo' },
     { label: 'Appearance', key: 'appearance' },
     { label: 'Accessibility', key: 'accessibility' },
+];
+
+const LANGUAGES = [
+    { code: 'en-US', label: 'English, US', native: 'English, US', flag: '🇺🇸' },
+    { code: 'en-GB', label: 'English, UK', native: 'English, UK', flag: '🇬🇧' },
+    { code: 'es-ES', label: 'Spanish', native: 'Español', flag: '🇪🇸' },
+    { code: 'fr-FR', label: 'French', native: 'Français', flag: '🇫🇷' },
+    { code: 'de-DE', label: 'German', native: 'Deutsch', flag: '🇩🇪' },
+    { code: 'it-IT', label: 'Italian', native: 'Italiano', flag: '🇮🇹' },
+    { code: 'pt-BR', label: 'Portuguese, Brazilian', native: 'Português do Brasil', flag: '🇧🇷' },
+    { code: 'ru-RU', label: 'Russian', native: 'Русский', flag: '🇷🇺' },
+    { code: 'ja-JP', label: 'Japanese', native: '日本語', flag: '🇯🇵' },
+    { code: 'zh-CN', label: 'Chinese, Simplified', native: '中文', flag: '🇨🇳' },
+    { code: 'zh-TW', label: 'Chinese, Traditional', native: '繁體中文', flag: '🇹🇼' },
+    { code: 'ko-KR', label: 'Korean', native: '한국어', flag: '🇰🇷' },
+    { code: 'ar-SA', label: 'Arabic', native: 'العربية', flag: '🇸🇦' },
+    { code: 'hi-IN', label: 'Hindi', native: 'हिन्दी', flag: '🇮🇳' },
+    { code: 'tr-TR', label: 'Turkish', native: 'Türkçe', flag: '🇹🇷' },
+    { code: 'nl-NL', label: 'Dutch', native: 'Nederlands', flag: '🇳🇱' },
+    { code: 'pl-PL', label: 'Polish', native: 'Polski', flag: '🇵🇱' },
+    { code: 'sv-SE', label: 'Swedish', native: 'Svenska', flag: '🇸🇪' },
+    { code: 'vi-VN', label: 'Vietnamese', native: 'Tiếng Việt', flag: '🇻🇳' },
+    { code: 'th-TH', label: 'Thai', native: 'ไทย', flag: '🇹🇭' },
+    { code: 'cs-CZ', label: 'Czech', native: 'Čeština', flag: '🇨🇿' },
+    { code: 'el-GR', label: 'Greek', native: 'Ελληνικά', flag: '🇬🇷' },
+    { code: 'bg-BG', label: 'Bulgarian', native: 'Български', flag: '🇧🇬' },
+    { code: 'fi-FI', label: 'Finnish', native: 'Suomi', flag: '🇫🇮' },
+    { code: 'da-DK', label: 'Danish', native: 'Dansk', flag: '🇩🇰' },
+    { code: 'hu-HU', label: 'Hungarian', native: 'Magyar', flag: '🇭🇺' },
+    { code: 'no-NO', label: 'Norwegian', native: 'Norsk', flag: '🇳🇴' },
+    { code: 'ro-RO', label: 'Romanian', native: 'Română', flag: '🇷🇴' },
+    { code: 'uk-UA', label: 'Ukrainian', native: 'Українська', flag: '🇺🇦' },
 ];
 
 const BILLING_SECTIONS = [
@@ -103,6 +141,174 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         personalizeExperience: profile?.dataPrivacy?.personalizeExperience ?? true,
         voiceClips: profile?.dataPrivacy?.voiceClips ?? true,
     });
+
+    const [ignoredAccounts, setIgnoredAccounts] = useState([
+        { id: '1', displayName: 'JaneDoe', username: 'janedoe99' },
+        { id: '2', displayName: 'JohnSmith', username: 'jsmith_art' },
+    ]);
+    const [explicitFilter, setExplicitFilter] = useState('non_friends');
+    const [dmPrivacy, setDmPrivacy] = useState(true);
+    const [messageRequests, setMessageRequests] = useState(true);
+    const [persistentVerificationCodes, setPersistentVerificationCodes] = useState(false);
+    const [dataRequestStatus, setDataRequestStatus] = useState('idle');
+
+    const currentDevice = useMemo(() => {
+        const ua = navigator.userAgent;
+        let os = 'UNKNOWN OS';
+        if (ua.includes('Win')) os = 'WINDOWS';
+        else if (ua.includes('Mac')) os = 'MAC';
+        else if (ua.includes('Linux')) os = 'LINUX';
+        else if (ua.includes('Android')) os = 'ANDROID';
+        else if (ua.includes('like Mac OS X')) os = 'IOS';
+
+        let browser = 'UNKNOWN CLIENT';
+        if (ua.includes('Chrome') && !ua.includes('Edg')) browser = 'CHROME';
+        else if (ua.includes('Safari') && !ua.includes('Chrome')) browser = 'SAFARI';
+        else if (ua.includes('Firefox')) browser = 'FIREFOX';
+        else if (ua.includes('Edg')) browser = 'EDGE';
+
+        return {
+            name: `${os} - ${browser}`,
+            location: 'Local System',
+            isDesktop: !ua.includes('Mobile')
+        };
+    }, []);
+
+    const [otherDevices, setOtherDevices] = useState([
+        { id: 1, name: 'MAC - SAFARI', location: 'New York, NY, USA', time: '2 days ago', isDesktop: true },
+        { id: 2, name: 'WINDOWS - EDGE', location: 'London, England, UK', time: '1 week ago', isDesktop: true },
+        { id: 3, name: 'IOS - CIRCLE CORE IOS', location: 'Los Angeles, CA, USA', time: '1 month ago', isDesktop: false },
+    ]);
+
+    const handleRemoveDevice = (id) => {
+        setOtherDevices(prev => prev.filter(d => d.id !== id));
+    };
+
+    const handleRequestData = () => {
+        if (dataRequestStatus !== 'idle') return;
+        setDataRequestStatus('requesting');
+        setTimeout(() => {
+            setDataRequestStatus('done');
+        }, 1500);
+    };
+
+    const handleUnignore = (id) => {
+        setIgnoredAccounts(prev => prev.filter(acc => acc.id !== id));
+    };
+
+    const [activeKeybind, setActiveKeybind] = useState(null);
+    const [overlayToggle, setOverlayToggle] = useState(true);
+    const [language, setLanguage] = useState(storedPreferences.languageTime?.language || 'en-US');
+    const [timeFormat, setTimeFormat] = useState(storedPreferences.languageTime?.format || 'auto');
+
+    const t = useCallback((text) => TRANSLATIONS[language]?.[text] || TRANSLATIONS['en-US']?.[text] || text, [language]);
+
+    const handleLanguageChange = (e) => {
+        const val = e.target.value;
+        setLanguage(val);
+        saveUserPreferences({ languageTime: { language: val, format: timeFormat } });
+    };
+
+    const handleTimeFormatChange = (val) => {
+        setTimeFormat(val);
+        saveUserPreferences({ languageTime: { language: language, format: val } });
+    };
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setActiveKeybind('Focus text area');
+                    setTimeout(() => setActiveKeybind(null), 2500);
+                }
+                return;
+            }
+
+            const ctrl = e.ctrlKey || e.metaKey;
+            const alt = e.altKey;
+            const shift = e.shiftKey;
+            const key = e.key.toLowerCase();
+
+            let matched = null;
+
+            if (ctrl && key === '/') matched = 'Show Keyboard Shortcuts List';
+            else if (!ctrl && !alt && !shift && key === 'e') matched = 'Edit Message';
+            else if (!ctrl && !alt && !shift && key === 'backspace') matched = 'Delete Message';
+            else if (!ctrl && !alt && !shift && key === 'p') matched = 'Pin Message';
+            else if (!ctrl && !alt && !shift && key === '+') matched = 'Add Reaction';
+            else if (!ctrl && !alt && !shift && key === 'r') matched = 'Reply';
+            else if (!ctrl && !alt && !shift && key === 'f') matched = 'Forward Message';
+            else if (!ctrl && !alt && !shift && key === 's') matched = 'Speak Message';
+            else if (ctrl && !alt && !shift && key === 'c') matched = 'Copy Text';
+            else if (!ctrl && alt && !shift && key === 'enter') matched = 'Mark Unread';
+            else if (!ctrl && !alt && !shift && key === 'escape') matched = 'Focus text area';
+            
+            else if (ctrl && alt && !shift && key === 'arrowup') matched = 'Navigate between servers (Up)';
+            else if (ctrl && alt && !shift && key === 'arrowdown') matched = 'Navigate between servers (Down)';
+            else if (!ctrl && alt && !shift && key === 'arrowup') matched = 'Navigate between channels (Up)';
+            else if (!ctrl && alt && !shift && key === 'arrowdown') matched = 'Navigate between channels (Down)';
+            else if (!ctrl && alt && !shift && key === 'arrowleft') matched = 'Navigate backward in page history';
+            else if (!ctrl && alt && !shift && key === 'arrowright') matched = 'Navigate forward in page history';
+            else if (!ctrl && alt && shift && key === 'arrowup') matched = 'Navigate between unread channels (Up)';
+            else if (!ctrl && alt && shift && key === 'arrowdown') matched = 'Navigate between unread channels (Down)';
+            else if (ctrl && alt && shift && key === 'arrowup') matched = 'Navigate between unread channels with mentions (Up)';
+            else if (ctrl && alt && shift && key === 'arrowdown') matched = 'Navigate between unread channels with mentions (Down)';
+            else if (ctrl && shift && alt && key === 'v') matched = 'Navigate to current call';
+            else if (ctrl && alt && !shift && key === 'arrowright') matched = 'Toggle between last server and DMs';
+            else if (ctrl && !alt && !shift && key === 'k') matched = 'Toggle QuickSwitcher';
+            else if (ctrl && shift && !alt && key === 'n') matched = 'Create or join a server';
+            
+            else if (ctrl && !alt && !shift && key === 'd') matched = 'Start Drag and Drop';
+            
+            else if (!ctrl && !alt && shift && key === 'escape') matched = 'Mark server read';
+            else if (ctrl && shift && !alt && key === 't') matched = 'Create a private group';
+            else if (ctrl && !alt && !shift && key === 'p') matched = 'Toggle pins popout';
+            else if (ctrl && !alt && !shift && key === 'i') matched = 'Toggle inbox popout';
+            else if (ctrl && shift && !alt && key === 'e') matched = 'Mark top inbox channel read';
+            else if (ctrl && !alt && !shift && key === 'u') matched = 'Toggle channel member list';
+            else if (ctrl && !alt && !shift && key === 'e') matched = 'Toggle emoji picker';
+            else if (ctrl && !alt && !shift && key === 'g') matched = 'Toggle GIF picker';
+            else if (ctrl && !alt && !shift && key === 's') matched = 'Toggle sticker picker';
+            else if (!ctrl && !alt && !shift && key === 'pageup') matched = 'Scroll chat up';
+            else if (!ctrl && !alt && !shift && key === 'pagedown') matched = 'Scroll chat down';
+            else if (!ctrl && !alt && shift && key === 'pageup') matched = 'Jump to oldest unread message';
+            else if (ctrl && shift && !alt && key === 'u') matched = 'Upload a file';
+
+            if (matched) {
+                e.preventDefault();
+                setActiveKeybind(matched);
+                setTimeout(() => setActiveKeybind(null), 2500);
+            }
+        };
+        
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen]);
+
+    const Kbd = ({ children }) => (
+        <kbd className="px-[6px] py-[3px] rounded bg-[#1e1f22] border border-[#111214] border-b-[2px] text-discord-light text-[11px] font-bold shadow-[0_1px_1px_rgba(0,0,0,0.15)] inline-flex items-center justify-center min-w-[24px]">
+            {children}
+        </kbd>
+    );
+
+    const KeybindRow = ({ label, keys }) => (
+        <div className="flex items-center justify-between py-4 border-b border-discord-border/30 last:border-b-0 group">
+            <div className="text-[15px] font-medium text-discord-white">{label}</div>
+            <div className="flex flex-col items-end gap-2 opacity-90 group-hover:opacity-100 transition-opacity">
+                {Array.isArray(keys[0]) ? keys.map((keyGroup, idx) => (
+                    <div key={idx} className="flex items-center gap-1.5">
+                        {keyGroup.map((k, i) => <Kbd key={i}>{k}</Kbd>)}
+                    </div>
+                )) : (
+                    <div className="flex items-center gap-1.5">
+                        {keys.map((k, i) => <Kbd key={i}>{k}</Kbd>)}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
 
     useEffect(() => {
         if (!isOpen) return;
@@ -565,6 +771,11 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
 
     return (
         <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm" onClick={onClose}>
+            {activeKeybind && (
+                <div className="fixed bottom-6 right-6 bg-discord-green text-white px-5 py-3 rounded-md shadow-lg z-[100] animate-bounce font-medium text-[14px]">
+                    Action Triggered: {activeKeybind}
+                </div>
+            )}
             <div
                 className="absolute inset-0 md:inset-[5vh] rounded-none md:rounded-2xl bg-[#202024] shadow-2xl border border-discord-border/60 overflow-hidden animate-scale-in"
                 onClick={(e) => e.stopPropagation()}
@@ -574,12 +785,12 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                         <div className="flex items-center justify-between gap-3 rounded-xl bg-discord-darkest/70 px-3 py-2">
                             <div>
                                 <p className="text-sm font-semibold text-white">{profile?.displayName || user?.name || 'User'}</p>
-                                <p className="text-xs text-discord-faint">Edit Profiles</p>
+                                <p className="text-xs text-discord-faint">{t('Edit Profiles')}</p>
                             </div>
                             <Pencil className="w-4 h-4 text-discord-faint" />
                         </div>
                         <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-discord-faint mb-2">User Settings</p>
+                            <p className="text-xs uppercase tracking-[0.16em] text-discord-faint mb-2">{t('User Settings')}</p>
                             <div className="space-y-1">
                                 {USER_SETTINGS_SECTIONS.map((section) => (
                                     <button
@@ -591,13 +802,13 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                                 : 'text-discord-faint hover:bg-discord-darkest/60'
                                         }`}
                                     >
-                                        {section.label}
+                                        {t(section.label)}
                                     </button>
                                 ))}
                             </div>
                         </div>
                         <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-discord-faint mb-2">App Settings</p>
+                            <p className="text-xs uppercase tracking-[0.16em] text-discord-faint mb-2">{t('App Settings')}</p>
                             <div className="space-y-1">
                                 {APP_SETTINGS_SECTIONS.map((section) => (
                                     <button
@@ -609,13 +820,13 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                                 : 'text-discord-faint hover:bg-discord-darkest/60'
                                         }`}
                                     >
-                                        {section.label}
+                                        {t(section.label)}
                                     </button>
                                 ))}
                             </div>
                         </div>
                         <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-discord-faint mb-2">Billing Settings</p>
+                            <p className="text-xs uppercase tracking-[0.16em] text-discord-faint mb-2">{t('Billing Settings')}</p>
                             <div className="space-y-1">
                                 {BILLING_SECTIONS.map((section) => (
                                     <button
@@ -623,7 +834,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                         onClick={() => handleBillingClick(section.id)}
                                         className="w-full text-left px-3 py-2 rounded-lg text-sm text-discord-faint hover:bg-discord-darkest/60 flex items-center justify-between"
                                     >
-                                        <span>{section.label}</span>
+                                        <span>{t(section.label)}</span>
                                         {section.badge && (
                                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-discord-border/50 text-discord-light">
                                                 {section.badge}
@@ -1049,6 +1260,513 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                             </div>
                         )}
 
+                        {activeSection === 'dataPrivacy' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto pb-10 space-y-10">
+                                    {/* How Circle Core Uses Your Data */}
+                                    <div>
+                                        <h2 className="text-[20px] font-bold text-discord-white mb-6">How Circle Core Uses Your Data</h2>
+                                        
+                                        <div className="space-y-6">
+                                            {/* improveData */}
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div>
+                                                    <div className="text-[15px] font-bold text-discord-white">Use data to improve Circle Core</div>
+                                                    <div className="text-[13px] text-discord-faint mt-1">Allows us to use and process your information to understand and improve our services.</div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPrivacy({ ...privacy, improveData: !privacy.improveData })}
+                                                    className={`relative w-10 h-6 shrink-0 rounded-full transition-colors ${privacy.improveData ? 'bg-blurple' : 'bg-discord-darkest'}`}
+                                                >
+                                                    <span className={`absolute top-1 ${privacy.improveData ? 'right-1' : 'left-1'} w-4 h-4 rounded-full bg-white transition-all`} />
+                                                </button>
+                                            </div>
+
+                                            {/* personalizeActivity */}
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div>
+                                                    <div className="text-[15px] font-bold text-discord-white">Use my Circle Core activity to personalize Sponsored Content</div>
+                                                    <div className="text-[13px] text-discord-faint mt-1">Allows us to personalize Sponsored Content, like Quests, using your Circle Core activity, such as the games you play. If you opt out you may still see Quests, but they won&apos;t be personalized.</div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPrivacy({ ...privacy, personalizeActivity: !privacy.personalizeActivity })}
+                                                    className={`relative w-10 h-6 shrink-0 rounded-full transition-colors ${privacy.personalizeActivity ? 'bg-blurple' : 'bg-discord-darkest'}`}
+                                                >
+                                                    <span className={`absolute top-1 ${privacy.personalizeActivity ? 'right-1' : 'left-1'} w-4 h-4 rounded-full bg-white transition-all`} />
+                                                </button>
+                                            </div>
+
+                                            {/* thirdPartyPersonalization */}
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div>
+                                                    <div className="text-[15px] font-bold text-discord-white">Use third-party data to personalize Sponsored Content</div>
+                                                    <div className="text-[13px] text-discord-faint mt-1">Allows us to personalize Sponsored Content, like Quests, using data we receive from advertisers and third-party data providers. If you opt out, you may still see Quests, but they won&apos;t be personalized using data from third parties.</div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPrivacy({ ...privacy, thirdPartyPersonalization: !privacy.thirdPartyPersonalization })}
+                                                    className={`relative w-10 h-6 shrink-0 rounded-full transition-colors ${privacy.thirdPartyPersonalization ? 'bg-blurple' : 'bg-discord-darkest'}`}
+                                                >
+                                                    <span className={`absolute top-1 ${privacy.thirdPartyPersonalization ? 'right-1' : 'left-1'} w-4 h-4 rounded-full bg-white transition-all`} />
+                                                </button>
+                                            </div>
+
+                                            {/* personalizeExperience */}
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div>
+                                                    <div className="text-[15px] font-bold text-discord-white">Use data to personalize my Circle Core experience</div>
+                                                    <div className="text-[13px] text-discord-faint mt-1">Allows us to use information, such as who you talk to and what games you play, to personalize Circle Core for you.</div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPrivacy({ ...privacy, personalizeExperience: !privacy.personalizeExperience })}
+                                                    className={`relative w-10 h-6 shrink-0 rounded-full transition-colors ${privacy.personalizeExperience ? 'bg-blurple' : 'bg-discord-darkest'}`}
+                                                >
+                                                    <span className={`absolute top-1 ${privacy.personalizeExperience ? 'right-1' : 'left-1'} w-4 h-4 rounded-full bg-white transition-all`} />
+                                                </button>
+                                            </div>
+
+                                            {/* voiceClips */}
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div>
+                                                    <div className="text-[15px] font-bold text-discord-white">Allow my voice to be recorded in Clips</div>
+                                                    <div className="text-[13px] text-discord-faint mt-1">By turning on this setting, your voice may be included when someone in the same voice channel uses Clips.</div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPrivacy({ ...privacy, voiceClips: !privacy.voiceClips })}
+                                                    className={`relative w-10 h-6 shrink-0 rounded-full transition-colors ${privacy.voiceClips ? 'bg-blurple' : 'bg-discord-darkest'}`}
+                                                >
+                                                    <span className={`absolute top-1 ${privacy.voiceClips ? 'right-1' : 'left-1'} w-4 h-4 rounded-full bg-white transition-all`} />
+                                                </button>
+                                            </div>
+
+                                            {/* make Circle Core work */}
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div>
+                                                    <div className="text-[15px] font-bold text-discord-white">Use data to make Circle Core work</div>
+                                                    <div className="text-[13px] text-discord-faint mt-1">We need to store and process some data in order to provide you the basic Circle Core service, such as your messages, what servers you&apos;re in and your Direct Messages. By using Circle Core, you allow us to provide this basic service. You can stop this by Disabling or Deleting your account.</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="h-[1px] bg-discord-border/30 w-full" />
+
+                                    {/* Request Your Data */}
+                                    <div>
+                                        <h2 className="text-[20px] font-bold text-discord-white mb-6">Request Your Data</h2>
+                                        <div>
+                                            <div className="text-[15px] font-bold text-discord-white">Request all of my data</div>
+                                            <div className="text-[13px] text-discord-faint mt-1 mb-4">Learn about how getting a copy of your personal data works</div>
+                                            <button 
+                                                onClick={handleRequestData}
+                                                disabled={dataRequestStatus !== 'idle'}
+                                                className={`px-4 py-2 rounded text-white text-[14px] font-medium transition-colors ${dataRequestStatus === 'done' ? 'bg-discord-green' : 'bg-blurple hover:bg-blurple/90 disabled:opacity-50'}`}
+                                            >
+                                                {dataRequestStatus === 'idle' ? 'Request Data' : dataRequestStatus === 'requesting' ? 'Requesting...' : 'Request Sent!'}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="h-[1px] bg-discord-border/30 w-full" />
+
+                                    {/* Voice Security */}
+                                    <div>
+                                        <h2 className="text-[20px] font-bold text-discord-white mb-6">Voice Security</h2>
+                                        
+                                        <div className="mb-6 p-4 rounded-lg border border-blurple bg-blurple/10 flex items-start gap-3">
+                                            <div className="w-5 h-5 rounded-full bg-blurple flex items-center justify-center text-white font-bold text-[12px] shrink-0 mt-0.5">i</div>
+                                            <p className="text-[13px] text-discord-white leading-relaxed">
+                                                All of your calls on Circle Core are end-to-end encrypted no matter what. That means nobody — not even Wumpus — can listen in on your conversations. These settings let you control optional details when verifying our encryption protocol.
+                                            </p>
+                                        </div>
+
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div>
+                                                <div className="text-[15px] font-bold text-discord-white">Enable persistent verification codes</div>
+                                                <div className="text-[13px] text-discord-faint mt-1">Gives your current device persistent verification codes. If this setting is on, your friends only have to verify your device once, instead of every time you enter a voice call.</div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPersistentVerificationCodes(!persistentVerificationCodes)}
+                                                className={`relative w-10 h-6 shrink-0 rounded-full transition-colors ${persistentVerificationCodes ? 'bg-blurple' : 'bg-discord-darkest'}`}
+                                            >
+                                                <span className={`absolute top-1 ${persistentVerificationCodes ? 'right-1' : 'left-1'} w-4 h-4 rounded-full bg-white transition-all`} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'contentSocial' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto pb-10">
+                                    <h2 className="text-[20px] font-bold text-discord-white">Accounts You&apos;ve Blocked or Ignored</h2>
+                                    <p className="text-[14px] text-discord-faint mt-1 mb-6">
+                                        You&apos;re in control. To compare your options for reducing unwanted interactions, explore our feature guide.
+                                    </p>
+
+                                    <div className="rounded-xl bg-[#2b2d31] overflow-hidden">
+                                        <div className="p-4 border-b border-discord-border/30 flex items-center gap-4 bg-[#2b2d31]">
+                                            <div className="w-10 h-10 rounded-full bg-discord-darkest flex items-center justify-center">
+                                                <EyeOff className="w-5 h-5 text-discord-faint" />
+                                            </div>
+                                            <div>
+                                                <div className="text-[16px] font-bold text-discord-white">Ignored accounts</div>
+                                                <div className="text-[13px] text-discord-faint">{ignoredAccounts.length} accounts</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="flex flex-col">
+                                            {ignoredAccounts.map(account => (
+                                                <div key={account.id} className="p-4 flex items-center justify-between border-b border-discord-border/30 last:border-b-0 hover:bg-discord-darkest/40 transition-colors">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-10 h-10 rounded-full bg-[#1e1f22]"></div>
+                                                        <div>
+                                                            <div className="text-[15px] font-bold text-discord-white">{account.displayName}</div>
+                                                            <div className="text-[13px] text-discord-faint">{account.username}</div>
+                                                        </div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => handleUnignore(account.id)}
+                                                        className="px-4 py-1.5 rounded bg-[#1e1f22] hover:bg-discord-darkest text-discord-white text-[14px] font-medium transition-colors"
+                                                    >
+                                                        Unignore
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            {ignoredAccounts.length === 0 && (
+                                                <div className="p-6 text-center text-discord-faint text-[14px]">
+                                                    No ignored accounts.
+                                                </div>
+                                            )}
+                                        </div>
+                                        {ignoredAccounts.length > 0 && (
+                                            <div className="p-3 border-t border-discord-border/30 flex justify-center">
+                                                <button className="text-[13px] text-discord-white font-medium hover:bg-discord-darkest transition-colors bg-[#1e1f22] px-3 py-1.5 rounded-md w-full max-w-[200px]">
+                                                    See more
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="h-[1px] bg-discord-border/30 w-full my-8" />
+
+                                    <h2 className="text-[20px] font-bold text-discord-white mb-4">Safe Direct Messaging</h2>
+                                    <p className="text-[14px] text-discord-faint mb-4">
+                                        Automatically scan and delete direct messages you receive that contain explicit media.
+                                    </p>
+                                    <div className="space-y-2 mb-8">
+                                        <label className={`flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-colors ${explicitFilter === 'all' ? 'bg-[#2b2d31] border-blurple' : 'bg-[#1e1f22] border-transparent hover:bg-[#2b2d31]'}`}>
+                                            <div>
+                                                <div className="text-[15px] font-bold text-discord-white">Filter all direct messages</div>
+                                                <div className="text-[13px] text-discord-faint">Scan all direct messages from everyone.</div>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-full border-[2px] flex items-center justify-center ${explicitFilter === 'all' ? 'border-discord-white' : 'border-discord-faint'}`}>
+                                                {explicitFilter === 'all' && <div className="w-2.5 h-2.5 bg-discord-white rounded-full" />}
+                                            </div>
+                                            <input type="radio" className="hidden" checked={explicitFilter === 'all'} onChange={() => setExplicitFilter('all')} />
+                                        </label>
+
+                                        <label className={`flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-colors ${explicitFilter === 'non_friends' ? 'bg-[#2b2d31] border-blurple' : 'bg-[#1e1f22] border-transparent hover:bg-[#2b2d31]'}`}>
+                                            <div>
+                                                <div className="text-[15px] font-bold text-discord-white">Filter direct messages from non-friends</div>
+                                                <div className="text-[13px] text-discord-faint">Good for those who want a bit of a filter.</div>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-full border-[2px] flex items-center justify-center ${explicitFilter === 'non_friends' ? 'border-discord-white' : 'border-discord-faint'}`}>
+                                                {explicitFilter === 'non_friends' && <div className="w-2.5 h-2.5 bg-discord-white rounded-full" />}
+                                            </div>
+                                            <input type="radio" className="hidden" checked={explicitFilter === 'non_friends'} onChange={() => setExplicitFilter('non_friends')} />
+                                        </label>
+
+                                        <label className={`flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-colors ${explicitFilter === 'disabled' ? 'bg-[#2b2d31] border-red-500' : 'bg-[#1e1f22] border-transparent hover:bg-[#2b2d31]'}`}>
+                                            <div>
+                                                <div className="text-[15px] font-bold text-discord-white">Do not filter direct messages</div>
+                                                <div className="text-[13px] text-discord-faint">You will still see explicit content warnings.</div>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-full border-[2px] flex items-center justify-center ${explicitFilter === 'disabled' ? 'border-discord-white' : 'border-discord-faint'}`}>
+                                                {explicitFilter === 'disabled' && <div className="w-2.5 h-2.5 bg-discord-white rounded-full" />}
+                                            </div>
+                                            <input type="radio" className="hidden" checked={explicitFilter === 'disabled'} onChange={() => setExplicitFilter('disabled')} />
+                                        </label>
+                                    </div>
+
+                                    <div className="h-[1px] bg-discord-border/30 w-full my-8" />
+
+                                    <h2 className="text-[20px] font-bold text-discord-white mb-4">Server Privacy Defaults</h2>
+                                    <div className="flex items-center justify-between gap-4 rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 mb-8">
+                                        <div>
+                                            <p className="text-sm font-semibold text-white">Allow direct messages from server members</p>
+                                            <p className="text-xs text-discord-faint mt-1">This setting is applied when you join a new server.</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setDmPrivacy(!dmPrivacy)}
+                                            className={`relative w-12 h-6 rounded-full transition-colors ${dmPrivacy ? 'bg-blurple' : 'bg-discord-darkest'}`}
+                                        >
+                                            <span className={`absolute top-0.5 ${dmPrivacy ? 'right-0.5' : 'left-0.5'} w-5 h-5 rounded-full bg-white transition-all`} />
+                                        </button>
+                                    </div>
+
+                                    <h2 className="text-[20px] font-bold text-discord-white mb-4">Message Requests</h2>
+                                    <div className="flex items-center justify-between gap-4 rounded-2xl border border-discord-border/60 bg-discord-darkest/70 px-4 py-4 mb-4">
+                                        <div>
+                                            <p className="text-sm font-semibold text-white">Enable message requests from server members</p>
+                                            <p className="text-xs text-discord-faint mt-1">You can choose to allow members you may not know to send you messages.</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setMessageRequests(!messageRequests)}
+                                            className={`relative w-12 h-6 rounded-full transition-colors ${messageRequests ? 'bg-blurple' : 'bg-discord-darkest'}`}
+                                        >
+                                            <span className={`absolute top-0.5 ${messageRequests ? 'right-0.5' : 'left-0.5'} w-5 h-5 rounded-full bg-white transition-all`} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'devices' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto pb-10">
+                                    <h2 className="text-[20px] font-bold text-discord-white mb-4">Devices</h2>
+                                    <p className="text-[14px] text-discord-faint mb-4">
+                                        Here are all the devices that are currently logged in with your Circle Core account. You can log out of each one individually or all other devices.
+                                    </p>
+                                    <p className="text-[14px] text-discord-faint mb-8">
+                                        If you see an entry you don&apos;t recognize, log out of that device and change your Circle Core account password immediately.
+                                    </p>
+
+                                    <h3 className="text-[16px] font-bold text-discord-white mb-4">Current Device</h3>
+                                    <div className="flex items-center gap-4 mb-8">
+                                        <div className="w-12 h-12 rounded-full bg-discord-darkest flex items-center justify-center shrink-0">
+                                            {currentDevice.isDesktop ? (
+                                                <Monitor className="w-6 h-6 text-discord-white" />
+                                            ) : (
+                                                <Smartphone className="w-6 h-6 text-discord-white" />
+                                            )}
+                                        </div>
+                                        <div>
+                                            <div className="text-[15px] font-bold text-discord-white">{currentDevice.name}</div>
+                                            <div className="text-[13px] text-discord-faint">{currentDevice.location}</div>
+                                        </div>
+                                    </div>
+
+                                    <h3 className="text-[16px] font-bold text-discord-white mb-4">Other Devices</h3>
+                                    <div className="flex flex-col">
+                                        {otherDevices.map((device) => (
+                                            <div key={device.id} className="py-4 flex items-center justify-between border-b border-discord-border/30 last:border-b-0">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-12 h-12 rounded-full bg-[#2b2d31] flex items-center justify-center shrink-0">
+                                                        {device.isDesktop ? (
+                                                            <Monitor className="w-6 h-6 text-discord-faint" />
+                                                        ) : (
+                                                            <Smartphone className="w-6 h-6 text-discord-faint" />
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[15px] font-bold text-discord-white">{device.name}</div>
+                                                        <div className="text-[13px] text-discord-faint">{device.location} · {device.time}</div>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleRemoveDevice(device.id)}
+                                                    className="w-8 h-8 rounded hover:bg-[#2b2d31] flex items-center justify-center text-discord-faint hover:text-white transition-colors"
+                                                >
+                                                    <X className="w-5 h-5" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {otherDevices.length === 0 && (
+                                            <div className="py-4 text-[14px] text-discord-faint">
+                                                No other devices are currently logged in.
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {activeSection === 'keybinds' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto pb-10">
+                                    <h2 className="text-[20px] font-bold text-discord-white mb-6">Keybinds</h2>
+
+                                    {/* Top Banner */}
+                                    <div className="flex items-center justify-between mb-8">
+                                        <div className="flex items-center gap-2 text-discord-faint text-[14px]">
+                                            <div className="w-4 h-4 rounded-full bg-discord-faint flex items-center justify-center text-[#313338] text-[10px] font-bold">i</div>
+                                            Keybinds are disabled while this panel is visible.
+                                        </div>
+                                        <button className="px-4 py-2 rounded bg-blurple hover:bg-blurple/90 text-white text-[14px] font-medium transition-colors">
+                                            Add a Keybind
+                                        </button>
+                                    </div>
+
+                                    {/* Action row */}
+                                    <div className="flex items-end gap-4 mb-8">
+                                        <div className="flex-1">
+                                            <label className="block text-[12px] font-bold text-discord-light mb-2">Action</label>
+                                            <div className="relative">
+                                                <select className="w-full bg-[#1e1f22] border border-[#1e1f22] text-discord-white rounded px-3 py-2 outline-none focus:border-blurple text-[14px] appearance-none">
+                                                    <option>Activate Overlay Chat</option>
+                                                </select>
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-discord-faint">
+                                                    <svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M16.59 8.59003L12 13.17L7.41 8.59003L6 10L12 16L18 10L16.59 8.59003Z"></path></svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="block text-[12px] font-bold text-discord-light mb-2">Keybind</label>
+                                            <div className="flex items-center bg-[#1e1f22] border border-[#1e1f22] rounded overflow-hidden">
+                                                <div className="flex-1 px-3 py-2 text-[14px] text-discord-faint">No Keybind Set</div>
+                                                <button className="px-3 py-1.5 m-0.5 rounded bg-[#2b2d31] hover:bg-discord-darkest text-discord-white text-[13px] font-medium transition-colors border border-discord-border/30">
+                                                    Record Keybind
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="pb-2 pl-4">
+                                            <button
+                                                type="button"
+                                                onClick={() => setOverlayToggle(!overlayToggle)}
+                                                className={`relative w-10 h-6 shrink-0 rounded-full transition-colors ${overlayToggle ? 'bg-blurple' : 'bg-discord-darkest'}`}
+                                            >
+                                                <span className={`absolute top-1 ${overlayToggle ? 'right-1' : 'left-1'} w-4 h-4 rounded-full bg-white transition-all`} />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="h-[1px] bg-discord-border/30 w-full mb-8" />
+
+                                    <h3 className="text-[18px] font-bold text-discord-white mb-4">Default Keybinds</h3>
+                                    <div className="bg-[#2b2d31] rounded-lg px-4 mb-8">
+                                        <KeybindRow label="Show Keyboard Shortcuts List" keys={['CTRL', '/']} />
+                                    </div>
+
+                                    <h3 className="text-[18px] font-bold text-discord-white mb-1">Messages</h3>
+                                    <p className="text-[13px] text-discord-faint mb-4">These shortcuts work when focused on a message.</p>
+                                    <div className="bg-[#2b2d31] rounded-lg px-4 mb-8">
+                                        <KeybindRow label="Edit Message" keys={['E']} />
+                                        <KeybindRow label="Delete Message" keys={['BACKSPACE']} />
+                                        <KeybindRow label="Pin Message" keys={['P']} />
+                                        <KeybindRow label="Add Reaction" keys={['+']} />
+                                        <KeybindRow label="Reply" keys={['R']} />
+                                        <KeybindRow label="Forward Message" keys={['F']} />
+                                        <KeybindRow label="Speak Message" keys={['S']} />
+                                        <KeybindRow label="Copy Text" keys={['CTRL', 'C']} />
+                                        <KeybindRow label="Mark Unread" keys={['ALT', 'ENTER']} />
+                                        <KeybindRow label="Focus text area" keys={['ESC']} />
+                                    </div>
+
+                                    <h3 className="text-[18px] font-bold text-discord-white mb-4">Navigation</h3>
+                                    <div className="bg-[#2b2d31] rounded-lg px-4 mb-8">
+                                        <KeybindRow label="Navigate between servers" keys={[['CTRL', 'ALT', '↑'], ['CTRL', 'ALT', '↓']]} />
+                                        <KeybindRow label="Navigate between channels" keys={[['ALT', '↑'], ['ALT', '↓']]} />
+                                        <KeybindRow label="Navigate forward and backward in page history" keys={[['ALT', '←'], ['ALT', '→']]} />
+                                        <KeybindRow label="Navigate between unread channels" keys={[['ALT', 'SHIFT', '↑'], ['ALT', 'SHIFT', '↓']]} />
+                                        <KeybindRow label="Navigate between unread channels with mentions" keys={[['CTRL', 'SHIFT', 'ALT', '↑'], ['CTRL', 'SHIFT', 'ALT', '↓']]} />
+                                        <KeybindRow label="Navigate to current call" keys={['CTRL', 'SHIFT', 'ALT', 'V']} />
+                                        <KeybindRow label="Toggle between last server and DMs" keys={['CTRL', 'ALT', '→']} />
+                                        <KeybindRow label="Toggle QuickSwitcher" keys={['CTRL', 'K']} />
+                                        <KeybindRow label="Create or join a server" keys={['CTRL', 'SHIFT', 'N']} />
+                                    </div>
+
+                                    <h3 className="text-[18px] font-bold text-discord-white mb-1">Drag and Drop</h3>
+                                    <p className="text-[13px] text-discord-faint mb-4">These shortcuts work when focused on a draggable item</p>
+                                    <div className="bg-[#2b2d31] rounded-lg px-4 mb-8">
+                                        <KeybindRow label="Start Drag and Drop" keys={['CTRL', 'D']} />
+                                        <KeybindRow label="Move" keys={[['↑'], ['↓']]} />
+                                        <KeybindRow label="Drop item" keys={[['SPACEBAR'], ['ENTER']]} />
+                                        <KeybindRow label="Cancel" keys={['ESC']} />
+                                    </div>
+
+                                    <h3 className="text-[18px] font-bold text-discord-white mb-4">Chat</h3>
+                                    <div className="bg-[#2b2d31] rounded-lg px-4 mb-8">
+                                        <KeybindRow label="Mark server read" keys={['SHIFT', 'ESC']} />
+                                        <KeybindRow label="Mark channel as read" keys={['ESC']} />
+                                        <KeybindRow label="Create a private group" keys={['CTRL', 'SHIFT', 'T']} />
+                                        <KeybindRow label="Toggle pins popout" keys={['CTRL', 'P']} />
+                                        <KeybindRow label="Toggle inbox popout" keys={['CTRL', 'I']} />
+                                        <KeybindRow label="Mark top inbox channel read" keys={['CTRL', 'SHIFT', 'E']} />
+                                        <KeybindRow label="Toggle channel member list or voice text chat" keys={['CTRL', 'U']} />
+                                        <KeybindRow label="Toggle emoji picker" keys={['CTRL', 'E']} />
+                                        <KeybindRow label="Toggle GIF picker" keys={['CTRL', 'G']} />
+                                        <KeybindRow label="Toggle sticker picker" keys={['CTRL', 'S']} />
+                                        <KeybindRow label="Scroll chat up or down" keys={[['PAGE UP'], ['PAGE DOWN']]} />
+                                        <KeybindRow label="Jump to oldest unread message" keys={['SHIFT', 'PAGE UP']} />
+                                        <KeybindRow label="Focus text area" keys={['ANY KEY']} />
+                                        <KeybindRow label="Upload a file" keys={['CTRL', 'SHIFT', 'U']} />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'languageTime' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto pb-10">
+                                    <h2 className="text-[20px] font-bold text-discord-white mb-8">{t('Language & Time')}</h2>
+
+                                    <div className="mb-8">
+                                        <h3 className="text-[16px] font-bold text-discord-white mb-1">{t('Select a Language')}</h3>
+                                        <p className="text-[13px] text-discord-faint mb-4">{t('Choose the language you want Circle Core to display.')}</p>
+                                        
+                                        <div className="relative max-w-[500px]">
+                                            <select 
+                                                value={language}
+                                                onChange={handleLanguageChange}
+                                                className="w-full bg-[#1e1f22] border border-discord-border/30 hover:border-discord-border/60 text-discord-white rounded-[4px] pl-10 pr-10 py-3 outline-none focus:border-blurple text-[15px] appearance-none cursor-pointer transition-colors"
+                                            >
+                                                {LANGUAGES.map((lang) => (
+                                                    <option key={lang.code} value={lang.code}>
+                                                        {lang.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-[18px]">
+                                                {LANGUAGES.find(l => l.code === language)?.flag || '🌐'}
+                                            </div>
+                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-discord-faint flex items-center gap-2">
+                                                <span className="text-[14px]">{LANGUAGES.find(l => l.code === language)?.label || 'English, US'}</span>
+                                                <svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M16.59 8.59003L12 13.17L7.41 8.59003L6 10L12 16L18 10L16.59 8.59003Z"></path></svg>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h3 className="text-[16px] font-bold text-discord-white mb-4">{t('Time format')}</h3>
+                                        <div className="space-y-4">
+                                            <label className="flex items-center gap-3 cursor-pointer group w-max">
+                                                <div className={`w-5 h-5 rounded-full border-[2px] flex items-center justify-center transition-colors ${timeFormat === 'auto' ? 'border-blurple' : 'border-discord-faint group-hover:border-discord-white'}`}>
+                                                    {timeFormat === 'auto' && <div className="w-2.5 h-2.5 bg-blurple rounded-full" />}
+                                                </div>
+                                                <span className="text-[15px] text-discord-white font-medium">Auto</span>
+                                                <input type="radio" className="hidden" checked={timeFormat === 'auto'} onChange={() => handleTimeFormatChange('auto')} />
+                                            </label>
+                                            
+                                            <label className="flex items-center gap-3 cursor-pointer group w-max">
+                                                <div className={`w-5 h-5 rounded-full border-[2px] flex items-center justify-center transition-colors ${timeFormat === '12-hour' ? 'border-blurple' : 'border-discord-faint group-hover:border-discord-white'}`}>
+                                                    {timeFormat === '12-hour' && <div className="w-2.5 h-2.5 bg-blurple rounded-full" />}
+                                                </div>
+                                                <span className="text-[15px] text-discord-white font-medium">12-hour</span>
+                                                <input type="radio" className="hidden" checked={timeFormat === '12-hour'} onChange={() => handleTimeFormatChange('12-hour')} />
+                                            </label>
+
+                                            <label className="flex items-center gap-3 cursor-pointer group w-max">
+                                                <div className={`w-5 h-5 rounded-full border-[2px] flex items-center justify-center transition-colors ${timeFormat === '24-hour' ? 'border-blurple' : 'border-discord-faint group-hover:border-discord-white'}`}>
+                                                    {timeFormat === '24-hour' && <div className="w-2.5 h-2.5 bg-blurple rounded-full" />}
+                                                </div>
+                                                <span className="text-[15px] text-discord-white font-medium">24-hour</span>
+                                                <input type="radio" className="hidden" checked={timeFormat === '24-hour'} onChange={() => handleTimeFormatChange('24-hour')} />
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {activeSection === 'voiceVideo' && (
                             <div className="px-5 sm:px-8 py-8">
                                 <div className="max-w-3xl mx-auto pb-10">
@@ -1212,8 +1930,8 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                             <div className="px-5 sm:px-8 py-8">
                                 <div className="max-w-3xl mx-auto rounded-3xl border border-discord-border/60 bg-discord-darkest/80 p-6 md:p-8 space-y-6">
                                     <div>
-                                        <p className="text-[11px] uppercase tracking-[0.3em] text-blurple/80 font-semibold">App Settings</p>
-                                        <h2 className="text-2xl font-semibold text-white mt-2">Appearance</h2>
+                                        <p className="text-[11px] uppercase tracking-[0.3em] text-blurple/80 font-semibold">{t('App Settings')}</p>
+                                        <h2 className="text-2xl font-semibold text-white mt-2">{t('Appearance')}</h2>
                                         <p className="text-sm text-discord-faint mt-2">Choose how the app looks and feels.</p>
                                     </div>
                                     <div className="grid gap-4">
