@@ -282,7 +282,7 @@ export const TRANSLATIONS = {
         'Appearance': 'Weergave',
         'Accessibility': 'Toegankelijkheid',
         'User Settings': 'Gebruikersinstellingen',
-        'App-instellingen',
+        'App Settings': 'App-instellingen',
         'Billing Settings': 'Factureringsinstellingen',
         'Edit Profiles': 'Profielen Bewerken',
         'Select a Language': 'Selecteer een taal',
