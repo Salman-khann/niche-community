@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Palette, Pencil, X, LogOut, Camera, ShieldCheck, ShieldAlert, QrCode, EyeOff, Monitor, Smartphone } from 'lucide-react';
+import { Palette, Pencil, X, LogOut, Camera, ShieldCheck, ShieldAlert, QrCode, EyeOff, Monitor, Smartphone, Search, User, MessageSquare, Shield, Users, Gem, Star, CreditCard, Package, Receipt, Mic2, MonitorPlay, Accessibility, Keyboard, Languages, Play, Activity } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useNotificationStore } from '../stores/notificationStore';
@@ -22,20 +22,31 @@ const BANNER_COLORS = [
 ];
 
 const USER_SETTINGS_SECTIONS = [
-    { label: 'My Account', key: 'account' },
-    { label: 'Security', key: 'security' },
-    { label: 'Data & Privacy', key: 'dataPrivacy' },
-    { label: 'Notifications', key: 'notifications' },
-    { label: 'Content & Social', key: 'contentSocial' },
-    { label: 'Devices', key: 'devices' },
+    { label: 'My Account', key: 'account', icon: User },
+    { label: 'Content & Social', key: 'contentSocial', icon: MessageSquare },
+    { label: 'Data & Privacy', key: 'dataPrivacy', icon: Shield },
+    { label: 'Family Center', key: 'familyCenter', icon: Users },
 ];
 
-const APP_SETTINGS_SECTIONS = [
-    { label: 'Keybinds', key: 'keybinds' },
-    { label: 'Language & Time', key: 'languageTime' },
-    { label: 'Voice & Video', key: 'voiceVideo' },
-    { label: 'Appearance', key: 'appearance' },
-    { label: 'Accessibility', key: 'accessibility' },
+const BILLING_SECTIONS_LIST = [
+    { label: 'Nitro', key: 'nitro', icon: Gem },
+    { label: 'Server Boost', key: 'boost', icon: Star },
+    { label: 'Subscriptions', key: 'subscriptions', icon: CreditCard },
+    { label: 'Gift Inventory', key: 'gift', icon: Package },
+    { label: 'Billing', key: 'billing', icon: Receipt },
+];
+
+const APP_SETTINGS_SECTIONS_LIST = [
+    { label: 'Voice & Video', key: 'voiceVideo', icon: Mic2 },
+    { label: 'Appearance', key: 'appearance', icon: MonitorPlay },
+    { label: 'Accessibility', key: 'accessibility', icon: Accessibility },
+    { label: 'Keybinds', key: 'keybinds', icon: Keyboard },
+    { label: 'Language & Time', key: 'languageTime', icon: Languages },
+    { label: 'Windows Settings', key: 'windows', icon: Monitor },
+];
+
+const ACTIVITY_SETTINGS_SECTIONS = [
+    { label: 'Activity Privacy', key: 'activityPrivacy', icon: Activity },
 ];
 
 const LANGUAGES = [
@@ -88,6 +99,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     }), [profile, user]);
 
     const [activeSection, setActiveSection] = useState('account');
+    const [accountSubTab, setAccountSubTab] = useState('security');
     const [displayName, setDisplayName] = useState(initial.displayName);
     const [pronouns, setPronouns] = useState(initial.pronouns);
     const [bannerColor, setBannerColor] = useState(initial.bannerColor);
@@ -151,6 +163,9 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const [messageRequests, setMessageRequests] = useState(true);
     const [persistentVerificationCodes, setPersistentVerificationCodes] = useState(false);
     const [dataRequestStatus, setDataRequestStatus] = useState('idle');
+    const [isEmailVisible, setIsEmailVisible] = useState(false);
+    const [editingField, setEditingField] = useState(null); // 'displayName', 'username', 'email', 'phone'
+    const [tempValue, setTempValue] = useState('');
 
     const currentDevice = useMemo(() => {
         const ua = navigator.userAgent;
@@ -244,7 +259,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
             else if (ctrl && !alt && !shift && key === 'c') matched = 'Copy Text';
             else if (!ctrl && alt && !shift && key === 'enter') matched = 'Mark Unread';
             else if (!ctrl && !alt && !shift && key === 'escape') matched = 'Focus text area';
-            
+
             else if (ctrl && alt && !shift && key === 'arrowup') matched = 'Navigate between servers (Up)';
             else if (ctrl && alt && !shift && key === 'arrowdown') matched = 'Navigate between servers (Down)';
             else if (!ctrl && alt && !shift && key === 'arrowup') matched = 'Navigate between channels (Up)';
@@ -259,9 +274,9 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
             else if (ctrl && alt && !shift && key === 'arrowright') matched = 'Toggle between last server and DMs';
             else if (ctrl && !alt && !shift && key === 'k') matched = 'Toggle QuickSwitcher';
             else if (ctrl && shift && !alt && key === 'n') matched = 'Create or join a server';
-            
+
             else if (ctrl && !alt && !shift && key === 'd') matched = 'Start Drag and Drop';
-            
+
             else if (!ctrl && !alt && shift && key === 'escape') matched = 'Mark server read';
             else if (ctrl && shift && !alt && key === 't') matched = 'Create a private group';
             else if (ctrl && !alt && !shift && key === 'p') matched = 'Toggle pins popout';
@@ -282,7 +297,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                 setTimeout(() => setActiveKeybind(null), 2500);
             }
         };
-        
+
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen]);
@@ -365,7 +380,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 if (cancelled) return;
-                
+
                 const videoInputs = [];
                 const audioInputs = [];
                 const audioOutputs = [];
@@ -383,14 +398,14 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                 setCameraDevices(videoInputs);
                 setMicrophoneDevices(audioInputs);
                 setSpeakerDevices(audioOutputs);
-                
+
                 if (!cameraDeviceId && videoInputs[0]?.deviceId) {
                     setCameraDeviceId(videoInputs[0].deviceId);
                     saveUserPreferences({ voice: { cameraDeviceId: videoInputs[0].deviceId } });
                 }
                 if (!micDeviceId && audioInputs[0]?.deviceId) setMicDeviceId(audioInputs[0].deviceId);
                 if (!speakerDeviceId && audioOutputs[0]?.deviceId) setSpeakerDeviceId(audioOutputs[0].deviceId);
-                
+
             } catch {
                 if (!cancelled) {
                     setCameraDevices([]);
@@ -526,7 +541,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                 source.connect(analyser);
 
                 const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                
+
                 const updateVolume = () => {
                     analyser.getByteFrequencyData(dataArray);
                     let max = 0;
@@ -536,7 +551,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                     setMicVolumeLevel(max);
                     micTestRef.current.rafId = requestAnimationFrame(updateVolume);
                 };
-                
+
                 updateVolume();
 
                 micTestRef.current = { audioContext, analyser, source, stream, rafId: micTestRef.current?.rafId };
@@ -578,18 +593,20 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     };
 
     const canSave = displayName.trim().length > 0;
-    const handleSave = async () => {
-        if (!canSave || isSaving) return;
+    const handleSave = async (updates) => {
+        if (isSaving) return;
         setIsSaving(true);
         try {
-            await onSave?.({
+            const finalUpdates = updates || {
                 displayName: displayName.trim(),
                 pronouns: pronouns.trim(),
                 bannerColor,
                 bio,
                 avatar,
                 dataPrivacy: privacy,
-            });
+            };
+            await onSave?.(finalUpdates);
+            setEditingField(null);
         } finally {
             setIsSaving(false);
         }
@@ -777,121 +794,145 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                 </div>
             )}
             <div
-                className="absolute inset-0 md:inset-[5vh] rounded-none md:rounded-2xl bg-[#202024] shadow-2xl border border-discord-border/60 overflow-hidden animate-scale-in"
+                className="absolute inset-0 md:inset-[5vh] rounded-none md:rounded-2xl bg-[#313338] shadow-2xl border border-discord-border/10 overflow-hidden animate-scale-in"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="h-full w-full grid grid-cols-1 md:grid-cols-[280px_1fr]">
-                    <aside className="hidden md:flex h-full bg-[#121214] border-r border-discord-border/50 px-4 py-5 flex-col gap-5 overflow-y-auto">
-                        <div className="flex items-center justify-between gap-3 rounded-xl bg-discord-darkest/70 px-3 py-2">
+                    <aside className="hidden md:flex h-full bg-[#2b2d31] border-r border-discord-border/20 px-3 py-5 flex-col overflow-y-auto custom-scrollbar">
+                        <div className="mb-4">
+                            <div className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 hover:bg-discord-darkest/40 transition cursor-pointer">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full overflow-hidden bg-discord-darkest">
+                                        {avatar ? <img src={avatar} alt="" className="w-full h-full object-cover" /> : (displayName || 'U').charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-bold text-white truncate">{displayName}</p>
+                                        <p className="text-[11px] text-discord-faint flex items-center gap-1">Edit Profiles <Pencil className="w-2.5 h-2.5" /></p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 px-2">
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="Search"
+                                        className="w-full bg-[#1e1f22] text-xs py-1.5 px-3 pr-8 rounded focus:outline-none placeholder:text-discord-faint/60"
+                                    />
+                                    <Search className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-discord-faint" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
                             <div>
-                                <p className="text-sm font-semibold text-white">{profile?.displayName || user?.name || 'User'}</p>
-                                <p className="text-xs text-discord-faint">{t('Edit Profiles')}</p>
+                                <p className="px-2 text-[11px] font-bold uppercase tracking-wide text-discord-faint mb-1.5">User Settings</p>
+                                <div className="space-y-0.5">
+                                    {USER_SETTINGS_SECTIONS.map((section) => (
+                                        <button
+                                            key={section.key}
+                                            onClick={() => setActiveSection(section.key)}
+                                            className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-[14px] transition-colors ${activeSection === section.key
+                                                    ? 'bg-[#3f4147] text-white'
+                                                    : 'text-discord-faint hover:bg-[#35373c] hover:text-discord-light'
+                                                }`}
+                                        >
+                                            <section.icon className="w-4 h-4 shrink-0" />
+                                            {t(section.label)}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
-                            <Pencil className="w-4 h-4 text-discord-faint" />
-                        </div>
-                        <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-discord-faint mb-2">{t('User Settings')}</p>
-                            <div className="space-y-1">
-                                {USER_SETTINGS_SECTIONS.map((section) => (
-                                    <button
-                                        key={section.label}
-                                        onClick={() => setActiveSection(section.key)}
-                                        className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
-                                            activeSection === section.key
-                                                ? 'bg-discord-darkest text-white'
-                                                : 'text-discord-faint hover:bg-discord-darkest/60'
-                                        }`}
-                                    >
-                                        {t(section.label)}
-                                    </button>
-                                ))}
+
+                            <div>
+                                <p className="px-2 text-[11px] font-bold uppercase tracking-wide text-discord-faint mb-1.5">Billing Settings</p>
+                                <div className="space-y-0.5">
+                                    {BILLING_SECTIONS_LIST.map((section) => (
+                                        <button
+                                            key={section.key}
+                                            onClick={() => setActiveSection(section.key)}
+                                            className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-[14px] transition-colors ${activeSection === section.key
+                                                    ? 'bg-[#3f4147] text-white'
+                                                    : 'text-discord-faint hover:bg-[#35373c] hover:text-discord-light'
+                                                }`}
+                                        >
+                                            <section.icon className="w-4 h-4 shrink-0" />
+                                            {t(section.label)}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <p className="px-2 text-[11px] font-bold uppercase tracking-wide text-discord-faint mb-1.5">App Settings</p>
+                                <div className="space-y-0.5">
+                                    {APP_SETTINGS_SECTIONS_LIST.map((section) => (
+                                        <button
+                                            key={section.key}
+                                            onClick={() => setActiveSection(section.key)}
+                                            className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-[14px] transition-colors ${activeSection === section.key
+                                                    ? 'bg-[#3f4147] text-white'
+                                                    : 'text-discord-faint hover:bg-[#35373c] hover:text-discord-light'
+                                                }`}
+                                        >
+                                            <section.icon className="w-4 h-4 shrink-0" />
+                                            {t(section.label)}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <p className="px-2 text-[11px] font-bold uppercase tracking-wide text-discord-faint mb-1.5">Activity Settings</p>
+                                <div className="space-y-0.5">
+                                    {ACTIVITY_SETTINGS_SECTIONS.map((section) => (
+                                        <button
+                                            key={section.key}
+                                            onClick={() => setActiveSection(section.key)}
+                                            className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-[14px] transition-colors ${activeSection === section.key
+                                                    ? 'bg-[#3f4147] text-white'
+                                                    : 'text-discord-faint hover:bg-[#35373c] hover:text-discord-light'
+                                                }`}
+                                        >
+                                            <section.icon className="w-4 h-4 shrink-0" />
+                                            {t(section.label)}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="pt-2 border-t border-discord-border/20">
+                                <button
+                                    onClick={handleSignOut}
+                                    className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-[14px] text-discord-faint hover:bg-[#35373c] hover:text-discord-light transition-colors"
+                                >
+                                    <LogOut className="w-4 h-4 shrink-0" />
+                                    {t('Log Out')}
+                                </button>
                             </div>
                         </div>
-                        <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-discord-faint mb-2">{t('App Settings')}</p>
-                            <div className="space-y-1">
-                                {APP_SETTINGS_SECTIONS.map((section) => (
-                                    <button
-                                        key={section.label}
-                                        onClick={() => setActiveSection(section.key)}
-                                        className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
-                                            activeSection === section.key
-                                                ? 'bg-discord-darkest text-white'
-                                                : 'text-discord-faint hover:bg-discord-darkest/60'
-                                        }`}
-                                    >
-                                        {t(section.label)}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-discord-faint mb-2">{t('Billing Settings')}</p>
-                            <div className="space-y-1">
-                                {BILLING_SECTIONS.map((section) => (
-                                    <button
-                                        key={section.id || section.label}
-                                        onClick={() => handleBillingClick(section.id)}
-                                        className="w-full text-left px-3 py-2 rounded-lg text-sm text-discord-faint hover:bg-discord-darkest/60 flex items-center justify-between"
-                                    >
-                                        <span>{t(section.label)}</span>
-                                        {section.badge && (
-                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-discord-border/50 text-discord-light">
-                                                {section.badge}
-                                            </span>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <button
-                            onClick={handleSignOut}
-                            className="mt-auto flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-discord-red hover:bg-discord-darkest/60"
-                        >
-                            <LogOut className="w-4 h-4" />
-                            Sign Out
-                        </button>
                     </aside>
 
-                    <main className="h-full overflow-y-auto">
-                        <div className="sticky top-0 z-10 bg-discord-dark/90 backdrop-blur border-b border-discord-border/60 px-5 sm:px-8 py-4 sm:py-5 flex items-center justify-between">
-                            <div>
-                                <p className="text-lg font-semibold text-white">
-                                    {activeSection === 'account'
-                                        ? 'My Account'
-                                        : activeSection === 'security'
-                                            ? 'Security'
-                                            : activeSection === 'notifications'
-                                                ? 'Notifications'
-                                                : activeSection === 'voiceVideo'
-                                                    ? 'Voice & Video'
-                                                    : activeSection === 'appearance'
-                                                        ? 'Appearance'
-                                                        : activeSection === 'accessibility'
-                                                            ? 'Accessibility'
-                                                            : 'My Account'}
-                                </p>
-                                {activeSection === 'account' && (
-                                    <p className="text-xs text-discord-faint mt-2">
-                                        Manage your profile, password, and account-level preferences here.
-                                    </p>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <button
-                                    onClick={handleSave}
-                                    disabled={!canSave || isSaving}
-                                    className="px-3 sm:px-4 py-2 rounded-lg bg-blurple text-white text-sm font-semibold hover:bg-blurple/90 disabled:opacity-60"
-                                >
-                                    {isSaving ? 'Saving...' : 'Save Changes'}
-                                </button>
-                                <button
-                                    onClick={onClose}
-                                    className="w-9 h-9 rounded-full bg-discord-darkest/60 border border-discord-border/60 text-discord-faint hover:text-white"
-                                >
-                                    <X className="w-4 h-4 mx-auto" />
-                                </button>
-                            </div>
+                    <main className="h-full overflow-y-auto bg-[#313338]">
+                        <div className="px-5 sm:px-8 py-6 flex items-center justify-between">
+                            <h2 className="text-[20px] font-bold text-white">
+                                {(() => {
+                                    const allSections = [...USER_SETTINGS_SECTIONS, ...BILLING_SECTIONS_LIST, ...APP_SETTINGS_SECTIONS_LIST, ...ACTIVITY_SETTINGS_SECTIONS];
+                                    const section = allSections.find(s => s.key === activeSection);
+                                    if (section) return t(section.label);
+                                    if (activeSection === 'profiles') return 'Profiles';
+                                    if (activeSection === 'security') return 'Two-Factor Authentication';
+                                    if (activeSection === 'privacy') return 'Privacy & Safety';
+                                    return t(activeSection);
+                                })()}
+                            </h2>
+                            <button
+                                onClick={onClose}
+                                className="group p-2 rounded-full border border-discord-faint/30 text-discord-faint hover:text-white hover:border-white transition-all"
+                            >
+                                <X className="w-5 h-5 group-hover:rotate-90 transition-transform duration-200" />
+                                <span className="sr-only">Close Settings</span>
+                            </button>
                         </div>
 
                         <div className="md:hidden border-b border-discord-border/60 px-5 py-3 space-y-4">
@@ -902,11 +943,10 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                         <button
                                             key={section.label}
                                             onClick={() => setActiveSection(section.key)}
-                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                                                activeSection === section.key
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold ${activeSection === section.key
                                                     ? 'bg-discord-border-light/30 text-white'
                                                     : 'text-discord-faint hover:bg-discord-darkest/60'
-                                            }`}
+                                                }`}
                                         >
                                             {section.label}
                                         </button>
@@ -916,15 +956,14 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                             <div>
                                 <div className="text-[11px] uppercase tracking-[0.16em] text-discord-faint mb-2">App Settings</div>
                                 <div className="flex flex-wrap gap-2">
-                                    {APP_SETTINGS_SECTIONS.map((section) => (
+                                    {APP_SETTINGS_SECTIONS_LIST.map((section) => (
                                         <button
                                             key={section.label}
                                             onClick={() => setActiveSection(section.key)}
-                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                                                activeSection === section.key
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold ${activeSection === section.key
                                                     ? 'bg-discord-border-light/30 text-white'
                                                     : 'text-discord-faint hover:bg-discord-darkest/60'
-                                            }`}
+                                                }`}
                                         >
                                             {section.label}
                                         </button>
@@ -934,12 +973,13 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                             <div>
                                 <div className="text-[11px] uppercase tracking-[0.16em] text-discord-faint mb-2">Billing Settings</div>
                                 <div className="flex flex-wrap gap-2">
-                                    {BILLING_SECTIONS.map((section) => (
+                                    {BILLING_SECTIONS_LIST.map((section) => (
                                         <button
                                             key={section.id || section.label}
-                                            onClick={() => handleBillingClick(section.id)}
+                                            onClick={() => handleBillingClick(section.id || section.key)}
                                             className="px-3 py-1.5 rounded-full text-xs font-semibold text-discord-faint hover:bg-discord-darkest/60 flex items-center gap-2"
                                         >
+                                            <section.icon className="w-3.5 h-3.5" />
                                             <span>{section.label}</span>
                                             {section.badge && (
                                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-discord-border/50 text-discord-light">
@@ -953,237 +993,531 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                         </div>
 
                         {activeSection === 'account' && (
-                            <div className="px-5 sm:px-8 py-6 grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-8">
-                                <div className="space-y-6">
-                                    <div className="rounded-xl bg-gradient-to-r from-[#2c2f36] via-[#254136] to-[#2d6b4f] p-4">
-                                        <div className="text-discord-light text-sm">
-                                            Give your profile a fresh look
-                                            <p className="text-[11px] text-discord-faint mt-1">
-                                                Customize your name, pronouns, and bio.
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-sm font-semibold text-discord-light">Profile Photo</label>
-                                        <div
-                                            {...getAvatarRootProps()}
-                                            className={`mt-3 rounded-xl border border-dashed px-4 py-3 transition ${
-                                                isAvatarDragActive ? 'border-blurple bg-blurple/10' : 'border-discord-border/60 bg-discord-darkest/60'
-                                            }`}
-                                        >
-                                            <input {...getAvatarInputProps()} />
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-14 h-14 rounded-full bg-discord-darkest border border-discord-border/60 overflow-hidden flex items-center justify-center text-sm font-semibold text-discord-light">
-                                                    {avatarUploading ? (
-                                                        <div className="w-5 h-5 rounded-full border-2 border-blurple border-t-transparent animate-spin" />
-                                                    ) : avatar ? (
-                                                        <img src={avatar} alt="Avatar" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        (displayName || 'U').charAt(0).toUpperCase()
-                                                    )}
-                                                </div>
-                                                <div className="flex-1">
-                                                    <p className="text-sm text-discord-light font-semibold">
-                                                        {avatarUploading ? 'Uploading...' : 'Click to upload or drag and drop'}
-                                                    </p>
-                                                    <p className="text-[11px] text-discord-faint">
-                                                        JPG, PNG, GIF, or WEBP (max 10MB)
-                                                    </p>
-                                                </div>
-                                                <div className="w-9 h-9 rounded-lg bg-discord-darkest flex items-center justify-center text-discord-faint">
-                                                    <Camera className="w-4 h-4" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                        {avatarError && (
-                                            <p className="mt-2 text-xs text-discord-red">{avatarError}</p>
-                                        )}
-                                    </div>
-
-                                    <div>
-                                        <label className="text-sm font-semibold text-discord-light">Display Name</label>
-                                        <input
-                                            value={displayName}
-                                            onChange={(e) => setDisplayName(e.target.value)}
-                                            className="mt-2 w-full rounded-lg bg-discord-darkest border border-discord-border/60 text-discord-white px-3 py-2 focus:outline-none focus:border-blurple"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-sm font-semibold text-discord-light">Pronouns</label>
-                                        <input
-                                            value={pronouns}
-                                            onChange={(e) => setPronouns(e.target.value)}
-                                            placeholder="Add your pronouns"
-                                            className="mt-2 w-full rounded-lg bg-discord-darkest border border-discord-border/60 text-discord-white px-3 py-2 placeholder:text-discord-faint/60 focus:outline-none focus:border-blurple"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-sm font-semibold text-discord-light">Banner Color</label>
-                                        <div className="mt-3 flex flex-wrap gap-3">
-                                            {BANNER_COLORS.map((color) => (
-                                                <button
-                                                    key={color}
-                                                    onClick={() => setBannerColor(color)}
-                                                    className={`w-14 h-12 rounded-xl border-2 ${
-                                                        bannerColor === color ? 'border-blurple' : 'border-transparent'
-                                                    }`}
-                                                    style={{ backgroundColor: color }}
-                                                >
-                                                    {bannerColor === color && (
-                                                        <Palette className="w-4 h-4 text-white mx-auto" />
-                                                    )}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-sm font-semibold text-discord-light">Bio</label>
-                                        <p className="text-xs text-discord-faint mt-1">
-                                            You can use markdown and links if you&apos;d like.
-                                        </p>
-                                        <div className="relative mt-3">
-                                            <textarea
-                                                value={bio}
-                                                onChange={(e) => setBio(e.target.value)}
-                                                rows={4}
-                                                maxLength={200}
-                                                className="w-full rounded-lg bg-discord-darkest border border-discord-border/60 text-discord-white px-3 py-3 focus:outline-none focus:border-blurple resize-none"
-                                            />
-                                            <span className="absolute bottom-2 right-3 text-xs text-discord-faint">
-                                                {200 - bio.length}
-                                            </span>
-                                        </div>
-                                    </div>
+                            <div className="px-5 sm:px-8 py-6 max-w-4xl mx-auto">
+                                <div className="flex items-center gap-6 border-b border-discord-border/20 mb-8">
+                                    <button
+                                        onClick={() => setAccountSubTab('security')}
+                                        className={`pb-3 text-[16px] font-medium transition-colors relative ${accountSubTab === 'security' ? 'text-white' : 'text-discord-faint hover:text-discord-light'}`}
+                                    >
+                                        Security
+                                        {accountSubTab === 'security' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blurple rounded-full" />}
+                                    </button>
+                                    <button
+                                        onClick={() => setAccountSubTab('standing')}
+                                        className={`pb-3 text-[16px] font-medium transition-colors relative ${accountSubTab === 'standing' ? 'text-white' : 'text-discord-faint hover:text-discord-light'}`}
+                                    >
+                                        Standing
+                                        {accountSubTab === 'standing' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blurple rounded-full" />}
+                                    </button>
                                 </div>
 
-                                <div className="space-y-4">
-                                    <p className="text-sm font-semibold text-discord-light">Preview</p>
-                                    <div className="rounded-2xl border border-discord-border/60 bg-discord-darker overflow-hidden">
-                                        <div className="h-28" style={{ backgroundColor: bannerColor }} />
-                                        <div className="px-5 pb-5 -mt-9">
-                                            <div className="w-16 h-16 rounded-full bg-discord-darkest border-4 border-discord-darker overflow-hidden flex items-center justify-center">
-                                                {avatar ? (
-                                                    <img src={avatar} alt="" className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <span className="text-lg font-bold text-discord-light">
-                                                        {(displayName || 'U').charAt(0).toUpperCase()}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <button className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-discord-darkest text-xs text-discord-light">
-                                                <span className="w-2 h-2 rounded-full bg-discord-green" />
-                                                Add Status
-                                            </button>
-                                            <p className="mt-4 text-lg font-semibold text-white">{displayName || 'User'}</p>
-                                            <p className="text-sm text-discord-faint">{user?._id || user?.username || 'user'}</p>
-                                            <div className="mt-4">
+                                {accountSubTab === 'security' && (
+                                    <div className="space-y-8 animate-fade-in">
+                                        {/* Profile Card */}
+                                        <div className="rounded-lg bg-[#232428] overflow-hidden shadow-lg border border-discord-border/10">
+                                            <div className="h-24 bg-[#2e3e6b] relative">
+                                                {/* Edit User Profile Button */}
                                                 <button
-                                                    type="button"
-                                                    onClick={() => setActiveSection('security')}
-                                                    className="w-full py-2 rounded-lg bg-blurple text-white text-sm font-semibold"
+                                                    onClick={() => setActiveSection('profiles')}
+                                                    className="absolute top-4 right-4 bg-blurple hover:bg-blurple-hover text-white text-[12px] font-semibold px-3 py-1.5 rounded transition shadow-md"
                                                 >
-                                                    Open Security
+                                                    Edit User Profile
                                                 </button>
                                             </div>
+                                            <div className="px-4 pb-4">
+                                                <div className="relative -mt-12 mb-4 flex items-end gap-4">
+                                                    <div className="w-24 h-24 rounded-full bg-discord-darkest border-[6px] border-[#232428] overflow-hidden shadow-lg">
+                                                        {avatar ? (
+                                                            <img src={avatar} alt="" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-discord-light bg-discord-darker">
+                                                                {(displayName || 'U').charAt(0).toUpperCase()}
+                                                            </div>
+                                                        )}
+                                                        <div className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-discord-green border-[3.5px] border-[#232428]" />
+                                                    </div>
+                                                    <div className="pb-1">
+                                                        <h2 className="text-[20px] font-bold text-white uppercase tracking-tight">{displayName}</h2>
+                                                    </div>
+                                                </div>
 
-                                            <div className="mt-4 rounded-xl border border-discord-border/60 bg-discord-darkest/70 p-4 space-y-3">
-                                                <div>
-                                                    <p className="text-sm font-semibold text-white">Account management</p>
-                                                    <p className="text-xs text-discord-faint mt-1">
-                                                        Manage sign-in details, password security, and recovery settings.
-                                                    </p>
-                                                </div>
-                                                <div className="grid grid-cols-1 gap-2 text-xs text-discord-light">
-                                                    <div className="flex items-center justify-between gap-3 rounded-lg bg-discord-darker px-3 py-2">
-                                                        <span>Email</span>
-                                                        <span className="text-discord-faint">{user?.email || 'Not available'}</span>
+                                                <div className="bg-[#2b2d31] rounded-lg p-4 space-y-5">
+                                                    {/* Display Name */}
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-[12px] font-bold text-discord-faint uppercase mb-0.5">Display Name</p>
+                                                            {editingField === 'displayName' ? (
+                                                                <input
+                                                                    type="text"
+                                                                    value={tempValue}
+                                                                    onChange={(e) => setTempValue(e.target.value)}
+                                                                    className="w-full max-w-xs bg-discord-darkest border border-discord-border/30 rounded px-2 py-1 text-white text-[14px] outline-none focus:border-blurple"
+                                                                    autoFocus
+                                                                />
+                                                            ) : (
+                                                                <p className="text-[14px] text-discord-light truncate">{displayName}</p>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            {editingField === 'displayName' ? (
+                                                                <>
+                                                                    <button 
+                                                                        onClick={() => { setDisplayName(tempValue); handleSave({ displayName: tempValue }); }}
+                                                                        className="px-3 py-1 rounded bg-blurple text-white text-[12px] font-medium"
+                                                                    >
+                                                                        Save
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => setEditingField(null)}
+                                                                        className="px-3 py-1 rounded text-white text-[12px] font-medium hover:underline"
+                                                                    >
+                                                                        Cancel
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <button 
+                                                                    onClick={() => { setEditingField('displayName'); setTempValue(displayName); }}
+                                                                    className="px-4 py-1.5 rounded bg-[#4e5058] hover:bg-[#6d6f78] text-white text-[14px] font-medium transition-colors"
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                    <div className="flex items-center justify-between gap-3 rounded-lg bg-discord-darker px-3 py-2">
-                                                        <span>Account status</span>
-                                                        <span className="text-emerald-300">{user?.isVerified ? 'Verified' : 'Unverified'}</span>
+
+                                                    {/* Username */}
+                                                    <div className="flex items-center justify-between border-t border-discord-border/10 pt-4">
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-[12px] font-bold text-discord-faint uppercase mb-0.5">Username</p>
+                                                            {editingField === 'username' ? (
+                                                                <input
+                                                                    type="text"
+                                                                    value={tempValue}
+                                                                    onChange={(e) => setTempValue(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                                                                    className="w-full max-w-xs bg-discord-darkest border border-discord-border/30 rounded px-2 py-1 text-white text-[14px] outline-none focus:border-blurple"
+                                                                    autoFocus
+                                                                />
+                                                            ) : (
+                                                                <p className="text-[14px] text-discord-light truncate">{user?.username || (displayName.toLowerCase().replace(/\s/g, ''))}</p>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            {editingField === 'username' ? (
+                                                                <>
+                                                                    <button 
+                                                                        onClick={() => handleSave({ username: tempValue })}
+                                                                        className="px-3 py-1 rounded bg-blurple text-white text-[12px] font-medium"
+                                                                    >
+                                                                        Save
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => setEditingField(null)}
+                                                                        className="px-3 py-1 rounded text-white text-[12px] font-medium hover:underline"
+                                                                    >
+                                                                        Cancel
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <button 
+                                                                    onClick={() => { setEditingField('username'); setTempValue(user?.username || displayName.toLowerCase().replace(/\s/g, '')); }}
+                                                                    className="px-4 py-1.5 rounded bg-[#4e5058] hover:bg-[#6d6f78] text-white text-[14px] font-medium transition-colors"
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Email */}
+                                                    <div className="flex items-center justify-between border-t border-discord-border/10 pt-4">
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-[12px] font-bold text-discord-faint uppercase mb-0.5">Email</p>
+                                                            {editingField === 'email' ? (
+                                                                <input
+                                                                    type="email"
+                                                                    value={tempValue}
+                                                                    onChange={(e) => setTempValue(e.target.value)}
+                                                                    className="w-full max-w-xs bg-discord-darkest border border-discord-border/30 rounded px-2 py-1 text-white text-[14px] outline-none focus:border-blurple"
+                                                                    autoFocus
+                                                                />
+                                                            ) : (
+                                                                <div className="flex items-center gap-2">
+                                                                    <p className="text-[14px] text-discord-light truncate">
+                                                                        {user?.email && !isEmailVisible ? user.email.replace(/(.{2}).*(@.*)/, '$1******$2') : user?.email || '************@gmail.com'}
+                                                                    </p>
+                                                                    <button 
+                                                                        onClick={() => setIsEmailVisible(!isEmailVisible)}
+                                                                        className="text-[13px] text-blurple hover:underline"
+                                                                    >
+                                                                        {isEmailVisible ? 'Hide' : 'Reveal'}
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            {editingField === 'email' ? (
+                                                                <>
+                                                                    <button 
+                                                                        onClick={() => handleSave({ email: tempValue })}
+                                                                        className="px-3 py-1 rounded bg-blurple text-white text-[12px] font-medium"
+                                                                    >
+                                                                        Save
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => setEditingField(null)}
+                                                                        className="px-3 py-1 rounded text-white text-[12px] font-medium hover:underline"
+                                                                    >
+                                                                        Cancel
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <button 
+                                                                    onClick={() => { setEditingField('email'); setTempValue(user?.email || ''); }}
+                                                                    className="px-4 py-1.5 rounded bg-[#4e5058] hover:bg-[#6d6f78] text-white text-[14px] font-medium transition-colors"
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center justify-between border-t border-discord-border/10 pt-4">
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-[12px] font-bold text-discord-faint uppercase mb-0.5">Phone Number</p>
+                                                            <p className="text-[14px] text-discord-faint italic">You haven&apos;t added a phone number yet.</p>
+                                                        </div>
+                                                        <button className="px-4 py-1.5 rounded bg-[#4e5058] hover:bg-[#6d6f78] text-white text-[14px] font-medium transition-colors">Add</button>
+                                                    </div>
+
+                                                    <div className="flex items-center justify-between border-t border-discord-border/10 pt-4">
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-[12px] font-bold text-discord-faint uppercase mb-0.5">Age group</p>
+                                                            <p className="text-[14px] text-discord-light truncate">Unconfirmed</p>
+                                                        </div>
+                                                        <button className="px-4 py-1.5 rounded bg-[#4e5058] hover:bg-[#6d6f78] text-white text-[14px] font-medium transition-colors">Confirm</button>
                                                     </div>
                                                 </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="h-[1px] bg-discord-border/20 w-full" />
+
+                                        {/* Password and Authentication */}
+                                        <div>
+                                            <h3 className="text-[20px] font-bold text-white mb-6">Password and Authentication</h3>
+                                            <div className="space-y-6">
                                                 <button
-                                                    type="button"
-                                                    onClick={() => setActiveSection('security')}
-                                                    className="w-full rounded-lg bg-discord-border-light/30 px-3 py-2 text-sm font-semibold text-white hover:bg-discord-border-light/50"
+                                                    onClick={() => setPasswordBusy(!passwordBusy)}
+                                                    className="bg-blurple hover:bg-blurple-hover text-white text-[14px] font-medium px-4 py-2 rounded transition-colors"
                                                 >
-                                                    Manage Password & Security
+                                                    {passwordBusy ? 'Cancel' : 'Change Password'}
+                                                </button>
+
+                                                {passwordBusy && (
+                                                    <div className="bg-[#2b2d31] rounded-lg p-6 space-y-4 border border-discord-border/20 animate-fade-in">
+                                                        <h4 className="text-[16px] font-bold text-white mb-2">Change your password</h4>
+                                                        
+                                                        {passwordError && (
+                                                            <div className="p-3 bg-discord-red/10 border border-discord-red/20 rounded text-discord-red text-xs">
+                                                                {passwordError}
+                                                            </div>
+                                                        )}
+                                                        {passwordMessage && (
+                                                            <div className="p-3 bg-discord-green/10 border border-discord-green/20 rounded text-discord-green text-xs">
+                                                                {passwordMessage}
+                                                            </div>
+                                                        )}
+
+                                                        <div className="space-y-4">
+                                                            <div>
+                                                                <label className="text-[12px] font-bold text-discord-faint uppercase mb-2 block">Current Password</label>
+                                                                <input
+                                                                    type="password"
+                                                                    value={currentPassword}
+                                                                    onChange={(e) => setCurrentPassword(e.target.value)}
+                                                                    className="w-full bg-discord-darkest border border-discord-border/30 rounded p-2 text-white outline-none focus:border-blurple transition-colors"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-[12px] font-bold text-discord-faint uppercase mb-2 block">New Password</label>
+                                                                <input
+                                                                    type="password"
+                                                                    value={newPassword}
+                                                                    onChange={(e) => setNewPassword(e.target.value)}
+                                                                    className="w-full bg-discord-darkest border border-discord-border/30 rounded p-2 text-white outline-none focus:border-blurple transition-colors"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-[12px] font-bold text-discord-faint uppercase mb-2 block">Confirm New Password</label>
+                                                                <input
+                                                                    type="password"
+                                                                    value={confirmPassword}
+                                                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                                                    className="w-full bg-discord-darkest border border-discord-border/30 rounded p-2 text-white outline-none focus:border-blurple transition-colors"
+                                                                />
+                                                            </div>
+                                                            <button
+                                                                onClick={handleChangePassword}
+                                                                className="w-full bg-blurple hover:bg-blurple-hover text-white font-bold py-2 rounded transition-colors"
+                                                            >
+                                                                Done
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="space-y-2">
+                                                    <p className="text-[12px] font-bold text-discord-faint uppercase">Authenticator App</p>
+                                                    <p className="text-[14px] text-discord-faint max-w-2xl">
+                                                        Protect your Discord account with an extra layer of security. Once configured, you&apos;ll be required to enter your password and complete one additional step in order to sign in.
+                                                    </p>
+                                                    {twoFactorSetup ? (
+                                                        <div className="bg-[#2b2d31] rounded-lg p-6 space-y-4 border border-discord-border/20 mt-4 animate-fade-in">
+                                                            <div className="flex flex-col md:flex-row gap-6">
+                                                                <div className="bg-white p-2 rounded-lg shrink-0 flex items-center justify-center w-[160px] h-[160px]">
+                                                                    {twoFactorSetup.qrCodeDataUrl ? (
+                                                                        <img src={twoFactorSetup.qrCodeDataUrl} alt="2FA QR Code" className="w-full h-full" />
+                                                                    ) : (
+                                                                        <QrCode className="w-20 h-20 text-discord-darkest" />
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex-1 space-y-4">
+                                                                    <p className="text-sm text-discord-light">
+                                                                        Scan this QR code with your authenticator app, then enter the 6-digit code below.
+                                                                    </p>
+                                                                    {twoFactorSetup.manualEntryKey && (
+                                                                        <div className="p-2 bg-discord-darkest rounded border border-discord-border/20 text-xs text-discord-faint break-all font-mono">
+                                                                            Key: {twoFactorSetup.manualEntryKey}
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="space-y-2">
+                                                                        <label className="text-[12px] font-bold text-discord-faint uppercase">Enter 6-digit code</label>
+                                                                        <input
+                                                                            type="text"
+                                                                            maxLength={6}
+                                                                            value={twoFactorCode}
+                                                                            onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
+                                                                            className="w-full bg-discord-darkest border border-discord-border/30 rounded p-2 text-white outline-none focus:border-blurple text-center text-xl tracking-[0.5em]"
+                                                                            placeholder="000000"
+                                                                        />
+                                                                    </div>
+                                                                    <div className="flex gap-3">
+                                                                        <button
+                                                                            onClick={handleTwoFactorEnable}
+                                                                            disabled={twoFactorCode.length !== 6 || twoFactorBusy}
+                                                                            className="flex-1 bg-blurple hover:bg-blurple-hover disabled:opacity-50 text-white font-bold py-2 rounded transition-colors"
+                                                                        >
+                                                                            Activate
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => setTwoFactorSetup(null)}
+                                                                            className="px-4 py-2 text-white hover:underline"
+                                                                        >
+                                                                            Cancel
+                                                                        </button>
+                                                                    </div>
+                                                                    {twoFactorError && <p className="text-xs text-discord-red">{twoFactorError}</p>}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <button 
+                                                            onClick={handleTwoFactorSetup}
+                                                            className="bg-blurple hover:bg-blurple-hover text-white text-[14px] font-medium px-4 py-2 rounded transition-colors mt-2"
+                                                        >
+                                                            Enable Authenticator App
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <p className="text-[12px] font-bold text-discord-faint uppercase">Security Keys</p>
+                                                    <p className="text-[14px] text-discord-faint max-w-2xl">
+                                                        Add an additional layer of protection to your account with a Security Key.
+                                                    </p>
+                                                    <button className="bg-blurple hover:bg-blurple-hover text-white text-[14px] font-medium px-4 py-2 rounded transition-colors mt-2">
+                                                        Register a Security Key
+                                                    </button>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <p className="text-[12px] font-bold text-discord-faint uppercase">Session Management</p>
+                                                    <p className="text-[14px] text-discord-faint max-w-2xl">
+                                                        If you suspect your account has been compromised, you can terminate all other active sessions across different devices.
+                                                    </p>
+                                                    <button 
+                                                        onClick={handleLogoutAll}
+                                                        className="border border-discord-red text-discord-red hover:bg-discord-red/10 text-[14px] font-medium px-4 py-2 rounded transition-colors mt-2"
+                                                    >
+                                                        Logout All Other Devices
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="h-[1px] bg-discord-border/20 w-full" />
+
+                                        {/* Account Removal */}
+                                        <div>
+                                            <h3 className="text-[20px] font-bold text-white mb-4">Account Removal</h3>
+                                            <p className="text-[14px] text-discord-faint mb-4">
+                                                Disabling your account means you can recover it at any time after taking this action.
+                                            </p>
+                                            <div className="flex items-center gap-4">
+                                                <button className="bg-discord-red hover:bg-[#c03537] text-white text-[14px] font-medium px-4 py-2 rounded transition-colors">
+                                                    Disable Account
+                                                </button>
+                                                <button className="border border-discord-red text-discord-red hover:bg-discord-red/10 text-[14px] font-medium px-4 py-2 rounded transition-colors">
+                                                    Delete Account
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
+                                )}
 
-                                    <div className="rounded-3xl border border-discord-border/60 bg-discord-darkest/80 p-6 md:p-8 space-y-4">
-                                        <div>
-                                            <p className="text-[11px] uppercase tracking-[0.3em] text-blurple/80 font-semibold">Account Security</p>
-                                            <h3 className="text-xl font-semibold text-white mt-2">Password management</h3>
-                                            <p className="text-sm text-discord-faint mt-2 max-w-2xl">
-                                                Update your password without leaving settings. This refreshes your session after the change.
-                                            </p>
+                                {accountSubTab === 'standing' && (
+                                    <div className="animate-fade-in py-10 text-center">
+                                        <div className="w-16 h-16 rounded-full bg-discord-green/20 flex items-center justify-center mx-auto mb-4">
+                                            <ShieldCheck className="w-8 h-8 text-discord-green" />
+                                        </div>
+                                        <h3 className="text-xl font-bold text-white">Your account is in good standing</h3>
+                                        <p className="text-discord-faint mt-2">You haven&apos;t received any violations. Stay awesome!</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeSection === 'profiles' && (
+                            <div className="px-5 sm:px-8 py-8 animate-fade-in">
+                                <div className="max-w-4xl mx-auto">
+                                    <div className="flex items-center justify-between mb-8">
+                                        <h2 className="text-2xl font-bold text-white">Profiles</h2>
+                                        <div className="flex gap-3">
+                                            <button 
+                                                onClick={() => handleSave()}
+                                                disabled={isSaving}
+                                                className="px-6 py-2 rounded bg-blurple hover:bg-blurple-hover text-white font-semibold disabled:opacity-50 transition-colors"
+                                            >
+                                                {isSaving ? 'Saving...' : 'Save Changes'}
+                                            </button>
+                                            <button 
+                                                onClick={() => { setActiveSection('account'); }}
+                                                className="px-4 py-2 text-white hover:underline"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8">
+                                        {/* Left Side: Editor */}
+                                        <div className="space-y-8">
+                                            {/* Avatar/Banner Section */}
+                                            <div className="space-y-4">
+                                                <p className="text-[12px] font-bold text-discord-faint uppercase">Preview</p>
+                                                <div className="rounded-xl overflow-hidden bg-discord-darkest border border-discord-border/30">
+                                                    <div className="h-24 relative" style={{ backgroundColor: bannerColor }}>
+                                                        <div {...getAvatarRootProps()} className="absolute -bottom-8 left-4 w-20 h-20 rounded-full bg-discord-darkest border-[4px] border-discord-darkest overflow-hidden cursor-pointer group">
+                                                            <input {...getAvatarInputProps()} />
+                                                            {avatar ? (
+                                                                <img src={avatar} alt="" className="w-full h-full object-cover group-hover:opacity-40 transition-opacity" />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-xl font-bold text-white bg-discord-darker group-hover:opacity-40 transition-opacity">
+                                                                    {(displayName || 'U').charAt(0).toUpperCase()}
+                                                                </div>
+                                                            )}
+                                                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <Camera className="w-6 h-6 text-white" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="px-4 pt-10 pb-4">
+                                                        <h3 className="text-lg font-bold text-white">{displayName}</h3>
+                                                        <p className="text-xs text-discord-faint">@{user?.username || 'username'}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Profile Customization */}
+                                            <div className="space-y-6">
+                                                <div>
+                                                    <label className="text-[12px] font-bold text-discord-faint uppercase mb-2 block">Display Name</label>
+                                                    <input
+                                                        type="text"
+                                                        value={displayName}
+                                                        onChange={(e) => setDisplayName(e.target.value)}
+                                                        className="w-full bg-discord-darkest border border-discord-border/30 rounded p-2.5 text-white outline-none focus:border-blurple"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-[12px] font-bold text-discord-faint uppercase mb-2 block">Pronouns</label>
+                                                    <input
+                                                        type="text"
+                                                        value={pronouns}
+                                                        onChange={(e) => setPronouns(e.target.value)}
+                                                        placeholder="Add pronouns"
+                                                        className="w-full bg-discord-darkest border border-discord-border/30 rounded p-2.5 text-white outline-none focus:border-blurple"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-[12px] font-bold text-discord-faint uppercase mb-2 block">About Me</label>
+                                                    <textarea
+                                                        value={bio}
+                                                        onChange={(e) => setBio(e.target.value)}
+                                                        placeholder="Tell us a little about yourself"
+                                                        rows={4}
+                                                        className="w-full bg-discord-darkest border border-discord-border/30 rounded p-2.5 text-white outline-none focus:border-blurple resize-none"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-[12px] font-bold text-discord-faint uppercase mb-2 block">Banner Color</label>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {BANNER_COLORS.map((color) => (
+                                                            <button
+                                                                key={color}
+                                                                onClick={() => setBannerColor(color)}
+                                                                className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${bannerColor === color ? 'border-white' : 'border-transparent'}`}
+                                                                style={{ backgroundColor: color }}
+                                                            />
+                                                        ))}
+                                                        <div className="relative w-8 h-8 rounded-full border-2 border-transparent bg-discord-darker overflow-hidden flex items-center justify-center hover:scale-110">
+                                                            <input
+                                                                type="color"
+                                                                value={bannerColor}
+                                                                onChange={(e) => setBannerColor(e.target.value)}
+                                                                className="absolute inset-0 w-[150%] h-[150%] -translate-x-1/4 -translate-y-1/4 cursor-pointer"
+                                                            />
+                                                            <Palette className="w-4 h-4 text-discord-faint pointer-events-none" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
 
-                                        {passwordError && (
-                                            <div className="px-4 py-3 bg-discord-red/10 border border-discord-red/20 rounded-lg text-sm text-discord-red font-medium">
-                                                {passwordError}
+                                        {/* Right Side: Tips / Context */}
+                                        <div className="space-y-6">
+                                            <div className="bg-discord-darkest/40 rounded-xl p-4 border border-discord-border/20">
+                                                <h4 className="text-[11px] font-bold text-discord-faint uppercase mb-2">Pro Tip</h4>
+                                                <p className="text-xs text-discord-light leading-relaxed">
+                                                    You can also set custom profiles for individual servers if you have <b>CircleCore Plus</b>.
+                                                </p>
+                                                <button className="text-xs text-blurple hover:underline mt-2">Get CircleCore Plus</button>
                                             </div>
-                                        )}
-                                        {passwordMessage && (
-                                            <div className="px-4 py-3 bg-discord-green/10 border border-discord-green/20 rounded-lg text-sm text-discord-green font-medium">
-                                                {passwordMessage}
+                                            
+                                            <div className="bg-discord-darkest/40 rounded-xl p-4 border border-discord-border/20">
+                                                <h4 className="text-[11px] font-bold text-discord-faint uppercase mb-2">Privacy</h4>
+                                                <p className="text-xs text-discord-light leading-relaxed">
+                                                    Your profile is public. Please don&apos;t share sensitive information like your home address or passwords.
+                                                </p>
                                             </div>
-                                        )}
-
-                                        <div className="grid gap-3">
-                                            <input
-                                                type="password"
-                                                value={currentPassword}
-                                                onChange={(e) => setCurrentPassword(e.target.value)}
-                                                placeholder="Current password"
-                                                className="w-full rounded-lg border border-discord-border/60 bg-discord-darkest px-4 py-2.5 text-white outline-none focus:border-blurple"
-                                            />
-                                            <input
-                                                type="password"
-                                                value={newPassword}
-                                                onChange={(e) => setNewPassword(e.target.value)}
-                                                placeholder="New password"
-                                                className="w-full rounded-lg border border-discord-border/60 bg-discord-darkest px-4 py-2.5 text-white outline-none focus:border-blurple"
-                                            />
-                                            <input
-                                                type="password"
-                                                value={confirmPassword}
-                                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                                placeholder="Confirm new password"
-                                                className="w-full rounded-lg border border-discord-border/60 bg-discord-darkest px-4 py-2.5 text-white outline-none focus:border-blurple"
-                                            />
-                                        </div>
-
-                                        <div className="flex flex-wrap items-center gap-3">
-                                            <button
-                                                type="button"
-                                                onClick={handleChangePassword}
-                                                disabled={passwordBusy}
-                                                className="px-4 py-2 rounded-lg bg-blurple text-white text-sm font-semibold hover:bg-blurple/90 disabled:opacity-60"
-                                            >
-                                                {passwordBusy ? 'Updating...' : 'Change Password'}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setActiveSection('account')}
-                                                className="px-4 py-2 rounded-lg border border-discord-border/60 bg-discord-darkest text-sm font-semibold text-discord-light hover:bg-discord-border-light/20"
-                                            >
-                                                Back to Account
-                                            </button>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         )}
-
                         {activeSection === 'notifications' && (
                             <div className="px-5 sm:px-8 py-8">
                                 <div className="max-w-3xl mx-auto space-y-6">
@@ -1266,7 +1600,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                     {/* How Circle Core Uses Your Data */}
                                     <div>
                                         <h2 className="text-[20px] font-bold text-discord-white mb-6">How Circle Core Uses Your Data</h2>
-                                        
+
                                         <div className="space-y-6">
                                             {/* improveData */}
                                             <div className="flex items-start justify-between gap-4">
@@ -1361,7 +1695,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                         <div>
                                             <div className="text-[15px] font-bold text-discord-white">Request all of my data</div>
                                             <div className="text-[13px] text-discord-faint mt-1 mb-4">Learn about how getting a copy of your personal data works</div>
-                                            <button 
+                                            <button
                                                 onClick={handleRequestData}
                                                 disabled={dataRequestStatus !== 'idle'}
                                                 className={`px-4 py-2 rounded text-white text-[14px] font-medium transition-colors ${dataRequestStatus === 'done' ? 'bg-discord-green' : 'bg-blurple hover:bg-blurple/90 disabled:opacity-50'}`}
@@ -1376,7 +1710,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                     {/* Voice Security */}
                                     <div>
                                         <h2 className="text-[20px] font-bold text-discord-white mb-6">Voice Security</h2>
-                                        
+
                                         <div className="mb-6 p-4 rounded-lg border border-blurple bg-blurple/10 flex items-start gap-3">
                                             <div className="w-5 h-5 rounded-full bg-blurple flex items-center justify-center text-white font-bold text-[12px] shrink-0 mt-0.5">i</div>
                                             <p className="text-[13px] text-discord-white leading-relaxed">
@@ -1420,7 +1754,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                                 <div className="text-[13px] text-discord-faint">{ignoredAccounts.length} accounts</div>
                                             </div>
                                         </div>
-                                        
+
                                         <div className="flex flex-col">
                                             {ignoredAccounts.map(account => (
                                                 <div key={account.id} className="p-4 flex items-center justify-between border-b border-discord-border/30 last:border-b-0 hover:bg-discord-darkest/40 transition-colors">
@@ -1431,7 +1765,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                                             <div className="text-[13px] text-discord-faint">{account.username}</div>
                                                         </div>
                                                     </div>
-                                                    <button 
+                                                    <button
                                                         onClick={() => handleUnignore(account.id)}
                                                         className="px-4 py-1.5 rounded bg-[#1e1f22] hover:bg-discord-darkest text-discord-white text-[14px] font-medium transition-colors"
                                                     >
@@ -1712,9 +2046,9 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                     <div className="mb-8">
                                         <h3 className="text-[16px] font-bold text-discord-white mb-1">{t('Select a Language')}</h3>
                                         <p className="text-[13px] text-discord-faint mb-4">{t('Choose the language you want Circle Core to display.')}</p>
-                                        
+
                                         <div className="relative max-w-[500px]">
-                                            <select 
+                                            <select
                                                 value={language}
                                                 onChange={handleLanguageChange}
                                                 className="w-full bg-[#1e1f22] border border-discord-border/30 hover:border-discord-border/60 text-discord-white rounded-[4px] pl-10 pr-10 py-3 outline-none focus:border-blurple text-[15px] appearance-none cursor-pointer transition-colors"
@@ -1745,7 +2079,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                                 <span className="text-[15px] text-discord-white font-medium">Auto</span>
                                                 <input type="radio" className="hidden" checked={timeFormat === 'auto'} onChange={() => handleTimeFormatChange('auto')} />
                                             </label>
-                                            
+
                                             <label className="flex items-center gap-3 cursor-pointer group w-max">
                                                 <div className={`w-5 h-5 rounded-full border-[2px] flex items-center justify-center transition-colors ${timeFormat === '12-hour' ? 'border-blurple' : 'border-discord-faint group-hover:border-discord-white'}`}>
                                                     {timeFormat === '12-hour' && <div className="w-2.5 h-2.5 bg-blurple rounded-full" />}
@@ -1814,7 +2148,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                             </div>
 
                                             <div className="flex items-center gap-4 mt-6">
-                                                <button 
+                                                <button
                                                     className={`text-white font-medium px-6 py-2 rounded-[4px] text-[14px] ${isTestingMic ? 'bg-red-500 hover:bg-red-600' : 'bg-blurple hover:bg-blurple/90'}`}
                                                     onClick={toggleMicTest}
                                                 >
@@ -1853,18 +2187,18 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                                     <input type="radio" value="ptt" checked={voiceMode === 'ptt'} onChange={(e) => handleVoiceSettingChange({ voiceMode: e.target.value })} className="hidden" />
                                                 </label>
                                             </div>
-                                            
+
                                             {voiceMode === 'ptt' && (
                                                 <div className="mt-6">
                                                     <label className="block text-[12px] font-bold text-discord-light mb-2">SHORTCUT</label>
                                                     <div className="flex items-stretch max-w-sm">
-                                                        <div 
+                                                        <div
                                                             className={`flex-1 border bg-[#1e1f22] rounded-l-[4px] px-3 py-2 text-[14px] flex items-center border-r-0 ${isRecordingKeybind ? 'border-blurple text-blurple shadow-[0_0_0_1px_#5865F2]' : 'border-discord-darker text-discord-white'} cursor-pointer`}
                                                             onClick={() => setIsRecordingKeybind(!isRecordingKeybind)}
                                                         >
                                                             {isRecordingKeybind ? 'Recording...' : pttKeybind}
                                                         </div>
-                                                        <button 
+                                                        <button
                                                             className="keybind-stop-btn text-[14px] px-6 py-2 border border-discord-darker bg-[#2b2d31] text-discord-white hover:bg-discord-border/30 rounded-r-[4px] font-medium"
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -1883,18 +2217,18 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                         {/* Camera Section */}
                                         <div className="space-y-6">
                                             <h3 className="text-xl font-medium text-white mb-2">Camera</h3>
-                                            
+
                                             <div className="relative w-full max-w-3xl h-[280px] bg-[#111214] rounded-[8px] flex items-center justify-center overflow-hidden">
                                                 {videoStream && (
-                                                    <video 
-                                                        ref={videoPreviewRef} 
-                                                        autoPlay 
-                                                        playsInline 
-                                                        muted 
-                                                        className="absolute inset-0 w-full h-full object-cover" 
+                                                    <video
+                                                        ref={videoPreviewRef}
+                                                        autoPlay
+                                                        playsInline
+                                                        muted
+                                                        className="absolute inset-0 w-full h-full object-cover"
                                                     />
                                                 )}
-                                                <button 
+                                                <button
                                                     onClick={toggleVideoTest}
                                                     className={`z-10 text-white font-medium px-6 py-2 rounded-[4px] text-[14px] ${isTestingVideo ? 'bg-red-500 hover:bg-red-600' : 'bg-blurple hover:bg-blurple/90'}`}
                                                 >
@@ -2182,7 +2516,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                                                 </div>
                                                             ))}
                                                         </div>
-                                                        <button 
+                                                        <button
                                                             onClick={(e) => {
                                                                 e.preventDefault();
                                                                 const text = recoveryCodes.join('\n');
@@ -2271,9 +2605,8 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                             </div>
                                             <button
                                                 onClick={() => setPrivacy((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
-                                                className={`relative w-12 h-6 rounded-full transition-colors ${
-                                                    privacy[item.key] ? 'bg-blurple' : 'bg-discord-darkest'
-                                                }`}
+                                                className={`relative w-12 h-6 rounded-full transition-colors ${privacy[item.key] ? 'bg-blurple' : 'bg-discord-darkest'
+                                                    }`}
                                             >
                                                 <span className={`absolute top-0.5 ${privacy[item.key] ? 'right-0.5' : 'left-0.5'} w-5 h-5 rounded-full bg-white transition-all`} />
                                             </button>
@@ -2347,6 +2680,24 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {!['account', 'profiles', 'notifications', 'appearance', 'accessibility', 'language', 'security', 'privacy', 'community', 'voiceVideo', 'keybinds', 'languageTime'].includes(activeSection) && (
+                            <div className="px-5 sm:px-8 py-20 flex flex-col items-center justify-center text-center">
+                                <div className="w-16 h-16 bg-discord-darkest/60 rounded-2xl flex items-center justify-center mb-4 border border-discord-border/40">
+                                    <Monitor className="w-8 h-8 text-discord-faint" />
+                                </div>
+                                <h2 className="text-xl font-bold text-white mb-2">Section Coming Soon</h2>
+                                <p className="text-sm text-discord-faint max-w-xs mx-auto">
+                                    We're still building the <b>{activeSection}</b> settings. Check back in a future update!
+                                </p>
+                                <button
+                                    onClick={() => setActiveSection('account')}
+                                    className="mt-6 px-5 py-2 rounded-lg bg-blurple text-white text-sm font-semibold hover:bg-blurple-hover transition-colors"
+                                >
+                                    Go back to My Account
+                                </button>
                             </div>
                         )}
 

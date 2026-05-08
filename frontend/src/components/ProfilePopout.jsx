@@ -56,7 +56,7 @@ const ProfilePopout = ({ isOpen, onClose, anchorClassName = '', profile, user, o
     return (
         <div className="fixed inset-0 z-[70]" onClick={onClose}>
             <div
-                className={`absolute bottom-20 left-1/2 -translate-x-1/2 w-[92vw] max-w-[360px] md:w-[360px] md:left-auto md:translate-x-0 rounded-2xl bg-discord-darker border border-discord-border shadow-2xl overflow-hidden animate-scale-in ${anchorClassName}`}
+                className={`absolute bottom-20 left-1/2 -translate-x-1/2 w-[92vw] max-w-[320px] md:w-[300px] md:left-auto md:translate-x-[8px] rounded-2xl bg-discord-darker border border-discord-border shadow-2xl overflow-hidden animate-scale-in ${anchorClassName}`}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="h-24 bg-gradient-to-r from-[#2f3136] via-[#35393f] to-[#3b3f46] relative">
@@ -72,9 +72,8 @@ const ProfilePopout = ({ isOpen, onClose, anchorClassName = '', profile, user, o
                                 {displayName.charAt(0).toUpperCase()}
                             </div>
                         )}
-                        <span className={`absolute bottom-2 right-2 w-4 h-4 rounded-full border-4 border-discord-darker ${
-                            presence === 'dnd' ? 'bg-red-500' : presence === 'idle' ? 'bg-yellow-400' : presence === 'offline' ? 'bg-discord-faint/60' : 'bg-discord-green'
-                        }`} />
+                        <span className={`absolute bottom-2 right-2 w-4 h-4 rounded-full border-4 border-discord-darker ${presence === 'dnd' ? 'bg-red-500' : presence === 'idle' ? 'bg-yellow-400' : presence === 'offline' ? 'bg-discord-faint/60' : 'bg-discord-green'
+                            }`} />
                     </div>
                 </div>
 
@@ -102,9 +101,8 @@ const ProfilePopout = ({ isOpen, onClose, anchorClassName = '', profile, user, o
                     </div>
 
                     <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-2xl bg-discord-darkest text-sm text-discord-light">
-                        <span className={`mt-1 w-2.5 h-2.5 shrink-0 rounded-full ${
-                            presence === 'dnd' ? 'bg-red-500' : presence === 'idle' ? 'bg-yellow-400' : presence === 'offline' ? 'bg-discord-faint/60' : 'bg-discord-green'
-                        }`} />
+                        <span className={`mt-1 w-2.5 h-2.5 shrink-0 rounded-full ${presence === 'dnd' ? 'bg-red-500' : presence === 'idle' ? 'bg-yellow-400' : presence === 'offline' ? 'bg-discord-faint/60' : 'bg-discord-green'
+                            }`} />
                         <div className="flex-1 min-w-0">
                             <p className={`leading-snug break-words ${isBioExpanded ? '' : 'line-clamp-3'}`}>
                                 {statusText}
@@ -133,9 +131,8 @@ const ProfilePopout = ({ isOpen, onClose, anchorClassName = '', profile, user, o
                             className="w-full flex items-center justify-between px-4 py-3 hover:bg-discord-border-light/20 cursor-pointer"
                         >
                             <div className="flex items-center gap-3">
-                                <span className={`w-3 h-3 rounded-full ${
-                                    presence === 'dnd' ? 'bg-red-500' : presence === 'idle' ? 'bg-yellow-400' : presence === 'offline' ? 'bg-discord-faint/60' : 'bg-discord-green'
-                                }`} />
+                                <span className={`w-3 h-3 rounded-full ${presence === 'dnd' ? 'bg-red-500' : presence === 'idle' ? 'bg-yellow-400' : presence === 'offline' ? 'bg-discord-faint/60' : 'bg-discord-green'
+                                    }`} />
                                 <span>{STATUS_OPTIONS.find((s) => s.id === presence)?.label || 'Online'}</span>
                             </div>
                             <ChevronRight className="w-4 h-4 text-discord-faint" />

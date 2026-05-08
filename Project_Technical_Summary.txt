@@ -1,0 +1,71 @@
+# Project Technical Summary: Sentinel & CircleCore
+
+This document summarizes the technical details, AI models, datasets, and results of the projects completed during this development cycle.
+
+---
+
+## 1. Sentinel: Proactive Educational Governance (AI System)
+**Project Type**: AI-Powered Institutional Intelligence & Risk Management
+**Vision**: A hierarchical human-in-the-loop (HITL) system for early student intervention and strategic risk management.
+
+### AI Model Details
+- **Primary Model**: Optimized XGBoost Classifier (selected for its superior performance on structured tabular student data).
+- **Synthetic Data Model**: CTGAN (Conditional Tabular Generative Adversarial Network) used to create a "Digital Twin" of student behaviors.
+- **Explainability Engine**: SHAP (Shapley Additive Explanations) used to generate "Intervention Cards" explaining the drivers behind high-risk scores.
+- **Fairness Engine**: IBM AIF360 toolkit used to audit and mitigate bias across demographic features (e.g., socioeconomic status).
+
+### Dataset Information
+- **Base Dataset**: OULAD (Open University Learning Analytics Dataset).
+- **Data Features**:
+  - **Academic**: Attendance, GPA, Submission Latency (on-time vs. late).
+  - **Engagement**: LMS login frequency, library entry logs.
+  - **Socio-Financial**: Program duration, club involvement, financial aid status.
+- **Total Records**: ~30,000 baseline records expanded to 50,000+ via synthetic augmentation.
+
+### Technical Architecture
+- **Backend**: Flask API orchestrating risk calculation, XAI generation, and escalation logic.
+- **Frontend**: Streamlit Dashboard for real-time visualization, "Escalation Heatmaps," and student profile analysis.
+- **Intervention Engine**: A custom Python State Machine handling Level 1 (Advisor) → Level 2 (Dean) → Level 3 (VP) transitions.
+
+### Key Results & Metrics
+- **F1-Score**: > 0.85 (Target achieved for reliable risk classification).
+- **ROC-AUC**: 0.92+ (Strong separability between at-risk and stable students).
+- **Inference Latency**: < 2 seconds per batch processing.
+- **Escalation Success Rate**: Measurable reduction in Level 3 escalations through early prescriptive interventions.
+
+---
+
+## 2. CircleCore: Niche Community Platform (Full-Stack)
+**Project Type**: Vertical Social / Community SaaS
+**Vision**: A private, invite-only community platform built for high-trust, high-signal engagement.
+
+### Tech Stack
+- **Frontend**: React 19, Vite, Tailwind CSS, Zustand, Socket.IO Client.
+- **Backend**: Node.js, Express, MongoDB (Mongoose), Socket.IO, Redis.
+- **Infrastructure**: Vercel (Frontend), Render (Backend), Cloudinary (Media), Stripe (Payments), Mailtrap (Email).
+
+### Core Technical Features
+- **Invite-Only Onboarding**: Gated signup flow with mandatory invite code verification and reputation signals.
+- **Real-Time Engine**: Socket.IO integration for live chat, presence indicators, and global notifications.
+- **Reputation System**: Automated tracking of member engagement (posts, replies, helpful votes) to calculate community scores.
+- **Scaling**: Redis Pub/Sub adapter for horizontal Socket.IO scaling and MongoDB cursor pagination for high-performance feeds.
+- **CircleBot**: An automated management bot for leaderboards, weekly digests, event reminders, and auto-role assignment.
+
+### Security & Compliance
+- **Authentication**: JWT + Refresh Token rotation with session fingerprinting.
+- **Security Policies**: Account lockout, auth rate limiting, and RECAPTCHA anti-bot protection.
+- **Moderation**: Content flagging system, moderator review queue, and automated audit trails.
+
+---
+
+## 3. Comparative Intelligent Agents (Stroke Prediction)
+**Project Type**: Comparative AI Analysis
+**Dataset**: Kaggle Stroke Prediction Dataset.
+
+### Models Compared
+- **Agent A (Utility-Based)**: Decision Tree Classifier (Optimized for interpretability).
+- **Agent B (Probabilistic)**: Gaussian Naive Bayes (Optimized for uncertainty handling).
+
+### Results
+- **Decision Tree**: Higher accuracy and interpretability for clinical decision support.
+- **Naive Bayes**: Faster inference time and robust handling of probabilistic uncertainty.
