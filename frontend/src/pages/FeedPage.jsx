@@ -1088,15 +1088,15 @@ const FeedPage = () => {
 
     useEffect(() => {
         if (!activeCommunityId) return;
-        fetchChannels();
-        fetchCommunityMembers(activeCommunityId).catch(() => { });
-    }, [activeCommunityId, fetchChannels, fetchCommunityMembers]);
-
-    useEffect(() => {
-        if (!activeCommunityId) return;
+        
+        // 1. Clear old community state
         clearChannels();
         setActiveChannel(null);
-    }, [activeCommunityId, clearChannels, setActiveChannel]);
+
+        // 2. Fetch new community data
+        fetchChannels().catch(() => { });
+        fetchCommunityMembers(activeCommunityId).catch(() => { });
+    }, [activeCommunityId, fetchChannels, clearChannels, setActiveChannel, fetchCommunityMembers]);
 
     useEffect(() => {
         fetchFriends();

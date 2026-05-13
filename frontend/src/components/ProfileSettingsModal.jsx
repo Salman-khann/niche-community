@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Palette, Pencil, X, LogOut, Camera, ShieldCheck, ShieldAlert, QrCode, EyeOff, Monitor, Smartphone, Search, User, MessageSquare, Shield, Users, Gem, Star, CreditCard, Package, Receipt, Mic2, MonitorPlay, Accessibility, Keyboard, Languages, Play, Activity } from 'lucide-react';
+import { Palette, Pencil, X, LogOut, Camera, ShieldCheck, ShieldAlert, QrCode, EyeOff, Monitor, Smartphone, Search, User, MessageSquare, Shield, Users, Gem, Star, CreditCard, Package, Receipt, Mic2, MonitorPlay, Accessibility, Keyboard, Languages, Play, Activity, Dices, ExternalLink, Sparkles } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore } from '../stores/feedStore';
 import { useNotificationStore } from '../stores/notificationStore';
+import { useBillingStore } from '../stores/billingStore';
+import { useProfileStore } from '../stores/profileStore';
 import { getUserPreferences, saveUserPreferences } from '../utils/userPreferences';
 import { TRANSLATIONS } from '../utils/translations';
 import { useDropzone } from 'react-dropzone';
@@ -25,14 +27,10 @@ const USER_SETTINGS_SECTIONS = [
     { label: 'My Account', key: 'account', icon: User },
     { label: 'Content & Social', key: 'contentSocial', icon: MessageSquare },
     { label: 'Data & Privacy', key: 'dataPrivacy', icon: Shield },
-    { label: 'Family Center', key: 'familyCenter', icon: Users },
 ];
 
 const BILLING_SECTIONS_LIST = [
-    { label: 'Nitro', key: 'nitro', icon: Gem },
-    { label: 'Server Boost', key: 'boost', icon: Star },
     { label: 'Subscriptions', key: 'subscriptions', icon: CreditCard },
-    { label: 'Gift Inventory', key: 'gift', icon: Package },
     { label: 'Billing', key: 'billing', icon: Receipt },
 ];
 
@@ -42,12 +40,9 @@ const APP_SETTINGS_SECTIONS_LIST = [
     { label: 'Accessibility', key: 'accessibility', icon: Accessibility },
     { label: 'Keybinds', key: 'keybinds', icon: Keyboard },
     { label: 'Language & Time', key: 'languageTime', icon: Languages },
-    { label: 'Windows Settings', key: 'windows', icon: Monitor },
 ];
 
-const ACTIVITY_SETTINGS_SECTIONS = [
-    { label: 'Activity Privacy', key: 'activityPrivacy', icon: Activity },
-];
+
 
 const LANGUAGES = [
     { code: 'en-US', label: 'English, US', native: 'English, US', flag: '🇺🇸' },
@@ -146,6 +141,18 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
     const [textSize, setTextSize] = useState(storedPreferences.accessibility.textSize || 'medium');
     const [colorContrast, setColorContrast] = useState(storedPreferences.accessibility.contrast || 'normal');
     const { uploadFile } = useFeedStore();
+    const { fetchProfile } = useProfileStore();
+    const {
+        fetchSubscriptionStatus,
+        fetchInvoices,
+        fetchPaymentMethods,
+        createPortalSession,
+        subscription,
+        invoices,
+        paymentMethods,
+        isLoading: billingLoading,
+        error: billingError,
+    } = useBillingStore();
     const [privacy, setPrivacy] = useState({
         improveData: profile?.dataPrivacy?.improveData ?? true,
         personalizeActivity: profile?.dataPrivacy?.personalizeActivity ?? true,
@@ -158,6 +165,17 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
         { id: '1', displayName: 'JaneDoe', username: 'janedoe99' },
         { id: '2', displayName: 'JohnSmith', username: 'jsmith_art' },
     ]);
+
+    useEffect(() => {
+        if (activeSection === 'subscriptions') {
+            fetchSubscriptionStatus().catch(() => { });
+            fetchInvoices().catch(() => { });
+        }
+        if (activeSection === 'billing') {
+            fetchPaymentMethods().catch(() => { });
+            fetchInvoices().catch(() => { });
+        }
+    }, [activeSection, fetchSubscriptionStatus, fetchInvoices, fetchPaymentMethods]);
     const [explicitFilter, setExplicitFilter] = useState('non_friends');
     const [dmPrivacy, setDmPrivacy] = useState(true);
     const [messageRequests, setMessageRequests] = useState(true);
@@ -285,7 +303,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
             else if (ctrl && !alt && !shift && key === 'u') matched = 'Toggle channel member list';
             else if (ctrl && !alt && !shift && key === 'e') matched = 'Toggle emoji picker';
             else if (ctrl && !alt && !shift && key === 'g') matched = 'Toggle GIF picker';
-            else if (ctrl && !alt && !shift && key === 's') matched = 'Toggle sticker picker';
+            else if (ctrl && !alt && !shift && key === 's') matched = 'Toggle emoji picker';
             else if (!ctrl && !alt && !shift && key === 'pageup') matched = 'Scroll chat up';
             else if (!ctrl && !alt && !shift && key === 'pagedown') matched = 'Scroll chat down';
             else if (!ctrl && !alt && shift && key === 'pageup') matched = 'Jump to oldest unread message';
@@ -882,24 +900,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                 </div>
                             </div>
 
-                            <div>
-                                <p className="px-2 text-[11px] font-bold uppercase tracking-wide text-discord-faint mb-1.5">Activity Settings</p>
-                                <div className="space-y-0.5">
-                                    {ACTIVITY_SETTINGS_SECTIONS.map((section) => (
-                                        <button
-                                            key={section.key}
-                                            onClick={() => setActiveSection(section.key)}
-                                            className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-[14px] transition-colors ${activeSection === section.key
-                                                    ? 'bg-[#3f4147] text-white'
-                                                    : 'text-discord-faint hover:bg-[#35373c] hover:text-discord-light'
-                                                }`}
-                                        >
-                                            <section.icon className="w-4 h-4 shrink-0" />
-                                            {t(section.label)}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
+
 
                             <div className="pt-2 border-t border-discord-border/20">
                                 <button
@@ -917,7 +918,7 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                         <div className="px-5 sm:px-8 py-6 flex items-center justify-between">
                             <h2 className="text-[20px] font-bold text-white">
                                 {(() => {
-                                    const allSections = [...USER_SETTINGS_SECTIONS, ...BILLING_SECTIONS_LIST, ...APP_SETTINGS_SECTIONS_LIST, ...ACTIVITY_SETTINGS_SECTIONS];
+                                    const allSections = [...USER_SETTINGS_SECTIONS, ...BILLING_SECTIONS_LIST, ...APP_SETTINGS_SECTIONS_LIST];
                                     const section = allSections.find(s => s.key === activeSection);
                                     if (section) return t(section.label);
                                     if (activeSection === 'profiles') return 'Profiles';
@@ -2028,7 +2029,6 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                                         <KeybindRow label="Toggle channel member list or voice text chat" keys={['CTRL', 'U']} />
                                         <KeybindRow label="Toggle emoji picker" keys={['CTRL', 'E']} />
                                         <KeybindRow label="Toggle GIF picker" keys={['CTRL', 'G']} />
-                                        <KeybindRow label="Toggle sticker picker" keys={['CTRL', 'S']} />
                                         <KeybindRow label="Scroll chat up or down" keys={[['PAGE UP'], ['PAGE DOWN']]} />
                                         <KeybindRow label="Jump to oldest unread message" keys={['SHIFT', 'PAGE UP']} />
                                         <KeybindRow label="Focus text area" keys={['ANY KEY']} />
@@ -2683,7 +2683,300 @@ const ProfileSettingsModal = ({ isOpen, onClose, profile, user, onSave }) => {
                             </div>
                         )}
 
-                        {!['account', 'profiles', 'notifications', 'appearance', 'accessibility', 'language', 'security', 'privacy', 'community', 'voiceVideo', 'keybinds', 'languageTime'].includes(activeSection) && (
+                        {activeSection === 'billing' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto">
+                                    <div className="mb-8">
+                                        <h2 className="text-[20px] font-bold text-white mb-1">Billing Settings</h2>
+                                        <p className="text-[14px] text-discord-faint">
+                                            Manage your payment methods and view your transaction history.
+                                        </p>
+                                    </div>
+
+                                    {/* CircleCore Plus Integration */}
+                                    {subscription && ['active', 'trialing', 'past_due'].includes(subscription.subscriptionStatus) ? (
+                                        <div className="mb-10 p-6 rounded-2xl bg-[#2b2d31] border border-discord-border/60 flex items-center justify-between group hover:border-blurple/40 transition-colors">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 rounded-xl bg-blurple/20 flex items-center justify-center">
+                                                    <Gem className="w-6 h-6 text-blurple" />
+                                                </div>
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="text-[16px] font-bold text-white">CircleCore Plus</h3>
+                                                        <span className="px-1.5 py-0.5 rounded bg-blurple text-[10px] font-bold text-white uppercase tracking-wider">Active</span>
+                                                    </div>
+                                                    <p className="text-[13px] text-discord-faint capitalize">{subscription.plan} cycle • {subscription.subscriptionStatus}</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => setActiveSection('subscriptions')}
+                                                className="px-4 py-2 rounded bg-[#1e1f22] hover:bg-discord-darkest text-white text-[13px] font-medium transition-colors"
+                                            >
+                                                Manage Subscription
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="mb-10 p-6 rounded-2xl bg-gradient-to-br from-blurple/20 via-[#2b2d31] to-[#2b2d31] border border-blurple/30 relative overflow-hidden group">
+                                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                                <Sparkles className="w-20 h-20 text-blurple" />
+                                            </div>
+                                            <div className="relative z-10">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <Gem className="w-5 h-5 text-blurple" />
+                                                    <span className="text-[12px] font-bold text-blurple uppercase tracking-wider">Premium Offer</span>
+                                                </div>
+                                                <h3 className="text-[18px] font-bold text-white mb-2">Upgrade to CircleCore Plus</h3>
+                                                <p className="text-[14px] text-discord-faint mb-6 max-w-md leading-relaxed">
+                                                    Unlock exclusive badges, higher upload limits, and a premium identity across the community.
+                                                </p>
+                                                <button
+                                                    onClick={() => navigate('/upgrade')}
+                                                    className="px-6 py-2.5 rounded-lg bg-blurple hover:bg-blurple-hover text-white text-[14px] font-bold transition-all shadow-lg shadow-blurple/20 flex items-center gap-2"
+                                                >
+                                                    <Sparkles className="w-4 h-4" />
+                                                    Explore Plans
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Payment Methods Section */}
+                                    <div className="mb-10">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h3 className="text-[14px] font-bold text-discord-faint uppercase tracking-wider">Payment Methods</h3>
+                                            <button
+                                                disabled={billingLoading}
+                                                onClick={async () => {
+                                                    try {
+                                                        const data = await createPortalSession();
+                                                        if (data?.url) window.location.href = data.url;
+                                                    } catch (err) {
+                                                        console.error("Portal error:", err);
+                                                    }
+                                                }}
+                                                className={`text-blurple hover:underline text-[13px] font-medium ${billingLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            >
+                                                {billingLoading ? 'Loading...' : 'Add Payment Method'}
+                                            </button>
+                                        </div>
+
+                                        {billingLoading && paymentMethods.length === 0 ? (
+                                            <div className="flex items-center justify-center py-10">
+                                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blurple"></div>
+                                            </div>
+                                        ) : paymentMethods.length > 0 ? (
+                                            <div className="grid gap-3">
+                                                {paymentMethods.map((pm) => (
+                                                    <div key={pm.id} className="flex items-center justify-between p-4 rounded-xl border border-discord-border/30 bg-[#2b2d31]/40">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="w-10 h-10 rounded-lg bg-discord-darkest flex items-center justify-center">
+                                                                <CreditCard className="w-5 h-5 text-discord-faint" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[15px] font-bold text-white capitalize">{pm.brand} •••• {pm.last4}</p>
+                                                                <p className="text-[12px] text-discord-faint">Expires {pm.expMonth}/{pm.expYear}</p>
+                                                            </div>
+                                                        </div>
+                                                        {pm.isDefault && (
+                                                            <span className="px-2 py-0.5 rounded-full bg-blurple/20 text-blurple text-[10px] font-bold uppercase">Default</span>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="p-8 text-center rounded-xl border border-dashed border-discord-border/30 bg-discord-darkest/10">
+                                                <p className="text-sm text-discord-faint">No payment methods saved.</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Transaction History Section */}
+                                    <div>
+                                        <h3 className="text-[14px] font-bold text-discord-faint uppercase tracking-wider mb-4">Transaction History</h3>
+                                        {billingLoading && invoices.length === 0 ? (
+                                            <div className="flex items-center justify-center py-10">
+                                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blurple"></div>
+                                            </div>
+                                        ) : invoices.length > 0 ? (
+                                            <div className="rounded-xl border border-discord-border/30 overflow-hidden">
+                                                {invoices.map((invoice) => (
+                                                    <div key={invoice.id} className="flex items-center justify-between p-4 border-b border-discord-border/30 last:border-b-0 bg-[#2b2d31]/40 hover:bg-[#2b2d31]/60 transition-colors">
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="text-[14px] font-bold text-white">{invoice.number}</p>
+                                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                                                    invoice.status === 'paid' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-discord-yellow/20 text-discord-yellow'
+                                                                }`}>
+                                                                    {invoice.status}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[12px] text-discord-faint">{new Date(invoice.createdAt).toLocaleDateString()}</p>
+                                                        </div>
+                                                        <div className="flex items-center gap-4">
+                                                            <p className="text-[14px] font-medium text-white">
+                                                                {(invoice.total / 100).toFixed(2)} {invoice.currency.toUpperCase()}
+                                                            </p>
+                                                            {invoice.hostedInvoiceUrl && (
+                                                                <a href={invoice.hostedInvoiceUrl} target="_blank" rel="noreferrer" className="text-blurple hover:underline text-[13px] font-medium">View</a>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="p-8 text-center rounded-xl border border-dashed border-discord-border/30 bg-discord-darkest/10">
+                                                <p className="text-sm text-discord-faint">No transactions found.</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {billingError && (
+                                        <div className="mt-6 p-4 rounded-lg bg-discord-red/10 border border-discord-red/20 text-discord-red text-sm">
+                                            {billingError}
+                                        </div>
+                                    )}
+
+                                    <div className="mt-10 pt-6 border-t border-discord-border/30">
+                                        <button
+                                            disabled={billingLoading}
+                                            onClick={async () => {
+                                                try {
+                                                    const data = await createPortalSession();
+                                                    if (data?.url) window.location.href = data.url;
+                                                } catch (err) {
+                                                    console.error("Portal error:", err);
+                                                }
+                                            }}
+                                            className={`w-full py-3 rounded-lg bg-[#2b2d31] hover:bg-[#35373c] text-white text-[14px] font-bold transition-all flex items-center justify-center gap-2 ${billingLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        >
+                                            {billingLoading ? (
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                            ) : (
+                                                <>
+                                                    Edit Billing Information
+                                                    <ExternalLink className="w-4 h-4" />
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'subscriptions' && (
+                            <div className="px-5 sm:px-8 py-8">
+                                <div className="max-w-3xl mx-auto">
+                                    <div className="mb-8">
+                                        <h2 className="text-[20px] font-bold text-white mb-1">Your Subscriptions</h2>
+                                        <p className="text-[14px] text-discord-faint">
+                                            These are your current subscriptions. They will be billed on the same billing cycle. You can update any subscription at any time.
+                                        </p>
+                                    </div>
+
+                                    {billingLoading && !subscription ? (
+                                        <div className="flex items-center justify-center py-20">
+                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blurple"></div>
+                                        </div>
+                                    ) : subscription && ['active', 'trialing', 'past_due'].includes(subscription.subscriptionStatus) ? (
+                                        <div className="space-y-4">
+                                            <div className="rounded-2xl border border-discord-border/60 bg-[#2b2d31] p-6">
+                                                <div className="flex items-center justify-between mb-6">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-12 h-12 rounded-2xl bg-blurple/20 flex items-center justify-center">
+                                                            <Gem className="w-6 h-6 text-blurple" />
+                                                        </div>
+                                                        <div>
+                                                            <h3 className="text-[16px] font-bold text-white">
+                                                                CircleCore {subscription.tier === 'enterprise' ? 'Enterprise' : 'Plus'}
+                                                            </h3>
+                                                            <p className="text-[13px] text-discord-faint capitalize">
+                                                                {subscription.subscriptionStatus} • {subscription.plan}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-[15px] font-bold text-white">
+                                                            $9.99 / month
+                                                        </p>
+                                                        <p className="text-[12px] text-discord-faint">
+                                                            Next bill: {subscription.currentPeriodEnd ? new Date(subscription.currentPeriodEnd).toLocaleDateString() : 'N/A'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-3">
+                                                    <button
+                                                        onClick={async () => {
+                                                            try {
+                                                                const data = await createPortalSession();
+                                                                if (data?.url) window.location.href = data.url;
+                                                            } catch (err) {
+                                                                console.error("Portal error:", err);
+                                                            }
+                                                        }}
+                                                        className="px-4 py-2 rounded bg-[#1e1f22] hover:bg-discord-darkest text-white text-[14px] font-medium transition-colors flex items-center gap-2"
+                                                    >
+                                                        Manage Subscription
+                                                        <ExternalLink className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {invoices.length > 0 && (
+                                                <div className="mt-8">
+                                                    <h3 className="text-[14px] font-bold text-discord-faint uppercase tracking-wider mb-4">Billing History</h3>
+                                                    <div className="rounded-xl border border-discord-border/30 overflow-hidden">
+                                                        {invoices.slice(0, 5).map((invoice) => (
+                                                            <div key={invoice.id} className="flex items-center justify-between p-4 border-b border-discord-border/30 last:border-b-0 bg-[#2b2d31]/40 hover:bg-[#2b2d31]/60 transition-colors">
+                                                                <div>
+                                                                    <p className="text-[14px] font-bold text-white">{invoice.number}</p>
+                                                                    <p className="text-[12px] text-discord-faint">{new Date(invoice.createdAt).toLocaleDateString()}</p>
+                                                                </div>
+                                                                <div className="flex items-center gap-4">
+                                                                    <p className="text-[14px] font-medium text-white">${(invoice.total / 100).toFixed(2)}</p>
+                                                                    {invoice.hostedInvoiceUrl && (
+                                                                        <a href={invoice.hostedInvoiceUrl} target="_blank" rel="noreferrer" className="text-blurple hover:underline text-[13px] font-medium">View</a>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center py-16 px-4 text-center rounded-3xl border border-dashed border-discord-border/60 bg-discord-darkest/20">
+                                            <div className="w-20 h-20 bg-[#2b2d31] rounded-3xl flex items-center justify-center mb-6 relative">
+                                                <Dices className="w-10 h-10 text-discord-muted rotate-12" />
+                                                <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-discord-yellow rounded-xl flex items-center justify-center border-4 border-[#313338]">
+                                                    <span className="text-discord-dark font-bold text-lg">?</span>
+                                                </div>
+                                            </div>
+                                            <div className="bg-discord-yellow/10 border border-discord-yellow/20 rounded-lg px-4 py-2 mb-4">
+                                                <p className="text-discord-yellow text-[15px] font-bold">You have no active subscriptions</p>
+                                            </div>
+                                            <p className="text-sm text-discord-faint max-w-sm mb-8">
+                                                Unlock premium features like custom badges, exclusive channels, and more by subscribing to CircleCore Plus.
+                                            </p>
+                                            <button
+                                                onClick={() => navigate('/upgrade')}
+                                                className="px-8 py-2.5 rounded-lg bg-blurple hover:bg-blurple-hover text-white font-bold transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+                                            >
+                                                Explore CircleCore Plus
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {billingError && (
+                                        <div className="mt-4 p-4 rounded-lg bg-discord-red/10 border border-discord-red/20 text-discord-red text-sm">
+                                            {billingError}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {!['account', 'profiles', 'notifications', 'appearance', 'accessibility', 'language', 'security', 'privacy', 'community', 'voiceVideo', 'keybinds', 'languageTime', 'subscriptions', 'billing'].includes(activeSection) && (
                             <div className="px-5 sm:px-8 py-20 flex flex-col items-center justify-center text-center">
                                 <div className="w-16 h-16 bg-discord-darkest/60 rounded-2xl flex items-center justify-center mb-4 border border-discord-border/40">
                                     <Monitor className="w-8 h-8 text-discord-faint" />

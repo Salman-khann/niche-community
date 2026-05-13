@@ -98,6 +98,67 @@ const communitySchema = new mongoose.Schema({
       { name: "VOICE CHANNELS", position: 1, permissionOverwrites: [] }
     ],
   },
+  engagement: {
+    systemMessages: {
+      welcomeEnabled: { type: Boolean, default: true },
+      welcomePromptEnabled: { type: Boolean, default: true },
+      boostEnabled: { type: Boolean, default: true },
+      tipsEnabled: { type: Boolean, default: true },
+      channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", default: null },
+    },
+    activityFeed: {
+      displayEnabled: { type: Boolean, default: true },
+    },
+    defaultNotifications: {
+      type: String,
+      enum: ["all", "mentions"],
+      default: "mentions",
+    },
+    afk: {
+      channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", default: null },
+      timeout: { type: Number, default: 300 }, // 5 minutes in seconds
+    }
+  },
+  access: {
+    joinMethod: { type: String, enum: ["invite", "apply", "discoverable"], default: "invite" },
+    isAgeRestricted: { type: Boolean, default: false },
+    rules: {
+      enabled: { type: Boolean, default: false },
+      list: { type: [String], default: [] },
+    },
+  },
+  safety: {
+    verificationLevel: { type: String, enum: ["none", "low", "medium", "high", "highest"], default: "none" },
+    explicitContentFilter: { type: String, enum: ["disabled", "members_without_roles", "all_members"], default: "members_without_roles" },
+    twoFactorModeration: { type: Boolean, default: false },
+  },
+  community: {
+    enabled: { type: Boolean, default: true },
+    rulesChannelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", default: null },
+    updatesChannelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", default: null },
+    safetyChannelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", default: null },
+    primaryLanguage: { type: String, default: "English" },
+    description: { type: String, default: "" },
+  },
+  onboarding: {
+    enabled: { type: Boolean, default: false },
+    steps: [{
+      title: { type: String, required: true },
+      description: { type: String, default: "" },
+      icon: { type: String, default: "" },
+      channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", default: null },
+    }],
+    memberTags: { type: [String], default: [] },
+  },
+  emojis: {
+    type: [{
+      name: { type: String, required: true },
+      url: { type: String, required: true },
+      uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      createdAt: { type: Date, default: Date.now },
+    }],
+    default: [],
+  },
 }, { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } });
 
 export default mongoose.model("Community", communitySchema);

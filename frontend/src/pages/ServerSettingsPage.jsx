@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X, Image as ImageIcon, Save, Shield, Trash2, MoreVertical, Pencil, Check, Users, Sparkles } from 'lucide-react';
+import { X, Image as ImageIcon, Save, Shield, Trash2, MoreVertical, Pencil, Check, Users, Sparkles, Smile, Tag, Activity, Zap, Volume2, Lock, ShieldAlert, ClipboardList, Hammer, Globe, UserPlus, TrendingUp, Layout, Mail, ChevronDown, BarChart2, Info, Compass } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useCommunityStore } from '../stores/communityStore';
@@ -8,6 +8,7 @@ import { useInviteRequestStore } from '../stores/inviteRequestStore';
 import useSocket from '../hooks/useSocket';
 import { useAuthStore } from '../stores/authStore';
 import { useFeedStore } from '../stores/feedStore';
+import { useChannelStore } from '../stores/channelStore';
 import { apiUrl } from '../config/urls';
 
 const bannerOptions = [
@@ -259,6 +260,39 @@ const ServerSettingsPage = () => {
     const [bannedUsers, setBannedUsers] = useState([]);
     const [isBansLoading, setIsBansLoading] = useState(false);
     const { getBannedUsers } = useCommunityStore();
+    const { channels, fetchChannels } = useChannelStore();
+
+    // Engagement Settings
+    const [welcomeEnabled, setWelcomeEnabled] = useState(true);
+    const [welcomePromptEnabled, setWelcomePromptEnabled] = useState(true);
+    const [boostEnabled, setBoostEnabled] = useState(true);
+    const [tipsEnabled, setTipsEnabled] = useState(true);
+    const [systemChannelId, setSystemChannelId] = useState('');
+    const [displayActivityFeed, setDisplayActivityFeed] = useState(true);
+    const [notificationType, setNotificationType] = useState('mentions');
+    const [afkChannelId, setAfkChannelId] = useState('');
+    const [afkTimeout, setAfkTimeout] = useState(300);
+    const [emojis, setEmojis] = useState([]);
+    const [isEmojiUploading, setIsEmojiUploading] = useState(false);
+    const [editingEmojiId, setEditingEmojiId] = useState(null);
+    const [newEmojiName, setNewEmojiName] = useState('');
+    const [joinMethod, setJoinMethod] = useState('invite');
+    const [isAgeRestricted, setIsAgeRestricted] = useState(false);
+    const [rulesEnabled, setRulesEnabled] = useState(false);
+    const [rulesList, setRulesList] = useState([]);
+    const [newRule, setNewRule] = useState('');
+    const [verificationLevel, setVerificationLevel] = useState('none');
+    const [explicitContentFilter, setExplicitContentFilter] = useState('members_without_roles');
+    const [twoFactorModeration, setTwoFactorModeration] = useState(false);
+    const [communityEnabled, setCommunityEnabled] = useState(true);
+    const [rulesChannelId, setRulesChannelId] = useState('');
+    const [updatesChannelId, setUpdatesChannelId] = useState('');
+    const [safetyChannelId, setSafetyChannelId] = useState('');
+    const [primaryLanguage, setPrimaryLanguage] = useState('English');
+    const [serverDescription, setServerDescription] = useState('');
+    const [onboardingEnabled, setOnboardingEnabled] = useState(false);
+    const [onboardingSteps, setOnboardingSteps] = useState([]);
+    const [memberTags, setMemberTags] = useState([]);
     const traitsInitRef = useRef(false);
     const API_BASE = apiUrl('/api/communities');
 
@@ -350,15 +384,15 @@ const ServerSettingsPage = () => {
         };
 
         fetchInitialData();
+        fetchChannels(); // For engagement dropdowns
         return () => { cancelled = true; };
-    }, [activeCommunityId, fetchCommunityProfile, fetchMembers, fetchInviteRequests, getBannedUsers]);
+    }, [activeCommunityId, fetchCommunityProfile, fetchMembers, fetchInviteRequests, getBannedUsers, fetchChannels]);
 
     // Update pending requests count for notification badge
     useEffect(() => {
         const pendingCount = (inviteRequests || []).filter(r => r.status === 'pending').length;
         setNotifications(prev => ({ ...prev, requests: pendingCount }));
     }, [inviteRequests]);
-
     useEffect(() => {
         if (!communityProfile) return;
         setName(communityProfile.name || '');
@@ -367,6 +401,48 @@ const ServerSettingsPage = () => {
         setTraits(Array.isArray(communityProfile.traits) ? communityProfile.traits : []);
         setDescription(communityProfile.profileDescription || communityProfile.description || '');
         setInviteRequestsEnabled(!!communityProfile.inviteRequestsEnabled);
+
+        // Initialize Engagement Settings
+        const eng = communityProfile.engagement || {};
+        setWelcomeEnabled(eng.systemMessages?.welcomeEnabled ?? true);
+        setWelcomePromptEnabled(eng.systemMessages?.welcomePromptEnabled ?? true);
+        setBoostEnabled(eng.systemMessages?.boostEnabled ?? true);
+        setTipsEnabled(eng.systemMessages?.tipsEnabled ?? true);
+        setSystemChannelId(eng.systemMessages?.channelId || '');
+        setDisplayActivityFeed(eng.activityFeed?.displayEnabled ?? true);
+        setNotificationType(eng.defaultNotifications || 'mentions');
+        setAfkChannelId(eng.afk?.channelId || '');
+        setAfkTimeout(eng.afk?.timeout || 300);
+        setEmojis(communityProfile.emojis || []);
+
+        // Initialize Access Settings
+        const acc = communityProfile.access || {};
+        setJoinMethod(acc.joinMethod || 'invite');
+        setIsAgeRestricted(acc.isAgeRestricted ?? false);
+        setRulesEnabled(acc.rules?.enabled ?? false);
+        setRulesList(acc.rules?.list || []);
+
+        // Initialize Safety Settings
+        const safe = communityProfile.safety || {};
+        setVerificationLevel(safe.verificationLevel || 'none');
+        setExplicitContentFilter(safe.explicitContentFilter || 'members_without_roles');
+        setTwoFactorModeration(safe.twoFactorModeration ?? false);
+
+        // Initialize Community Settings
+        const comm = communityProfile.community || {};
+        setCommunityEnabled(comm.enabled ?? true);
+        setRulesChannelId(comm.rulesChannelId || '');
+        setUpdatesChannelId(comm.updatesChannelId || '');
+        setSafetyChannelId(comm.safetyChannelId || '');
+        setPrimaryLanguage(comm.primaryLanguage || 'English');
+        setServerDescription(comm.description || '');
+
+        // Initialize Onboarding Settings
+        const onb = communityProfile.onboarding || {};
+        setOnboardingEnabled(onb.enabled ?? false);
+        setOnboardingSteps(onb.steps || []);
+        setMemberTags(onb.memberTags || []);
+
         traitsInitRef.current = true;
     }, [communityProfile]);
 
@@ -812,16 +888,6 @@ const ServerSettingsPage = () => {
         } catch { }
     };
 
-    const handleAddTrait = (value) => {
-        const next = value.trim();
-        if (!next || traits.includes(next) || traits.length >= 5) return;
-        setTraits([...traits, next]);
-        setTraitInput('');
-    };
-
-    const handleRemoveTrait = (value) => {
-        setTraits(traits.filter((t) => t !== value));
-    };
 
     useEffect(() => {
         if (!traitsInitRef.current) return;
@@ -831,14 +897,58 @@ const ServerSettingsPage = () => {
         if (!activeCommunityId || !canManage) return;
         setIsSaving(true);
         try {
-            await updateCommunityProfile(activeCommunityId, {
-                name,
+            const payload = {
+                name: name.trim(),
                 icon,
                 bannerColor,
-                traits,
-                profileDescription: description,
-                inviteRequestsEnabled: !!inviteRequestsEnabled
-            });
+                traits: traits.filter(t => t.trim() !== ''),
+                profileDescription: description.trim(),
+                inviteRequestsEnabled: !!inviteRequestsEnabled,
+                engagement: {
+                    systemMessages: {
+                        welcomeEnabled,
+                        welcomePromptEnabled,
+                        boostEnabled,
+                        tipsEnabled,
+                        channelId: systemChannelId || null,
+                    },
+                    activityFeed: {
+                        displayEnabled: displayActivityFeed,
+                    },
+                    defaultNotifications: notificationType,
+                    afk: {
+                        channelId: afkChannelId || null,
+                        timeout: Number(afkTimeout),
+                    },
+                },
+                access: {
+                    joinMethod,
+                    isAgeRestricted,
+                    rules: {
+                        enabled: rulesEnabled,
+                        list: rulesList,
+                    },
+                },
+                safety: {
+                    verificationLevel,
+                    explicitContentFilter,
+                    twoFactorModeration,
+                },
+                community: {
+                    enabled: communityEnabled,
+                    rulesChannelId,
+                    updatesChannelId,
+                    safetyChannelId,
+                    primaryLanguage,
+                    description: serverDescription,
+                },
+                onboarding: {
+                    enabled: onboardingEnabled,
+                    steps: onboardingSteps,
+                    memberTags,
+                },
+            };
+            await updateCommunityProfile(activeCommunityId, payload);
             await fetchCommunityProfile(activeCommunityId);
             setSuccessMessage('Server settings saved successfully!');
             setTimeout(() => setSuccessMessage(''), 3000);
@@ -920,14 +1030,245 @@ const ServerSettingsPage = () => {
         return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     };
 
+    const isDirty = useMemo(() => {
+        if (!communityProfile) return false;
+        const profileTraits = Array.isArray(communityProfile.traits) ? communityProfile.traits : [];
+        const normalizeSteps = (steps) => (steps || []).map(s => ({
+            title: s.title || '',
+            description: s.description || '',
+            icon: s.icon || '',
+            channelId: s.channelId?.toString?.() || s.channelId || null
+        }));
+
+        const currentSteps = normalizeSteps(onboardingSteps);
+        const serverSteps = normalizeSteps(communityProfile.onboarding?.steps);
+
+        return (
+            name.trim() !== (communityProfile.name || '').trim() ||
+            icon !== (communityProfile.icon || '') ||
+            bannerColor !== (communityProfile.bannerColor || bannerOptions[0].value) ||
+            description.trim() !== (communityProfile.profileDescription || communityProfile.description || '').trim() ||
+            inviteRequestsEnabled !== !!communityProfile.inviteRequestsEnabled ||
+            JSON.stringify(traits.map(t => t.trim()).filter(Boolean)) !== JSON.stringify(profileTraits.map(t => t.trim()).filter(Boolean)) ||
+            welcomeEnabled !== (communityProfile.engagement?.systemMessages?.welcomeEnabled ?? true) ||
+            welcomePromptEnabled !== (communityProfile.engagement?.systemMessages?.welcomePromptEnabled ?? true) ||
+            boostEnabled !== (communityProfile.engagement?.systemMessages?.boostEnabled ?? true) ||
+            tipsEnabled !== (communityProfile.engagement?.systemMessages?.tipsEnabled ?? true) ||
+            (systemChannelId || null) !== (communityProfile.engagement?.systemMessages?.channelId || null) ||
+            displayActivityFeed !== (communityProfile.engagement?.activityFeed?.displayEnabled ?? true) ||
+            notificationType !== (communityProfile.engagement?.defaultNotifications || 'mentions') ||
+            (afkChannelId || null) !== (communityProfile.engagement?.afk?.channelId || null) ||
+            Number(afkTimeout) !== (communityProfile.engagement?.afk?.timeout || 300) ||
+            joinMethod !== (communityProfile.access?.joinMethod || 'invite') ||
+            isAgeRestricted !== (communityProfile.access?.isAgeRestricted ?? false) ||
+            rulesEnabled !== (communityProfile.access?.rules?.enabled ?? false) ||
+            JSON.stringify(rulesList.map(r => r.trim()).filter(Boolean)) !== JSON.stringify((communityProfile.access?.rules?.list || []).map(r => r.trim()).filter(Boolean)) ||
+            verificationLevel !== (communityProfile.safety?.verificationLevel || 'none') ||
+            explicitContentFilter !== (communityProfile.safety?.explicitContentFilter || 'members_without_roles') ||
+            twoFactorModeration !== (communityProfile.safety?.twoFactorModeration ?? false) ||
+            communityEnabled !== (communityProfile.community?.enabled ?? true) ||
+            (rulesChannelId || null) !== (communityProfile.community?.rulesChannelId || null) ||
+            (updatesChannelId || null) !== (communityProfile.community?.updatesChannelId || null) ||
+            (safetyChannelId || null) !== (communityProfile.community?.safetyChannelId || null) ||
+            primaryLanguage !== (communityProfile.community?.primaryLanguage || 'English') ||
+            serverDescription.trim() !== (communityProfile.community?.description || '').trim() ||
+            onboardingEnabled !== (communityProfile.onboarding?.enabled ?? false) ||
+            JSON.stringify(currentSteps) !== JSON.stringify(serverSteps) ||
+            JSON.stringify(memberTags.map(t => t.trim()).filter(Boolean)) !== JSON.stringify((communityProfile.onboarding?.memberTags || []).map(t => t.trim()).filter(Boolean))
+        );
+    }, [name, icon, bannerColor, description, inviteRequestsEnabled, traits, communityProfile, welcomeEnabled, welcomePromptEnabled, boostEnabled, tipsEnabled, systemChannelId, displayActivityFeed, notificationType, afkChannelId, afkTimeout, joinMethod, isAgeRestricted, rulesEnabled, rulesList, verificationLevel, explicitContentFilter, twoFactorModeration, communityEnabled, rulesChannelId, updatesChannelId, safetyChannelId, primaryLanguage, serverDescription, onboardingEnabled, onboardingSteps, memberTags]);
+
+    const handleReset = () => {
+        if (!communityProfile) return;
+        setName(communityProfile.name || '');
+        setIcon(communityProfile.icon || '');
+        setBannerColor(communityProfile.bannerColor || bannerOptions[0].value);
+        setTraits(Array.isArray(communityProfile.traits) ? communityProfile.traits : []);
+        setDescription(communityProfile.profileDescription || communityProfile.description || '');
+        setInviteRequestsEnabled(!!communityProfile.inviteRequestsEnabled);
+
+        const eng = communityProfile.engagement || {};
+        setWelcomeEnabled(eng.systemMessages?.welcomeEnabled ?? true);
+        setWelcomePromptEnabled(eng.systemMessages?.welcomePromptEnabled ?? true);
+        setBoostEnabled(eng.systemMessages?.boostEnabled ?? true);
+        setTipsEnabled(eng.systemMessages?.tipsEnabled ?? true);
+        setSystemChannelId(eng.systemMessages?.channelId || '');
+        setDisplayActivityFeed(eng.activityFeed?.displayEnabled ?? true);
+        setNotificationType(eng.defaultNotifications || 'mentions');
+        setAfkChannelId(eng.afk?.channelId || '');
+        setAfkTimeout(eng.afk?.timeout || 300);
+        setEmojis(communityProfile.emojis || []);
+
+        const acc = communityProfile.access || {};
+        setJoinMethod(acc.joinMethod || 'invite');
+        setIsAgeRestricted(acc.isAgeRestricted ?? false);
+        setRulesEnabled(acc.rules?.enabled ?? false);
+        setRulesList(acc.rules?.list || []);
+        setNewRule('');
+
+        const safe = communityProfile.safety || {};
+        setVerificationLevel(safe.verificationLevel || 'none');
+        setExplicitContentFilter(safe.explicitContentFilter || 'members_without_roles');
+        setTwoFactorModeration(safe.twoFactorModeration ?? false);
+
+        const comm = communityProfile.community || {};
+        setCommunityEnabled(comm.enabled ?? true);
+        setRulesChannelId(comm.rulesChannelId || '');
+        setUpdatesChannelId(comm.updatesChannelId || '');
+        setSafetyChannelId(comm.safetyChannelId || '');
+        setPrimaryLanguage(comm.primaryLanguage || 'English');
+        setServerDescription(comm.description || '');
+
+        const onb = communityProfile.onboarding || {};
+        setOnboardingEnabled(onb.enabled ?? false);
+        setOnboardingSteps(onb.steps || []);
+        setMemberTags(onb.memberTags || []);
+    };
+
+    const handleUploadEmoji = async (file) => {
+        if (!file || !activeCommunityId) return;
+        if (emojis.length >= 50) {
+            alert("You've reached the limit of 50 emojis.");
+            return;
+        }
+
+        setIsEmojiUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const uploadRes = await fetch(apiUrl('/api/upload'), {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                },
+                body: formData,
+            });
+            const uploadData = await uploadRes.json();
+
+            if (!uploadData.success) throw new Error(uploadData.message);
+
+            const emojiName = file.name.split('.')[0].replace(/[^a-zA-Z0-9_]/g, "");
+            
+            const res = await fetch(apiUrl(`/api/communities/${activeCommunityId}/emojis`), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                },
+                body: JSON.stringify({
+                    name: emojiName || 'unnamed',
+                    url: uploadData.url,
+                }),
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setEmojis(prev => [...prev, data.emoji]);
+                await fetchCommunityProfile(activeCommunityId); // Refresh store
+            }
+        } catch (err) {
+            console.error("Failed to upload emoji:", err);
+            alert(err.message || "Failed to upload emoji");
+        } finally {
+            setIsEmojiUploading(false);
+        }
+    };
+
+    const handleDeleteEmoji = async (emojiId) => {
+        if (!activeCommunityId || !window.confirm("Are you sure you want to delete this emoji?")) return;
+
+        try {
+            const res = await fetch(apiUrl(`/api/communities/${activeCommunityId}/emojis/${emojiId}`), {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                },
+            });
+            if (res.ok) {
+                setEmojis(prev => prev.filter(e => e._id !== emojiId));
+                await fetchCommunityProfile(activeCommunityId);
+            }
+        } catch (err) {
+            console.error("Failed to delete emoji:", err);
+        }
+    };
+
+    const handleRenameEmoji = async (emojiId) => {
+        if (!activeCommunityId || !newEmojiName.trim()) {
+            setEditingEmojiId(null);
+            return;
+        }
+
+        try {
+            const res = await fetch(apiUrl(`/api/communities/${activeCommunityId}/emojis/${emojiId}`), {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                },
+                body: JSON.stringify({ name: newEmojiName.trim().replace(/[^a-zA-Z0-9_]/g, "") }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setEmojis(prev => prev.map(e => e._id === emojiId ? data.emoji : e));
+                setEditingEmojiId(null);
+                await fetchCommunityProfile(activeCommunityId);
+            }
+        } catch (err) {
+            console.error("Failed to rename emoji:", err);
+        }
+    };
+
+    const handleAddRule = () => {
+        if (!newRule.trim()) return;
+        setRulesList(prev => [...prev, newRule.trim()]);
+        setNewRule('');
+    };
+
+    const handleRemoveRule = (index) => {
+        setRulesList(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleAddExampleRule = (rule) => {
+        if (rulesList.includes(rule)) return;
+        setRulesList(prev => [...prev, rule]);
+    };
+
+    const handleAddOnboardingStep = () => {
+        setOnboardingSteps(prev => [...prev, { title: 'New Step', description: '', icon: '', channelId: '' }]);
+    };
+
+    const handleUpdateOnboardingStep = (index, field, value) => {
+        const newSteps = [...onboardingSteps];
+        newSteps[index] = { ...newSteps[index], [field]: value };
+        setOnboardingSteps(newSteps);
+    };
+
+    const handleRemoveOnboardingStep = (index) => {
+        setOnboardingSteps(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleAddMemberTag = (tag) => {
+        if (!tag.trim() || memberTags.includes(tag.trim())) return;
+        setMemberTags(prev => [...prev, tag.trim()]);
+    };
+
+    const handleRemoveMemberTag = (index) => {
+        setMemberTags(prev => prev.filter((_, i) => i !== index));
+    };
+
     const previewBanner = bannerColor || bannerOptions[0].value;
-    const previewTraits = traits.length > 0 ? traits : ['Community', 'Chat', 'Events'];
+    const previewTraits = traits.length > 0 ? traits.filter(t => t.trim()) : ['Community', 'Chat', 'Events'];
     const isRestricted = useMemo(() => {
         if (activeSettingsTab === 'profile') return !canEditServerProfile;
         if (activeSettingsTab === 'members') return !canManage;
         if (activeSettingsTab === 'invites') return !canReviewInvites;
         if (activeSettingsTab === 'roles') return !canManageRoles;
         if (activeSettingsTab === 'bans') return !canModerate;
+        if (activeSettingsTab === 'access') return !canManage;
+        if (activeSettingsTab === 'safety') return !canModerateTab;
+        if (['overview', 'onboarding', 'insights'].includes(activeSettingsTab)) return !canEditServerProfile;
         return false;
     }, [activeSettingsTab, canEditServerProfile, canManage, canManageRoles, canReviewInvites, canModerate]);
 
@@ -969,40 +1310,70 @@ const ServerSettingsPage = () => {
                     {/* Left nav (Aligned right within flexible left side) */}
                     <div className="hidden md:flex flex-1 justify-end bg-[#121214]">
                         <aside className="w-[240px] shrink-0 pt-14 pb-20 pr-2 pl-4 flex-col overflow-y-auto">
-                            <div className="flex flex-col">
+                            <div className="flex flex-col space-y-[2px]">
                                 {/* Server Name Header */}
-                                <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#949ba4] truncate">
-                                    Admin Server
+                                <div className="px-2.5 pb-2 text-[12px] font-bold uppercase tracking-wide text-[#949ba4] truncate">
+                                    {communityProfile?.name || 'Server Settings'}
                                 </div>
-                                {canEditServerProfile && (
-                                    <button
-                                        onClick={() => setActiveSettingsTab('profile')}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors mb-4 ${activeSettingsTab === 'profile'
-                                            ? 'bg-[rgba(78,80,88,0.6)] text-white'
-                                            : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
-                                            }`}
-                                    >
-                                        Server Profile
-                                    </button>
-                                )}
+
+                                <button
+                                    onClick={() => setActiveSettingsTab('profile')}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'profile'
+                                        ? 'bg-[rgba(78,80,88,0.6)] text-white'
+                                        : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
+                                        }`}
+                                >
+                                    Server Profile
+                                </button>
+                                <button
+                                    onClick={() => setActiveSettingsTab('engagement')}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'engagement'
+                                        ? 'bg-[rgba(78,80,88,0.6)] text-white'
+                                        : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
+                                        }`}
+                                >
+                                    Engagement
+                                </button>
+                                <button
+                                    onClick={() => setActiveSettingsTab('access')}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'access'
+                                        ? 'bg-[rgba(78,80,88,0.6)] text-white'
+                                        : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
+                                        }`}
+                                >
+                                    Access
+                                </button>
+
+                                {/* Expression */}
+                                <div className="px-2.5 pt-6 pb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#949ba4]">Expression</div>
+                                <button
+                                    onClick={() => setActiveSettingsTab('emoji')}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'emoji'
+                                        ? 'bg-[rgba(78,80,88,0.6)] text-white'
+                                        : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
+                                        }`}
+                                >
+                                    Emoji
+                                </button>
 
                                 {/* People */}
-                                <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#949ba4]">People</div>
+                                <div className="px-2.5 pt-6 pb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#949ba4]">People</div>
                                 {canManage && (
                                     <button
                                         onClick={() => setActiveSettingsTab('members')}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors mb-0.5 ${activeSettingsTab === 'members'
+                                        className={`group flex items-center justify-between w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'members'
                                             ? 'bg-[rgba(78,80,88,0.6)] text-white'
                                             : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
                                             }`}
                                     >
-                                        Members
+                                        <span>Members</span>
+                                        <MoreVertical className="w-3.5 h-3.5 text-[#949ba4] rotate-90" />
                                     </button>
                                 )}
                                 {canManageRoles && (
                                     <button
                                         onClick={() => setActiveSettingsTab('roles')}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors mb-0.5 ${activeSettingsTab === 'roles'
+                                        className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'roles'
                                             ? 'bg-[rgba(78,80,88,0.6)] text-white'
                                             : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
                                             }`}
@@ -1013,12 +1384,12 @@ const ServerSettingsPage = () => {
                                 {canReviewInvites && (
                                     <button
                                         onClick={() => setActiveSettingsTab('invites')}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors mb-0.5 flex items-center justify-between ${activeSettingsTab === 'invites'
+                                        className={`group flex items-center justify-between w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'invites'
                                             ? 'bg-[rgba(78,80,88,0.6)] text-white'
                                             : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
                                             }`}
                                     >
-                                        <span>Invites</span>
+                                        Invites
                                         {notifications.requests > 0 && (
                                             <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-[#f23f42] text-[10px] font-bold text-white flex items-center justify-center">
                                                 {notifications.requests}
@@ -1026,15 +1397,31 @@ const ServerSettingsPage = () => {
                                         )}
                                     </button>
                                 )}
-
-                                <div className="h-[1px] bg-[rgba(255,255,255,0.06)] mx-2 mt-4 mb-2" />
+                                <button
+                                    onClick={() => setActiveSettingsTab('access')}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'access'
+                                        ? 'bg-[rgba(78,80,88,0.6)] text-white'
+                                        : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
+                                        }`}
+                                >
+                                    Access
+                                </button>
 
                                 {/* Moderation */}
-                                <div className="px-2.5 pt-2 pb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#949ba4]">Moderation</div>
+                                <div className="px-2.5 pt-6 pb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#949ba4]">Moderation</div>
+                                <button
+                                    onClick={() => setActiveSettingsTab('safety')}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'safety'
+                                        ? 'bg-[rgba(78,80,88,0.6)] text-white'
+                                        : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
+                                        }`}
+                                >
+                                    Safety Setup
+                                </button>
                                 {canViewAuditLog && (
                                     <button
                                         onClick={() => setActiveSettingsTab('auditLog')}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors mb-0.5 ${activeSettingsTab === 'auditLog'
+                                        className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'auditLog'
                                             ? 'bg-[rgba(78,80,88,0.6)] text-white'
                                             : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
                                             }`}
@@ -1045,7 +1432,7 @@ const ServerSettingsPage = () => {
                                 {canModerateTab && (
                                     <button
                                         onClick={() => setActiveSettingsTab('bans')}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors mb-0.5 ${activeSettingsTab === 'bans'
+                                        className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'bans'
                                             ? 'bg-[rgba(78,80,88,0.6)] text-white'
                                             : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
                                             }`}
@@ -1054,12 +1441,46 @@ const ServerSettingsPage = () => {
                                     </button>
                                 )}
 
-                                <div className="h-[1px] bg-[rgba(255,255,255,0.06)] mx-2 mt-4 mb-2" />
+                                {/* Community */}
+                                <div className="px-2.5 pt-6 pb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#949ba4]">Community</div>
+                                <button
+                                    onClick={() => setActiveSettingsTab('overview')}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'overview'
+                                        ? 'bg-[rgba(78,80,88,0.6)] text-white'
+                                        : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
+                                        }`}
+                                >
+                                    Overview
+                                </button>
+                                <button
+                                    onClick={() => setActiveSettingsTab('onboarding')}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'onboarding'
+                                        ? 'bg-[rgba(78,80,88,0.6)] text-white'
+                                        : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
+                                        }`}
+                                >
+                                    Onboarding
+                                </button>
+                                <button
+                                    onClick={() => setActiveSettingsTab('insights')}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium transition-colors ${activeSettingsTab === 'insights'
+                                        ? 'bg-[rgba(78,80,88,0.6)] text-white'
+                                        : 'text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1]'
+                                        }`}
+                                >
+                                    Server Insights
+                                </button>
+
+                                <div className="h-[1px] bg-[rgba(255,255,255,0.06)] mx-2 my-2" />
+
+                                <button className="w-full text-left px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium text-[#b5bac1] hover:bg-[rgba(78,80,88,0.3)] hover:text-[#dbdee1] transition-colors">
+                                    Server Template
+                                </button>
 
                                 {canDeleteServer && (
                                     <button
                                         onClick={() => setShowDeleteModal(true)}
-                                        className="w-full mt-1 flex items-center justify-between px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium text-[#f23f42] hover:bg-[#f23f42] hover:text-white transition-colors group"
+                                        className="group flex items-center justify-between w-full px-2.5 py-1.5 rounded-[4px] text-[15px] font-medium text-[#f23f42] hover:bg-[#f23f42] hover:text-white transition-colors"
                                     >
                                         Delete Server
                                         <Trash2 className="w-4 h-4 text-[#f23f42] group-hover:text-white" />
@@ -1103,7 +1524,11 @@ const ServerSettingsPage = () => {
                                                                 ? 'Audit Log'
                                                                 : activeSettingsTab === 'bans'
                                                                     ? 'Bans'
-                                                                    : 'Server Profile'}
+                                                                    : activeSettingsTab === 'engagement'
+                                                                        ? 'Engagement'
+                                                                        : activeSettingsTab === 'emoji'
+                                                                            ? 'Emoji'
+                                                                            : 'Server Profile'}
                                             </h1>
                                         </div>
                                         <button
@@ -1185,7 +1610,9 @@ const ServerSettingsPage = () => {
                                                             ? 'Audit Log'
                                                             : activeSettingsTab === 'bans'
                                                                 ? 'Bans'
-                                                                : 'Server Profile'}
+                                                                : activeSettingsTab === 'engagement'
+                                                                    ? 'Engagement'
+                                                                    : 'Server Profile'}
                                         </h1>
                                         {activeSettingsTab !== 'auditLog' && (
                                             <p className="text-sm text-discord-faint mt-1">
@@ -1197,7 +1624,11 @@ const ServerSettingsPage = () => {
                                                             ? 'Use roles to group members and assign permissions.'
                                                             : activeSettingsTab === 'bans'
                                                                 ? 'Moderation tools and permissions for this server.'
-                                                                : 'Customize how your server appears in invite links and community discovery.'}
+                                                                : activeSettingsTab === 'engagement'
+                                                                    ? 'Manage settings that help keep your server active.'
+                                                                    : activeSettingsTab === 'emoji'
+                                                                        ? 'Add and manage custom emojis for your server.'
+                                                                        : 'Customize how your server appears in invite links and community discovery.'}
                                             </p>
                                         )}
                                     </div>
@@ -1227,7 +1658,7 @@ const ServerSettingsPage = () => {
                                     )}
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    {activeSettingsTab === 'profile' && (
+                                    {(activeSettingsTab === 'profile' || activeSettingsTab === 'engagement') && (
                                         <button
                                             className="px-4 py-2 rounded-md bg-discord-border-light/30 text-sm font-semibold hover:bg-discord-border-light/50 transition disabled:opacity-50"
                                             onClick={handleSave}
@@ -1254,7 +1685,768 @@ const ServerSettingsPage = () => {
                                 </div>
                             )}
 
-                            {activeSettingsTab === 'members' ? (
+                            {activeSettingsTab === 'engagement' ? (
+                                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    {/* System Messages */}
+                                    <section>
+                                        <h2 className="text-[12px] font-bold text-[#949ba4] uppercase tracking-wide mb-4">System Messages</h2>
+                                        <p className="text-sm text-[#b5bac1] mb-6">Configure system event messages sent to your server.</p>
+                                        
+                                        <div className="space-y-4">
+                                            {[
+                                                { label: 'Send a random welcome message when someone joins this server.', state: welcomeEnabled, setter: setWelcomeEnabled },
+                                                { label: 'Prompt members to reply to welcome messages with an emoji.', state: welcomePromptEnabled, setter: setWelcomePromptEnabled },
+                                                { label: 'Send a message when someone Boosts this server.', state: boostEnabled, setter: setBoostEnabled },
+                                                { label: 'Send helpful tips for server setup.', state: tipsEnabled, setter: setTipsEnabled },
+                                            ].map((item, idx) => (
+                                                <div key={idx} className="flex items-center justify-between py-2 border-b border-[rgba(255,255,255,0.04)]">
+                                                    <span className="text-[15px] text-[#dbdee1] leading-tight pr-4">{item.label}</span>
+                                                    <button
+                                                        onClick={() => item.setter(!item.state)}
+                                                        className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blurple focus-visible:ring-offset-2 focus-visible:ring-offset-[#313338] ${item.state ? 'bg-[#23a559]' : 'bg-[#80848e]'}`}
+                                                    >
+                                                        <span className={`pointer-events-none block h-[18px] w-[18px] rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ${item.state ? 'translate-x-[18px]' : 'translate-x-1'}`} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="mt-6">
+                                            <label className="block text-[12px] font-bold text-[#949ba4] uppercase tracking-wide mb-2">System Messages Channel</label>
+                                            <p className="text-xs text-[#949ba4] mb-3">This is the channel that we send system event messages to.</p>
+                                            <div className="relative group">
+                                                <select
+                                                    value={systemChannelId}
+                                                    onChange={(e) => setSystemChannelId(e.target.value)}
+                                                    className="w-full bg-[#1e1f22] text-[#dbdee1] text-[15px] px-3 py-2.5 rounded-[4px] border border-transparent focus:outline-none appearance-none cursor-pointer hover:bg-[rgba(255,255,255,0.02)] transition-colors"
+                                                >
+                                                    <option value="">No System Channel</option>
+                                                    {channels.filter(c => c.type === 'text' || c.type === 'announcement').map(ch => (
+                                                        <option key={ch._id} value={ch._id}># {ch.name}</option>
+                                                    ))}
+                                                </select>
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[#b5bac1]">
+                                                    <MoreVertical className="w-4 h-4 rotate-90" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <div className="h-[1px] bg-[rgba(255,255,255,0.06)]" />
+
+                                    {/* Activity Feed */}
+                                    <section>
+                                        <h2 className="text-[12px] font-bold text-[#949ba4] uppercase tracking-wide mb-4">Activity Feed Settings</h2>
+                                        <p className="text-sm text-[#b5bac1] mb-6">Shows a feed of activity from games and connected apps in this server.</p>
+                                        
+                                        <div className="flex items-center justify-between py-2">
+                                            <span className="text-[15px] text-[#dbdee1]">Display Activity Feed in this server</span>
+                                            <button
+                                                onClick={() => setDisplayActivityFeed(!displayActivityFeed)}
+                                                className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${displayActivityFeed ? 'bg-[#23a559]' : 'bg-[#80848e]'}`}
+                                            >
+                                                <span className={`pointer-events-none block h-[18px] w-[18px] rounded-full bg-white transition-transform duration-200 ${displayActivityFeed ? 'translate-x-[18px]' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                    </section>
+
+                                    <div className="h-[1px] bg-[rgba(255,255,255,0.06)]" />
+
+                                    {/* Default Notification Settings */}
+                                    <section>
+                                        <h2 className="text-[12px] font-bold text-[#949ba4] uppercase tracking-wide mb-2">Default Notification Settings</h2>
+                                        <p className="text-sm text-[#b5bac1] mb-6">This will determine whether members who have not explicitly set their notification settings receive a notification for every message sent in this server or not.</p>
+                                        
+                                        <div className="space-y-4">
+                                            {[
+                                                { id: 'all', label: 'All Messages' },
+                                                { id: 'mentions', label: 'Only @mentions' },
+                                            ].map((opt) => (
+                                                <label key={opt.id} className="flex items-start gap-3 cursor-pointer group">
+                                                    <div className="relative flex items-center mt-0.5">
+                                                        <input
+                                                            type="radio"
+                                                            name="notificationType"
+                                                            checked={notificationType === opt.id}
+                                                            onChange={() => setNotificationType(opt.id)}
+                                                            className="sr-only"
+                                                        />
+                                                        <div className={`w-5 h-5 rounded-full border-2 transition-colors flex items-center justify-center ${notificationType === opt.id ? 'border-blurple' : 'border-[#b5bac1] group-hover:border-[#dbdee1]'}`}>
+                                                            {notificationType === opt.id && <div className="w-2.5 h-2.5 rounded-full bg-blurple" />}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[15px] text-[#dbdee1] block">{opt.label}</span>
+                                                        {opt.id === 'mentions' && (
+                                                            <p className="text-xs text-[#949ba4] mt-1 italic">We highly recommend setting this to only @mentions for a Community Server.</p>
+                                                        )}
+                                                    </div>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </section>
+
+                                    <div className="h-[1px] bg-[rgba(255,255,255,0.06)]" />
+
+                                    {/* Inactive Channel */}
+                                    <section>
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="block text-[12px] font-bold text-[#949ba4] uppercase tracking-wide mb-2">Inactive Channel</label>
+                                                <div className="relative group">
+                                                    <select
+                                                        value={afkChannelId}
+                                                        onChange={(e) => setAfkChannelId(e.target.value)}
+                                                        className="w-full bg-[#1e1f22] text-[#dbdee1] text-[15px] px-3 py-2.5 rounded-[4px] border border-transparent focus:outline-none appearance-none cursor-pointer hover:bg-[rgba(255,255,255,0.02)] transition-colors"
+                                                    >
+                                                        <option value="">No Inactive Channel</option>
+                                                        {channels.filter(c => c.type === 'voice').map(ch => (
+                                                            <option key={ch._id} value={ch._id}>{ch.name}</option>
+                                                        ))}
+                                                    </select>
+                                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[#b5bac1]">
+                                                        <MoreVertical className="w-4 h-4 rotate-90" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[12px] font-bold text-[#949ba4] uppercase tracking-wide mb-2">Inactive Time-out</label>
+                                                <div className="relative group">
+                                                    <select
+                                                        value={afkTimeout}
+                                                        onChange={(e) => setAfkTimeout(Number(e.target.value))}
+                                                        className="w-full bg-[#1e1f22] text-[#dbdee1] text-[15px] px-3 py-2.5 rounded-[4px] border border-transparent focus:outline-none appearance-none cursor-pointer hover:bg-[rgba(255,255,255,0.02)] transition-colors"
+                                                    >
+                                                        <option value={60}>1 minute</option>
+                                                        <option value={300}>5 minutes</option>
+                                                        <option value={900}>15 minutes</option>
+                                                        <option value={1800}>30 minutes</option>
+                                                        <option value={3600}>1 hour</option>
+                                                    </select>
+                                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[#b5bac1]">
+                                                        <MoreVertical className="w-4 h-4 rotate-90" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-[#949ba4] mt-4">Automatically move members to this channel and mute them when they have been idle for longer than the inactive time-out. This does not affect browsers.</p>
+                                    </section>
+                                </div>
+                            ) : activeSettingsTab === 'emoji' ? (
+                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <header>
+                                        <h2 className="text-[12px] font-bold text-[#949ba4] uppercase tracking-wide mb-4">Emoji</h2>
+                                        <p className="text-sm text-[#b5bac1]">
+                                            Add up to 50 custom emojis that anyone can use in this server. Animated GIF emojis may be used by members with Discord Nitro.
+                                        </p>
+                                    </header>
+
+                                    <div className="flex flex-col items-start gap-4">
+                                        <label className="px-4 py-2 bg-[#5865f2] hover:bg-[#4752c4] text-white text-[14px] font-medium rounded-[3px] cursor-pointer transition-colors disabled:opacity-50">
+                                            {isEmojiUploading ? 'Uploading...' : 'Upload Emoji'}
+                                            <input
+                                                type="file"
+                                                className="hidden"
+                                                accept="image/*"
+                                                disabled={isEmojiUploading}
+                                                onChange={(e) => {
+                                                    if (e.target.files?.[0]) {
+                                                        handleUploadEmoji(e.target.files[0]);
+                                                    }
+                                                }}
+                                            />
+                                        </label>
+                                        <p className="text-[12px] text-[#949ba4] leading-normal max-w-lg">
+                                            If you want to upload multiple emojis or skip the editor, drag and drop the file(s) onto this page. The emojis will be named using the file name.
+                                        </p>
+                                    </div>
+
+                                    <div className="h-[1px] bg-[rgba(255,255,255,0.06)] my-8" />
+
+                                    {emojis.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-20 text-center">
+                                            <div className="w-[240px] h-[160px] mb-8 relative flex items-center justify-center">
+                                                <Smile className="w-24 h-24 text-[#4e5058] opacity-20" />
+                                                <div className="absolute inset-0 border-2 border-dashed border-[#4e5058] opacity-10 rounded-2xl" />
+                                            </div>
+                                            <h3 className="text-[17px] font-bold text-[#949ba4] uppercase tracking-wide">No Emoji</h3>
+                                            <p className="text-sm text-[#949ba4] mt-1">Get the party started by uploading an emoji</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-[64px_1fr_120px_48px] gap-4 px-2 text-[12px] font-bold text-[#949ba4] uppercase tracking-wide">
+                                                <div>Emoji</div>
+                                                <div>Name</div>
+                                                <div className="text-right">Action</div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                {emojis.map((emoji) => (
+                                                    <div key={emoji._id} className="grid grid-cols-[64px_1fr_120px_48px] gap-4 items-center px-2 py-2.5 rounded-md hover:bg-[rgba(78,80,88,0.3)] group transition-colors">
+                                                        <div className="w-10 h-10 flex items-center justify-center bg-[#1e1f22] rounded-md overflow-hidden">
+                                                            <img src={emoji.url} alt={emoji.name} className="max-w-full max-h-full object-contain" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            {editingEmojiId === emoji._id ? (
+                                                                <input
+                                                                    autoFocus
+                                                                    value={newEmojiName}
+                                                                    onChange={(e) => setNewEmojiName(e.target.value)}
+                                                                    onBlur={() => handleRenameEmoji(emoji._id)}
+                                                                    onKeyDown={(e) => e.key === 'Enter' && handleRenameEmoji(emoji._id)}
+                                                                    className="w-full max-w-[200px] bg-[#1e1f22] text-discord-white px-3 py-1.5 rounded border border-[#5865f2] text-sm focus:outline-none"
+                                                                />
+                                                            ) : (
+                                                                <div className="flex items-center gap-2 group/name">
+                                                                    <span className="text-sm text-[#dbdee1] font-medium truncate">{emoji.name}</span>
+                                                                    <button 
+                                                                        onClick={() => {
+                                                                            setEditingEmojiId(emoji._id);
+                                                                            setNewEmojiName(emoji.name);
+                                                                        }}
+                                                                        className="opacity-0 group-hover/name:opacity-100 p-1 text-[#b5bac1] hover:text-[#dbdee1] transition-opacity"
+                                                                    >
+                                                                        <Pencil className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-right pr-2">
+                                                            <button
+                                                                onClick={() => handleDeleteEmoji(emoji._id)}
+                                                                className="p-2 text-[#b5bac1] hover:text-[#f23f42] opacity-0 group-hover:opacity-100 transition-all"
+                                                                title="Delete Emoji"
+                                                            >
+                                                                <X className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : activeSettingsTab === 'access' ? (
+                                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <section>
+                                        <header className="mb-6">
+                                            <h2 className="text-[17px] font-bold text-white mb-1">How can people join your server?</h2>
+                                            <p className="text-sm text-[#b5bac1]">
+                                                Keep your server private or open it up for more people to join. <span className="text-[#00a8fc] cursor-pointer hover:underline">Learn More.</span>
+                                            </p>
+                                        </header>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-[#2b2d31] p-4 rounded-lg">
+                                            {[
+                                                { id: 'invite', title: 'Invite Only', desc: 'People can join your server directly with an invite', icon: Lock },
+                                                { id: 'apply', title: 'Apply to Join', desc: 'People must submit an application and be approved to join', icon: Mail },
+                                                { id: 'discoverable', title: 'Discoverable', desc: 'Anyone can join your server directly through Server Discovery', icon: Globe },
+                                            ].map((method) => (
+                                                <button
+                                                    key={method.id}
+                                                    onClick={() => setJoinMethod(method.id)}
+                                                    className={`flex flex-col items-center text-center p-6 rounded-lg border-2 transition-all group ${joinMethod === method.id 
+                                                        ? 'bg-[#313338] border-white shadow-xl scale-[1.02]' 
+                                                        : 'bg-transparent border-transparent hover:bg-[rgba(78,80,88,0.2)] hover:border-[#4e5058]'}`}
+                                                >
+                                                    <div className={`w-12 h-12 flex items-center justify-center rounded-full mb-4 transition-colors ${joinMethod === method.id ? 'text-white' : 'text-[#b5bac1] group-hover:text-[#dbdee1]'}`}>
+                                                        <method.icon className="w-6 h-6" />
+                                                    </div>
+                                                    <h3 className={`text-[15px] font-bold mb-1 transition-colors ${joinMethod === method.id ? 'text-white' : 'text-[#b5bac1] group-hover:text-[#dbdee1]'}`}>
+                                                        {method.title}
+                                                    </h3>
+                                                    <p className={`text-[13px] leading-tight px-2 transition-colors ${joinMethod === method.id ? 'text-[#dbdee1]' : 'text-[#949ba4]'}`}>
+                                                        {method.desc}
+                                                    </p>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </section>
+
+                                    <div className="h-[1px] bg-[rgba(255,255,255,0.06)]" />
+
+                                    <section>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div>
+                                                <h3 className="text-[15px] font-bold text-white">Age-Restricted Server</h3>
+                                                <p className="text-[13px] text-[#b5bac1] mt-1 leading-normal">
+                                                    Users will need to confirm that they are over the legal age to view the content in this server. <span className="text-[#00a8fc] cursor-pointer hover:underline">Learn more.</span>
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => setIsAgeRestricted(!isAgeRestricted)}
+                                                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${isAgeRestricted ? 'bg-[#23a559]' : 'bg-[#80848e]'}`}
+                                            >
+                                                <span className={`pointer-events-none block h-[18px] w-[18px] rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ${isAgeRestricted ? 'translate-x-[22px]' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                    </section>
+
+                                    <div className="h-[1px] bg-[rgba(255,255,255,0.06)]" />
+
+                                    <section className="space-y-6">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h3 className="text-[15px] font-bold text-white">Server Rules</h3>
+                                                <p className="text-[13px] text-[#b5bac1] mt-1 leading-normal">
+                                                    Members must agree to rules before they can chat or interact in the server.
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => setRulesEnabled(!rulesEnabled)}
+                                                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${rulesEnabled ? 'bg-[#23a559]' : 'bg-[#80848e]'}`}
+                                            >
+                                                <span className={`pointer-events-none block h-[18px] w-[18px] rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ${rulesEnabled ? 'translate-x-[22px]' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+
+                                        {rulesEnabled && (
+                                            <div className="bg-[#2b2d31] rounded-lg p-6 space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                <div className="space-y-4">
+                                                    <label className="block text-[12px] font-bold text-[#949ba4] uppercase tracking-wide">Rules</label>
+                                                    <div className="space-y-2">
+                                                        {rulesList.map((rule, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between bg-[#1e1f22] p-3 rounded group">
+                                                                <span className="text-[14px] text-[#dbdee1] flex-1 pr-4">{idx + 1}. {rule}</span>
+                                                                <button 
+                                                                    onClick={() => handleRemoveRule(idx)}
+                                                                    className="p-1.5 text-[#b5bac1] hover:text-[#f23f42] opacity-0 group-hover:opacity-100 transition-all"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    
+                                                    <div className="relative group">
+                                                        <textarea
+                                                            value={newRule}
+                                                            onChange={(e) => setNewRule(e.target.value)}
+                                                            placeholder="Enter a rule"
+                                                            className="w-full bg-[#1e1f22] text-[#dbdee1] text-[14px] px-3 py-3 rounded border border-transparent focus:border-blurple focus:outline-none transition-all resize-none min-h-[44px]"
+                                                            rows={1}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                                    e.preventDefault();
+                                                                    handleAddRule();
+                                                                }
+                                                            }}
+                                                        />
+                                                    </div>
+
+                                                    <button
+                                                        onClick={handleAddRule}
+                                                        className="flex items-center gap-2 text-[#dbdee1] hover:text-white text-[14px] font-medium py-2 px-4 rounded border-2 border-dashed border-[#4e5058] hover:border-[#b5bac1] w-full justify-center transition-all"
+                                                    >
+                                                        <Sparkles className="w-4 h-4" />
+                                                        Add a rule
+                                                    </button>
+                                                </div>
+
+                                                <div className="space-y-3">
+                                                    <label className="block text-[12px] font-bold text-[#949ba4] uppercase tracking-wide">Example Rules</label>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {[
+                                                            'Be civil and respectful',
+                                                            'No spam or self-promotion',
+                                                            'No age-restricted or obscene content',
+                                                            'Help keep things safe'
+                                                        ].map((example) => (
+                                                            <button
+                                                                key={example}
+                                                                onClick={() => handleAddExampleRule(example)}
+                                                                className="px-3 py-1.5 bg-[#1e1f22] hover:bg-[#35373c] text-[#dbdee1] text-[13px] rounded-full transition-colors border border-transparent hover:border-[#4e5058]"
+                                                            >
+                                                                {example}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </section>
+                                </div>
+                            ) : activeSettingsTab === 'safety' ? (
+                                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <section>
+                                        <header className="mb-6">
+                                            <h2 className="text-[17px] font-bold text-white mb-1">Verification Level</h2>
+                                            <p className="text-sm text-[#b5bac1]">
+                                                Members of the server must meet the following criteria before they can send messages in text channels or start a direct message with another member. This does not apply to members who have been assigned a role.
+                                            </p>
+                                        </header>
+
+                                        <div className="space-y-2">
+                                            {[
+                                                { id: 'none', title: 'None', desc: 'Unrestricted' },
+                                                { id: 'low', title: 'Low', desc: 'Must have a verified email on their account.' },
+                                                { id: 'medium', title: 'Medium', desc: 'Must also be registered on CircleCore for longer than 5 minutes.' },
+                                                { id: 'high', title: 'High', desc: 'Must also be a member of this server for longer than 10 minutes.' },
+                                                { id: 'highest', title: 'Highest', desc: 'Must have a verified phone number on their account.' },
+                                            ].map((level) => (
+                                                <div
+                                                    key={level.id}
+                                                    onClick={() => setVerificationLevel(level.id)}
+                                                    className={`flex items-center justify-between p-4 rounded-[4px] border cursor-pointer transition-all ${verificationLevel === level.id 
+                                                        ? 'bg-[#313338] border-blurple' 
+                                                        : 'bg-[#2b2d31] border-transparent hover:bg-[rgba(78,80,88,0.2)]'}`}
+                                                >
+                                                    <div className="flex-1">
+                                                        <h3 className="text-[14px] font-semibold text-[#dbdee1]">{level.title}</h3>
+                                                        <p className="text-[13px] text-[#949ba4] mt-0.5">{level.desc}</p>
+                                                    </div>
+                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${verificationLevel === level.id ? 'border-blurple' : 'border-[#b5bac1]'}`}>
+                                                        {verificationLevel === level.id && <div className="w-2.5 h-2.5 rounded-full bg-blurple" />}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </section>
+
+                                    <div className="h-[1px] bg-[rgba(255,255,255,0.06)]" />
+
+                                    <section>
+                                        <header className="mb-6">
+                                            <h2 className="text-[17px] font-bold text-white mb-1">Explicit Media Content Filter</h2>
+                                            <p className="text-sm text-[#b5bac1]">
+                                                Automatically scan and delete media sent in this server that contains explicit content.
+                                            </p>
+                                        </header>
+
+                                        <div className="space-y-2">
+                                            {[
+                                                { id: 'disabled', title: "Don't scan any media content", desc: "I'm living on the edge.", color: 'bg-[#80848e]' },
+                                                { id: 'members_without_roles', title: 'Scan media content from members without a role', desc: 'Recommended for servers that use roles for trusted members.', color: 'bg-[#f57731]' },
+                                                { id: 'all_members', title: 'Scan media content from all members', desc: 'Recommended for when you want that extra layer of protection.', color: 'bg-[#ed4245]' },
+                                            ].map((filter) => (
+                                                <div
+                                                    key={filter.id}
+                                                    onClick={() => setExplicitContentFilter(filter.id)}
+                                                    className={`flex items-center gap-4 p-4 rounded-[4px] border cursor-pointer transition-all ${explicitContentFilter === filter.id 
+                                                        ? 'bg-[#313338] border-blurple' 
+                                                        : 'bg-[#2b2d31] border-transparent hover:bg-[rgba(78,80,88,0.2)]'}`}
+                                                >
+                                                    <div className={`w-1 h-full min-h-[40px] rounded-full ${filter.color}`} />
+                                                    <div className="flex-1">
+                                                        <h3 className="text-[14px] font-semibold text-[#dbdee1]">{filter.title}</h3>
+                                                        <p className="text-[13px] text-[#949ba4] mt-0.5">{filter.desc}</p>
+                                                    </div>
+                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${explicitContentFilter === filter.id ? 'border-blurple' : 'border-[#b5bac1]'}`}>
+                                                        {explicitContentFilter === filter.id && <div className="w-2.5 h-2.5 rounded-full bg-blurple" />}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </section>
+
+                                    <div className="h-[1px] bg-[rgba(255,255,255,0.06)]" />
+
+                                    <section className="flex items-center justify-between p-4 bg-[#2b2d31] rounded-lg">
+                                        <div className="flex-1 pr-8">
+                                            <h3 className="text-[15px] font-bold text-white flex items-center gap-2">
+                                                2FA Requirement for Moderation
+                                                <span className="px-1.5 py-0.5 bg-[#5865f2] text-[10px] font-bold text-white rounded uppercase tracking-wider">Premium</span>
+                                            </h3>
+                                            <p className="text-[13px] text-[#b5bac1] mt-1 leading-normal">
+                                                When enabled, all moderators and admins in this server must have Two-Factor Authentication enabled on their accounts in order to perform any moderation actions.
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => setTwoFactorModeration(!twoFactorModeration)}
+                                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${twoFactorModeration ? 'bg-[#23a559]' : 'bg-[#80848e]'}`}
+                                        >
+                                            <span className={`pointer-events-none block h-[18px] w-[18px] rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ${twoFactorModeration ? 'translate-x-[22px]' : 'translate-x-1'}`} />
+                                        </button>
+                                    </section>
+                                </div>
+                            ) : activeSettingsTab === 'overview' ? (
+                                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <header className="mb-6">
+                                        <h2 className="text-[17px] font-bold text-white mb-1">Community Overview</h2>
+                                        <p className="text-sm text-[#b5bac1]">
+                                            Set up your community's identity and communication channels.
+                                        </p>
+                                    </header>
+
+                                    <div className="space-y-8">
+                                        <div className="space-y-4">
+                                            <div>
+                                                <h3 className="text-[14px] font-bold text-[#dbdee1] uppercase tracking-wide">Rules or guidelines channel</h3>
+                                                <p className="text-[13px] text-[#949ba4] mt-1">Please select the channel that hosts your rules. This channel will by default start from the top and will feature a special header.</p>
+                                            </div>
+                                            <div className="relative group">
+                                                <select
+                                                    value={rulesChannelId}
+                                                    onChange={(e) => setRulesChannelId(e.target.value)}
+                                                    className="w-full bg-[#1e1f22] text-[#dbdee1] text-[15px] px-3 py-2.5 rounded border border-transparent focus:border-blurple focus:outline-none transition-all appearance-none cursor-pointer"
+                                                >
+                                                    <option value="">Select a channel</option>
+                                                    {channels.map(ch => (
+                                                        <option key={ch._id} value={ch._id}># {ch.name}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#949ba4] pointer-events-none group-hover:text-[#dbdee1] transition-colors" />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <div>
+                                                <h3 className="text-[14px] font-bold text-[#dbdee1] uppercase tracking-wide">Community Updates Channel</h3>
+                                                <p className="text-[13px] text-[#949ba4] mt-1">This is the channel where CircleCore will send relevant updates for Community admins and moderators.</p>
+                                            </div>
+                                            <div className="relative group">
+                                                <select
+                                                    value={updatesChannelId}
+                                                    onChange={(e) => setUpdatesChannelId(e.target.value)}
+                                                    className="w-full bg-[#1e1f22] text-[#dbdee1] text-[15px] px-3 py-2.5 rounded border border-transparent focus:border-blurple focus:outline-none transition-all appearance-none cursor-pointer"
+                                                >
+                                                    <option value="">Select a channel</option>
+                                                    {channels.map(ch => (
+                                                        <option key={ch._id} value={ch._id}># {ch.name}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#949ba4] pointer-events-none group-hover:text-[#dbdee1] transition-colors" />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <div>
+                                                <h3 className="text-[14px] font-bold text-[#dbdee1] uppercase tracking-wide">Safety Notifications Channel</h3>
+                                                <p className="text-[13px] text-[#949ba4] mt-1">Important safety updates about your server will be sent here.</p>
+                                            </div>
+                                            <div className="relative group">
+                                                <select
+                                                    value={safetyChannelId}
+                                                    onChange={(e) => setSafetyChannelId(e.target.value)}
+                                                    className="w-full bg-[#1e1f22] text-[#dbdee1] text-[15px] px-3 py-2.5 rounded border border-transparent focus:border-blurple focus:outline-none transition-all appearance-none cursor-pointer"
+                                                >
+                                                    <option value="">Select a channel</option>
+                                                    {channels.map(ch => (
+                                                        <option key={ch._id} value={ch._id}># {ch.name}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#949ba4] pointer-events-none group-hover:text-[#dbdee1] transition-colors" />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <div>
+                                                <h3 className="text-[14px] font-bold text-[#dbdee1] uppercase tracking-wide">Server Primary Language</h3>
+                                                <p className="text-[13px] text-[#949ba4] mt-1">This helps us customize features for you and your members.</p>
+                                            </div>
+                                            <div className="relative group">
+                                                <select
+                                                    value={primaryLanguage}
+                                                    onChange={(e) => setPrimaryLanguage(e.target.value)}
+                                                    className="w-full bg-[#1e1f22] text-[#dbdee1] text-[15px] px-3 py-2.5 rounded border border-transparent focus:border-blurple focus:outline-none transition-all appearance-none cursor-pointer"
+                                                >
+                                                    <option value="English">English</option>
+                                                    <option value="Spanish">Spanish</option>
+                                                    <option value="French">French</option>
+                                                    <option value="German">German</option>
+                                                    <option value="Hindi">Hindi</option>
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#949ba4] pointer-events-none group-hover:text-[#dbdee1] transition-colors" />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <div>
+                                                <h3 className="text-[14px] font-bold text-[#dbdee1] uppercase tracking-wide">Server Description</h3>
+                                                <p className="text-[13px] text-[#949ba4] mt-1">Describe your community. This description will be displayed in external embeds of this server's invite link.</p>
+                                            </div>
+                                            <textarea
+                                                value={serverDescription}
+                                                onChange={(e) => setServerDescription(e.target.value)}
+                                                placeholder="Tell the world a bit about this server."
+                                                rows={4}
+                                                className="w-full bg-[#1e1f22] text-[#dbdee1] text-[15px] px-4 py-3 rounded border border-transparent focus:border-blurple focus:outline-none transition-all resize-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="h-[1px] bg-[rgba(255,255,255,0.06)]" />
+
+                                    <section className="bg-[rgba(237,66,69,0.05)] border border-[rgba(237,66,69,0.2)] rounded-lg p-6">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h3 className="text-[15px] font-bold text-[#ed4245]">Disable Community</h3>
+                                                <p className="text-[13px] text-[#b5bac1] mt-1 leading-normal max-w-lg">
+                                                    This will remove specific features for Community Servers, like Server Discovery and Server Insights.
+                                                </p>
+                                            </div>
+                                            <button 
+                                                onClick={() => setCommunityEnabled(false)}
+                                                className="px-6 py-2 bg-[#ed4245] hover:bg-[#c03537] text-white text-[14px] font-medium rounded transition-colors shadow-lg"
+                                            >
+                                                Disable Community
+                                            </button>
+                                        </div>
+                                    </section>
+                                </div>
+                            ) : activeSettingsTab === 'onboarding' ? (
+                                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <header className="mb-6">
+                                        <h2 className="text-[17px] font-bold text-white mb-1">Server Onboarding</h2>
+                                        <p className="text-sm text-[#b5bac1]">
+                                            Guide new members through your server and help them find their way.
+                                        </p>
+                                    </header>
+
+                                    <div className="flex items-center justify-between p-6 bg-[#2b2d31] rounded-lg">
+                                        <div>
+                                            <h3 className="text-[15px] font-bold text-white">Enable Onboarding</h3>
+                                            <p className="text-[13px] text-[#949ba4] mt-1">Show a welcome screen to new members when they join.</p>
+                                        </div>
+                                        <button
+                                            onClick={() => setOnboardingEnabled(!onboardingEnabled)}
+                                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${onboardingEnabled ? 'bg-[#23a559]' : 'bg-[#80848e]'}`}
+                                        >
+                                            <span className={`pointer-events-none block h-[18px] w-[18px] rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ${onboardingEnabled ? 'translate-x-[22px]' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+
+                                    {onboardingEnabled && (
+                                        <div className="space-y-10 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <section className="space-y-4">
+                                                <div className="flex items-center justify-between">
+                                                    <h3 className="text-[14px] font-bold text-[#dbdee1] uppercase tracking-wide">Onboarding Steps</h3>
+                                                    <button 
+                                                        onClick={handleAddOnboardingStep}
+                                                        className="text-[13px] font-medium text-[#00a8fc] hover:underline"
+                                                    >
+                                                        + Add Step
+                                                    </button>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    {onboardingSteps.map((step, idx) => (
+                                                        <div key={idx} className="bg-[#1e1f22] p-4 rounded-lg border border-transparent hover:border-[#4e5058] transition-all group">
+                                                            <div className="flex items-start gap-4">
+                                                                <div className="w-10 h-10 bg-[#313338] rounded-md flex items-center justify-center text-xl">
+                                                                    {step.icon || '👋'}
+                                                                </div>
+                                                                <div className="flex-1 space-y-3">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <input 
+                                                                            value={step.title}
+                                                                            onChange={(e) => handleUpdateOnboardingStep(idx, 'title', e.target.value)}
+                                                                            className="bg-transparent text-[15px] font-bold text-white focus:outline-none w-full"
+                                                                            placeholder="Step Title"
+                                                                        />
+                                                                        <button 
+                                                                            onClick={() => handleRemoveOnboardingStep(idx)}
+                                                                            className="p-1 text-[#949ba4] hover:text-[#ed4245] opacity-0 group-hover:opacity-100 transition-all"
+                                                                        >
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                    <textarea 
+                                                                        value={step.description}
+                                                                        onChange={(e) => handleUpdateOnboardingStep(idx, 'description', e.target.value)}
+                                                                        className="bg-transparent text-[13px] text-[#dbdee1] focus:outline-none w-full resize-none"
+                                                                        placeholder="What should they do?"
+                                                                        rows={2}
+                                                                    />
+                                                                    <div className="relative group/select">
+                                                                        <select
+                                                                            value={step.channelId}
+                                                                            onChange={(e) => handleUpdateOnboardingStep(idx, 'channelId', e.target.value)}
+                                                                            className="w-full bg-[#313338] text-[#dbdee1] text-[13px] px-2 py-1.5 rounded border border-transparent focus:border-blurple focus:outline-none transition-all appearance-none cursor-pointer"
+                                                                        >
+                                                                            <option value="">Select a channel</option>
+                                                                            {channels.map(ch => (
+                                                                                <option key={ch._id} value={ch._id}># {ch.name}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#949ba4] pointer-events-none" />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    {onboardingSteps.length === 0 && (
+                                                        <div className="py-10 text-center border-2 border-dashed border-[#4e5058] rounded-lg">
+                                                            <Info className="w-8 h-8 text-[#4e5058] mx-auto mb-2" />
+                                                            <p className="text-[14px] text-[#949ba4]">No onboarding steps added yet.</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </section>
+
+                                            <section className="space-y-4">
+                                                <h3 className="text-[14px] font-bold text-[#dbdee1] uppercase tracking-wide">Member Tags</h3>
+                                                <p className="text-[13px] text-[#949ba4]">Tags that members can select during onboarding to personalize their experience.</p>
+                                                <div className="bg-[#1e1f22] p-4 rounded-lg space-y-4">
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {memberTags.map((tag, idx) => (
+                                                            <div key={idx} className="flex items-center gap-1.5 px-3 py-1 bg-[#313338] text-[#dbdee1] text-[13px] rounded-full group">
+                                                                {tag}
+                                                                <button onClick={() => handleRemoveMemberTag(idx)} className="hover:text-white">
+                                                                    <X className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <input 
+                                                            placeholder="Add a tag..."
+                                                            className="flex-1 bg-[#313338] text-[13px] text-[#dbdee1] px-3 py-1.5 rounded focus:outline-none focus:ring-1 focus:ring-blurple"
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    handleAddMemberTag(e.target.value);
+                                                                    e.target.value = '';
+                                                                }
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </section>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : activeSettingsTab === 'insights' ? (
+                                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <header className="mb-6">
+                                        <h2 className="text-[17px] font-bold text-white mb-1">Server Insights</h2>
+                                        <p className="text-sm text-[#b5bac1]">
+                                            See how your server is performing and growing.
+                                        </p>
+                                    </header>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="bg-[#2b2d31] p-6 rounded-lg space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="text-[14px] font-bold text-[#949ba4] uppercase tracking-wide">Total Members</h3>
+                                                <TrendingUp className="w-5 h-5 text-[#23a559]" />
+                                            </div>
+                                            <div className="text-4xl font-bold text-white">{communityProfile?.membersCount || 0}</div>
+                                            <div className="text-[13px] text-[#23a559] flex items-center gap-1">
+                                                <TrendingUp className="w-3.5 h-3.5" />
+                                                <span>+12% from last week</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-[#2b2d31] p-6 rounded-lg space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="text-[14px] font-bold text-[#949ba4] uppercase tracking-wide">Active Members</h3>
+                                                <Users className="w-5 h-5 text-blurple" />
+                                            </div>
+                                            <div className="text-4xl font-bold text-white">{Math.floor((communityProfile?.membersCount || 0) * 0.4)}</div>
+                                            <div className="text-[13px] text-[#949ba4]">Average daily active members</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-[#2b2d31] p-8 rounded-lg flex flex-col items-center justify-center min-h-[300px] border-2 border-dashed border-[#4e5058]">
+                                        <BarChart2 className="w-16 h-16 text-[#4e5058] mb-4 opacity-20" />
+                                        <h3 className="text-[17px] font-bold text-[#949ba4] uppercase tracking-widest">More Data Incoming</h3>
+                                        <p className="text-[14px] text-[#949ba4] mt-2 text-center max-w-sm">
+                                            Insights require at least 50 members to display detailed growth and engagement metrics.
+                                        </p>
+                                        <button className="mt-6 px-8 py-2.5 bg-blurple hover:bg-[#4752c4] text-white text-[14px] font-medium rounded transition-all shadow-lg">
+                                            Learn More
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : activeSettingsTab === 'members' ? (
                                 <div className="space-y-4">
                                     <div className="flex items-center gap-3">
                                         <div className="relative w-full max-w-md">
@@ -1710,155 +2902,207 @@ const ServerSettingsPage = () => {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-8">
+                                <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-12">
                                     {/* Form */}
-                                    <div className="space-y-8">
-                                        <div>
-                                            <label className="block text-sm font-semibold mb-2">Name</label>
+                                    <div className="space-y-0 pb-32">
+                                        <div className="mb-8">
+                                            <h2 className="text-[20px] font-bold text-white mb-2">Server Profile</h2>
+                                            <p className="text-[14px] text-[#b5bac1] leading-relaxed">
+                                                Customize how your server appears in invite links and, if enabled, in Server Discovery and Announcement Channel messages
+                                            </p>
+                                        </div>
+
+                                        <section>
+                                            <label className="block text-[12px] font-bold uppercase tracking-wider text-[#949ba4] mb-3">Name</label>
                                             <input
                                                 value={name}
                                                 onChange={(e) => setName(e.target.value)}
-                                                className="w-full bg-discord-darkest/70 border border-discord-border/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blurple"
-                                                placeholder="Server name"
+                                                className="w-full bg-[#1e1f22] border border-transparent rounded-[4px] px-3 py-2.5 text-[15px] text-[#dbdee1] focus:outline-none focus:border-[#5865f2] transition-colors"
+                                                placeholder="Enter server name"
                                                 disabled={!canManage}
                                             />
-                                        </div>
+                                        </section>
 
-                                        <div>
-                                            <label className="block text-sm font-semibold mb-2">Icon</label>
-                                            <p className="text-xs text-discord-faint mb-3">We recommend an image of at least 512x512.</p>
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-16 h-16 rounded-2xl bg-discord-darkest/70 border border-discord-border/50 flex items-center justify-center overflow-hidden">
-                                                    {icon ? (
-                                                        <img src={icon} alt="Server icon" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <span className="text-lg font-bold">{(name || 'S').charAt(0).toUpperCase()}</span>
-                                                    )}
-                                                </div>
+                                        <div className="h-[1px] bg-[rgba(255,255,255,0.06)] my-8" />
+
+                                        <section>
+                                            <label className="block text-[12px] font-bold uppercase tracking-wider text-[#949ba4] mb-2">Icon</label>
+                                            <p className="text-[12px] text-[#949ba4] mb-4">We recommend an image of at least 512x512.</p>
+                                            <div className="flex items-center gap-3">
                                                 <button
                                                     onClick={handlePickIcon}
                                                     disabled={!canManage}
-                                                    className="px-4 py-2 rounded-md bg-blurple text-white text-sm font-semibold hover:bg-blurple/90 transition disabled:opacity-50"
+                                                    className="px-4 py-2 rounded-[3px] bg-[#5865f2] text-white text-[14px] font-medium hover:bg-[#4752c4] transition-colors disabled:opacity-50"
                                                 >
                                                     Change Server Icon
                                                 </button>
+                                                {icon && (
+                                                    <button
+                                                        onClick={() => setIcon('')}
+                                                        className="text-[14px] text-[#dbdee1] hover:text-white hover:underline transition-colors"
+                                                    >
+                                                        Remove Icon
+                                                    </button>
+                                                )}
                                                 <input ref={fileRef} type="file" accept="image/*" onChange={handleIconChange} className="hidden" />
                                             </div>
-                                        </div>
+                                        </section>
 
-                                        <div>
-                                            <label className="block text-sm font-semibold mb-2">Banner</label>
-                                            <div className="grid grid-cols-5 gap-3">
+                                        <div className="h-[1px] bg-[rgba(255,255,255,0.06)] my-8" />
+
+                                        <section>
+                                            <label className="block text-[12px] font-bold uppercase tracking-wider text-[#949ba4] mb-4">Banner</label>
+                                            <div className="grid grid-cols-5 gap-2.5">
                                                 {bannerOptions.map((opt) => (
                                                     <button
                                                         key={opt.value}
                                                         type="button"
                                                         onClick={() => setBannerColor(opt.value)}
                                                         disabled={!canManage}
-                                                        className={`h-12 rounded-lg border ${bannerColor === opt.value ? 'border-blurple' : 'border-discord-border/50'} transition`}
+                                                        className={`w-full aspect-[2/1] rounded-[8px] border-2 ${bannerColor === opt.value ? 'border-white' : 'border-transparent'} transition-all shadow-md`}
                                                         style={{ background: opt.value }}
                                                         title={opt.label}
                                                     />
                                                 ))}
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-semibold mb-2">Traits</label>
-                                            <p className="text-xs text-discord-faint mb-3">Add up to 5 traits to show your server's personality.</p>
-                                            <div className="flex flex-wrap gap-2 mb-3">
-                                                {traits.map((trait) => (
-                                                    <span key={trait} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-discord-border-light/25 text-sm">
-                                                        <span>{trait}</span>
-                                                        {canManage && (
-                                                            <button onClick={() => handleRemoveTrait(trait)} className="w-5 h-5 rounded-full bg-discord-border/50 text-discord-light hover:bg-discord-border/70">
-                                                                ×
-                                                            </button>
-                                                        )}
-                                                    </span>
+                                                {/* Filler to match image's 2x5 grid if needed, though we have 7 options */}
+                                                {[...Array(3)].map((_, i) => (
+                                                    <div key={i} className="w-full aspect-[2/1] rounded-[8px] bg-[#2b2d31] opacity-50" />
                                                 ))}
                                             </div>
-                                            {canManage && (
-                                                <input
-                                                    value={traitInput}
-                                                    onChange={(e) => setTraitInput(e.target.value)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') {
-                                                            e.preventDefault();
-                                                            handleAddTrait(traitInput);
-                                                        }
-                                                    }}
-                                                    className="w-full bg-discord-darkest/70 border border-discord-border/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blurple"
-                                                    placeholder="Add a trait and press Enter"
-                                                />
-                                            )}
-                                        </div>
+                                        </section>
 
-                                        <div>
-                                            <label className="block text-sm font-semibold mb-2">Description</label>
+                                        <div className="h-[1px] bg-[rgba(255,255,255,0.06)] my-8" />
+
+                                        <section>
+                                            <label className="block text-[12px] font-bold uppercase tracking-wider text-[#949ba4] mb-2">Traits</label>
+                                            <p className="text-[13px] text-[#949ba4] mb-5">Add up to 5 traits to show off your server's interests and personality.</p>
+                                            <div className="space-y-3">
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    {[0, 1, 2].map((idx) => (
+                                                        <div key={idx} className="relative group">
+                                                            <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                                                                <Smile className="w-4 h-4 text-[#b5bac1] opacity-70" />
+                                                            </div>
+                                                            <input
+                                                                value={traits[idx] || ''}
+                                                                onChange={(e) => {
+                                                                    const newTraits = [...traits];
+                                                                    newTraits[idx] = e.target.value;
+                                                                    setTraits(newTraits);
+                                                                }}
+                                                                className="w-full bg-[#1e1f22] border border-[#2b2d31] rounded-[8px] pl-10 pr-3 py-2.5 text-[14px] text-[#dbdee1] focus:outline-none focus:border-[#5865f2] transition-colors"
+                                                                disabled={!canManage}
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3 w-2/3">
+                                                    {[3, 4].map((idx) => (
+                                                        <div key={idx} className="relative group">
+                                                            <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                                                                <Smile className="w-4 h-4 text-[#b5bac1] opacity-70" />
+                                                            </div>
+                                                            <input
+                                                                value={traits[idx] || ''}
+                                                                onChange={(e) => {
+                                                                    const newTraits = [...traits];
+                                                                    newTraits[idx] = e.target.value;
+                                                                    setTraits(newTraits);
+                                                                }}
+                                                                className="w-full bg-[#1e1f22] border border-[#2b2d31] rounded-[8px] pl-10 pr-3 py-2.5 text-[14px] text-[#dbdee1] focus:outline-none focus:border-[#5865f2] transition-colors"
+                                                                disabled={!canManage}
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </section>
+
+                                        <div className="h-[1px] bg-[rgba(255,255,255,0.06)] my-8" />
+
+                                        <section>
+                                            <label className="block text-[12px] font-bold uppercase tracking-wider text-[#949ba4] mb-2">Description</label>
+                                            <p className="text-[13px] text-[#949ba4] mb-4">How did your server get started? Why should people join?</p>
                                             <textarea
                                                 value={description}
                                                 onChange={(e) => setDescription(e.target.value)}
-                                                rows={4}
-                                                className="w-full bg-discord-darkest/70 border border-discord-border/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blurple resize-none"
-                                                placeholder="How did your server get started? Why should people join?"
+                                                rows={5}
+                                                className="w-full bg-[#1e1f22] border border-[#2b2d31] rounded-[8px] px-4 py-3 text-[15px] text-[#dbdee1] focus:outline-none focus:border-[#5865f2] transition-colors resize-none"
+                                                placeholder="Tell the world a bit about this server."
                                                 disabled={!canManage}
                                             />
-                                        </div>
-
-                                        <div className="pt-4 border-t border-discord-border/30">
-                                            <h3 className="text-sm font-semibold text-discord-white mb-3">Access Control</h3>
-                                            <div className="flex items-center justify-between p-3 rounded-xl bg-discord-darkest/40 border border-discord-border/30">
-                                                <div>
-                                                    <p className="text-sm font-semibold text-discord-white">Enable Invite Requests</p>
-                                                    <p className="text-xs text-discord-faint mt-1">Allow users to request access even if they don't have an invite code.</p>
-                                                </div>
-                                                <button
-                                                    onClick={() => setInviteRequestsEnabled(!inviteRequestsEnabled)}
-                                                    className={`w-12 h-6 rounded-full transition-colors relative ${inviteRequestsEnabled ? 'bg-discord-green' : 'bg-discord-faint/60'}`}
-                                                >
-                                                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${inviteRequestsEnabled ? 'left-7' : 'left-1'}`} />
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {(error || successMessage) && (
-                                            <div className={`text-sm ${error ? 'text-discord-red' : 'text-emerald-400'}`}>
-                                                {error || successMessage}
-                                            </div>
-                                        )}
+                                        </section>
                                     </div>
 
-                                    {/* Preview */}
-                                    <div className="bg-discord-darkest/70 border border-discord-border/50 rounded-2xl overflow-hidden">
-                                        <div className="h-40" style={{ background: previewBanner }} />
-                                        <div className="px-5 pb-5 -mt-8">
-                                            <div className="w-16 h-16 rounded-2xl bg-discord-darkest/90 border border-discord-border/60 flex items-center justify-center overflow-hidden">
-                                                {icon ? (
-                                                    <img src={icon} alt="Server icon" className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <ImageIcon className="w-6 h-6 text-discord-faint" />
-                                                )}
-                                            </div>
-                                            <div className="mt-3">
-                                                <h3 className="text-lg font-bold">{name || 'Server'}</h3>
-                                                <p className="text-xs text-discord-faint mt-1">
-                                                    {communityProfile?.membersCount ?? 1} Members • {estLabel}
-                                                </p>
-                                                <p className="text-xs text-discord-light mt-3 line-clamp-3">
-                                                    {description || 'Add a description to help people discover your server.'}
-                                                </p>
-                                            </div>
-                                            <div className="mt-4 flex flex-wrap gap-2">
-                                                {previewTraits.map((t) => (
-                                                    <span key={t} className="px-3 py-1 rounded-full bg-discord-border-light/25 text-xs">{t}</span>
-                                                ))}
+                                    {/* Preview Card */}
+                                    <div className="relative hidden lg:block">
+                                        <div className="sticky top-12 flex justify-center">
+                                            <div className="w-[300px] bg-[#111214] rounded-2xl overflow-hidden shadow-2xl border border-[#ffffff08]">
+                                                {/* Card Header/Banner */}
+                                                <div className="h-[100px] relative" style={{ background: previewBanner }}>
+                                                    <div className="absolute -bottom-6 left-4">
+                                                        <div className="w-[70px] h-[70px] rounded-[18px] bg-[#111214] border-[4px] border-[#111214] flex items-center justify-center overflow-hidden shadow-xl">
+                                                            {icon ? (
+                                                                <img src={icon} alt="Preview icon" className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <div className="w-full h-full bg-[#2b2d31] flex items-center justify-center text-xl font-bold text-white uppercase">
+                                                                    {(name || 'S').charAt(0)}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Card Body */}
+                                                <div className="pt-8 px-4 pb-5">
+                                                    <div className="flex items-center gap-1.5 mb-1">
+                                                        <h3 className="text-[15px] font-bold text-white truncate">
+                                                            {name || 'Server Name'}
+                                                        </h3>
+                                                        <Globe className="w-3.5 h-3.5 text-white opacity-90" />
+                                                    </div>
+                                                    
+                                                    <div className="flex items-center gap-1 text-[11px] font-semibold text-[#b5bac1] mb-3">
+                                                        <div className="w-[6px] h-[6px] rounded-full bg-[#23a559]" />
+                                                        <span>1 Online</span>
+                                                        <div className="w-[3px] h-[3px] rounded-full bg-[#949ba4] mx-0.5" />
+                                                        <span>{communityProfile?.membersCount || 18} Members</span>
+                                                    </div>
+
+                                                    <div className="text-[11px] font-bold text-[#949ba4] uppercase tracking-wider mt-4">
+                                                        {estLabel}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             )}
                         </div>
+
+                        {/* Floating Save Bar */}
+                        {isDirty && (
+                            <div className="fixed bottom-0 left-0 right-0 md:left-auto md:right-[50%] md:translate-x-[50%] z-[100] px-4 pb-4 animate-slide-up">
+                                <div className="max-w-[740px] w-full bg-[#111214] rounded-lg shadow-2xl border border-[#ffffff08] p-4 flex items-center justify-between">
+                                    <p className="text-[15px] font-medium text-white">Careful — you have unsaved changes!</p>
+                                    <div className="flex items-center gap-4">
+                                        <button
+                                            onClick={handleReset}
+                                            className="text-[14px] font-medium text-[#dbdee1] hover:underline"
+                                        >
+                                            Reset
+                                        </button>
+                                        <button
+                                            onClick={handleSave}
+                                            disabled={isSaving}
+                                            className="px-4 py-2 bg-[#23a559] hover:bg-[#1a7a42] text-white text-[14px] font-medium rounded-[3px] transition-colors disabled:opacity-50"
+                                        >
+                                            {isSaving ? 'Saving...' : 'Save Changes'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </main>
                 </div>
             </div>

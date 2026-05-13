@@ -1,5 +1,5 @@
 import express from "express";
-import { createCommunity, generateInvite, getInviteCodes, getMyCommunity, getMyCommunities, getAllCommunities, createInviteRequest, getInviteRequests, approveInviteRequest, rejectInviteRequest, getMembers, updateMemberRole, searchMembers, joinCommunity, getRoster, getCommunityProfile, updateCommunityProfile, deleteCommunity, kickMember, getRoles, createRole, updateRole, deleteRole, updateMemberRoles, updateNotificationSettings, getBans, reorderRoles, createCategory, updateCategory, deleteCategory, updateCategoryOverwrites } from "../controllers/community.controller.js";
+import { createCommunity, generateInvite, getInviteCodes, getMyCommunity, getMyCommunities, getAllCommunities, createInviteRequest, getInviteRequests, approveInviteRequest, rejectInviteRequest, getMembers, updateMemberRole, searchMembers, joinCommunity, getRoster, getCommunityProfile, updateCommunityProfile, deleteCommunity, kickMember, getRoles, createRole, updateRole, deleteRole, updateMemberRoles, updateNotificationSettings, getBans, reorderRoles, createCategory, updateCategory, deleteCategory, updateCategoryOverwrites, uploadEmoji, updateEmoji, deleteEmoji } from "../controllers/community.controller.js";
 import { sendServerInvite } from "../controllers/serverInvite.controller.js";
 import { verifyToken } from "../middleware/verifyToken.js";
 import { verifyCommunityAccess } from "../middleware/verifyCommunityAccess.js";
@@ -71,5 +71,10 @@ router.post("/:id/categories", verifyToken, verifyCommunityAccess, createCategor
 router.put("/:id/categories/:categoryId", verifyToken, verifyCommunityAccess, updateCategory);
 router.put("/:id/categories/:categoryId/overwrites", verifyToken, verifyCommunityAccess, updateCategoryOverwrites);
 router.delete("/:id/categories/:categoryId", verifyToken, verifyCommunityAccess, deleteCategory);
+
+// Emojis
+router.post("/:id/emojis", verifyToken, verifyCommunityAccess, uploadEmoji);
+router.patch("/:id/emojis/:emojiId", verifyToken, verifyCommunityAccess, updateEmoji);
+router.delete("/:id/emojis/:emojiId", verifyToken, verifyCommunityAccess, deleteEmoji);
 
 export default router;

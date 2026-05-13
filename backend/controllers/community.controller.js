@@ -1283,7 +1283,7 @@ export const getCommunityProfile = async (req, res) => {
         }
 
         const community = await Community.findById(id).select(
-            "name icon bannerColor traits profileDescription description createdAt members"
+            "name icon bannerColor traits profileDescription description createdAt members engagement emojis access safety community onboarding"
         );
 
         if (!community) {
@@ -1302,6 +1302,12 @@ export const getCommunityProfile = async (req, res) => {
                 description: community.description || "",
                 createdAt: community.createdAt,
                 membersCount: community.members?.length || 0,
+                engagement: community.engagement || {},
+                emojis: community.emojis || [],
+                access: community.access || { joinMethod: 'invite', isAgeRestricted: false, rules: { enabled: false, list: [] } },
+                safety: community.safety || { verificationLevel: 'none', explicitContentFilter: 'members_without_roles', twoFactorModeration: false },
+                community: community.community || { enabled: true, rulesChannelId: null, updatesChannelId: null, safetyChannelId: null, primaryLanguage: 'English', description: '' },
+                onboarding: community.onboarding || { enabled: false, steps: [], memberTags: [] },
             },
         });
     } catch (error) {
@@ -1313,7 +1319,7 @@ export const getCommunityProfile = async (req, res) => {
 // ── PUT /communities/:id/profile ────────────────────────────────────────────
 export const updateCommunityProfile = async (req, res) => {
     const { id } = req.params;
-    const { name, icon, bannerColor, traits, profileDescription } = req.body;
+    const { name, icon, bannerColor, traits, profileDescription, engagement, access, safety, community: communityData, onboarding } = req.body;
 
     try {
         if (id !== req.communityId) {
@@ -1367,6 +1373,104 @@ export const updateCommunityProfile = async (req, res) => {
             community.description = trimmed;
         }
 
+        if (engagement !== undefined) {
+            // Robust merging of engagement settings
+            if (!community.engagement) community.engagement = {};
+            
+            if (engagement.systemMessages) {
+                if (!community.engagement.systemMessages) community.engagement.systemMessages = {};
+                const sm = engagement.systemMessages;
+                if (sm.welcomeEnabled !== undefined) community.engagement.systemMessages.welcomeEnabled = !!sm.welcomeEnabled;
+                if (sm.welcomePromptEnabled !== undefined) community.engagement.systemMessages.welcomePromptEnabled = !!sm.welcomePromptEnabled;
+                if (sm.boostEnabled !== undefined) community.engagement.systemMessages.boostEnabled = !!sm.boostEnabled;
+                if (sm.tipsEnabled !== undefined) community.engagement.systemMessages.tipsEnabled = !!sm.tipsEnabled;
+                if (sm.channelId !== undefined) community.engagement.systemMessages.channelId = sm.channelId || null;
+            }
+
+            if (engagement.activityFeed) {
+                if (!community.engagement.activityFeed) community.engagement.activityFeed = {};
+                if (engagement.activityFeed.displayEnabled !== undefined) {
+                    community.engagement.activityFeed.displayEnabled = !!engagement.activityFeed.displayEnabled;
+                }
+            }
+
+            if (engagement.defaultNotifications !== undefined) {
+                if (["all", "mentions"].includes(engagement.defaultNotifications)) {
+                    community.engagement.defaultNotifications = engagement.defaultNotifications;
+                }
+            }
+
+            if (engagement.afk) {
+                if (!community.engagement.afk) community.engagement.afk = {};
+                if (engagement.afk.channelId !== undefined) community.engagement.afk.channelId = engagement.afk.channelId || null;
+                if (engagement.afk.timeout !== undefined) community.engagement.afk.timeout = Number(engagement.afk.timeout) || 300;
+            }
+        }
+
+        if (access !== undefined) {
+            if (!community.access) community.access = { joinMethod: 'invite', isAgeRestricted: false, rules: { enabled: false, list: [] } };
+            
+            if (access.joinMethod !== undefined && ["invite", "apply", "discoverable"].includes(access.joinMethod)) {
+                community.access.joinMethod = access.joinMethod;
+                // Sync with existing field if necessary
+                community.inviteRequestsEnabled = access.joinMethod === "apply";
+            }
+
+            if (access.isAgeRestricted !== undefined) {
+                community.access.isAgeRestricted = !!access.isAgeRestricted;
+            }
+
+            if (access.rules !== undefined) {
+                if (!community.access.rules) community.access.rules = { enabled: false, list: [] };
+                if (access.rules.enabled !== undefined) community.access.rules.enabled = !!access.rules.enabled;
+                if (Array.isArray(access.rules.list)) {
+                    community.access.rules.list = access.rules.list.filter(r => typeof r === 'string' && r.trim()).map(r => r.trim());
+                }
+            }
+        }
+
+        if (safety !== undefined) {
+            if (!community.safety) community.safety = { verificationLevel: 'none', explicitContentFilter: 'members_without_roles', twoFactorModeration: false };
+            
+            if (safety.verificationLevel !== undefined && ["none", "low", "medium", "high", "highest"].includes(safety.verificationLevel)) {
+                community.safety.verificationLevel = safety.verificationLevel;
+            }
+
+            if (safety.explicitContentFilter !== undefined && ["disabled", "members_without_roles", "all_members"].includes(safety.explicitContentFilter)) {
+                community.safety.explicitContentFilter = safety.explicitContentFilter;
+            }
+
+            if (safety.twoFactorModeration !== undefined) {
+                community.safety.twoFactorModeration = !!safety.twoFactorModeration;
+            }
+        }
+
+        if (communityData !== undefined) {
+            if (!community.community) community.community = { enabled: true, rulesChannelId: null, updatesChannelId: null, safetyChannelId: null, primaryLanguage: 'English', description: '' };
+            if (communityData.enabled !== undefined) community.community.enabled = !!communityData.enabled;
+            if (communityData.rulesChannelId !== undefined) community.community.rulesChannelId = communityData.rulesChannelId || null;
+            if (communityData.updatesChannelId !== undefined) community.community.updatesChannelId = communityData.updatesChannelId || null;
+            if (communityData.safetyChannelId !== undefined) community.community.safetyChannelId = communityData.safetyChannelId || null;
+            if (communityData.primaryLanguage !== undefined) community.community.primaryLanguage = communityData.primaryLanguage || 'English';
+            if (communityData.description !== undefined) community.community.description = communityData.description || '';
+        }
+
+        if (onboarding !== undefined) {
+            if (!community.onboarding) community.onboarding = { enabled: false, steps: [], memberTags: [] };
+            if (onboarding.enabled !== undefined) community.onboarding.enabled = !!onboarding.enabled;
+            if (Array.isArray(onboarding.steps)) {
+                community.onboarding.steps = onboarding.steps.map(s => ({
+                    title: s.title || 'Welcome Step',
+                    description: s.description || '',
+                    icon: s.icon || '',
+                    channelId: s.channelId || null,
+                }));
+            }
+            if (Array.isArray(onboarding.memberTags)) {
+                community.onboarding.memberTags = onboarding.memberTags.filter(t => typeof t === 'string' && t.trim()).map(t => t.trim());
+            }
+        }
+
         await community.save();
 
         await logAction(id, req.userId, null, 'community_update', '', { 
@@ -1386,6 +1490,11 @@ export const updateCommunityProfile = async (req, res) => {
                 description: community.description || "",
                 createdAt: community.createdAt,
                 membersCount: community.members?.length || 0,
+                engagement: community.engagement || {},
+                access: community.access || { joinMethod: 'invite', isAgeRestricted: false, rules: { enabled: false, list: [] } },
+                safety: community.safety || { verificationLevel: 'none', explicitContentFilter: 'members_without_roles', twoFactorModeration: false },
+                community: community.community || { enabled: true, rulesChannelId: null, updatesChannelId: null, safetyChannelId: null, primaryLanguage: 'English', description: '' },
+                onboarding: community.onboarding || { enabled: false, steps: [], memberTags: [] },
             },
         });
     } catch (error) {
@@ -1599,6 +1708,119 @@ export const updateCategoryOverwrites = async (req, res) => {
         res.status(200).json({ success: true, category });
     } catch (error) {
         console.log("Error in updateCategoryOverwrites:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── POST /communities/:id/emojis ───────────────────────────────────────────
+export const uploadEmoji = async (req, res) => {
+    const { id } = req.params;
+    const { name, url } = req.body;
+
+    try {
+        if (id !== req.communityId) {
+            return res.status(403).json({ success: false, message: "Community ID mismatch" });
+        }
+
+        if (!['admin', 'moderator'].includes(req.communityRole)) {
+            return res.status(403).json({ success: false, message: "Only admins and moderators can upload emojis" });
+        }
+
+        if (!name || !url) {
+            return res.status(400).json({ success: false, message: "Name and URL are required" });
+        }
+
+        const community = await Community.findById(id);
+        if (!community) {
+            return res.status(404).json({ success: false, message: "Community not found" });
+        }
+
+        if (community.emojis.length >= 50) {
+            return res.status(400).json({ success: false, message: "Server has reached the maximum limit of 50 emojis" });
+        }
+
+        const newEmoji = {
+            name: name.trim().replace(/[^a-zA-Z0-9_]/g, ""),
+            url,
+            uploadedBy: req.userId,
+            createdAt: new Date(),
+        };
+
+        community.emojis.push(newEmoji);
+        await community.save();
+
+        res.status(201).json({ success: true, emoji: community.emojis[community.emojis.length - 1] });
+    } catch (error) {
+        console.log("Error in uploadEmoji:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── PATCH /communities/:id/emojis/:emojiId ──────────────────────────────────
+export const updateEmoji = async (req, res) => {
+    const { id, emojiId } = req.params;
+    const { name } = req.body;
+
+    try {
+        if (id !== req.communityId) {
+            return res.status(403).json({ success: false, message: "Community ID mismatch" });
+        }
+
+        if (!['admin', 'moderator'].includes(req.communityRole)) {
+            return res.status(403).json({ success: false, message: "Only admins and moderators can rename emojis" });
+        }
+
+        const community = await Community.findById(id);
+        if (!community) {
+            return res.status(404).json({ success: false, message: "Community not found" });
+        }
+
+        const emoji = community.emojis.id(emojiId);
+        if (!emoji) {
+            return res.status(404).json({ success: false, message: "Emoji not found" });
+        }
+
+        if (name) {
+            emoji.name = name.trim().replace(/[^a-zA-Z0-9_]/g, "");
+        }
+
+        await community.save();
+        res.status(200).json({ success: true, emoji });
+    } catch (error) {
+        console.log("Error in updateEmoji:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// ── DELETE /communities/:id/emojis/:emojiId ─────────────────────────────────
+export const deleteEmoji = async (req, res) => {
+    const { id, emojiId } = req.params;
+
+    try {
+        if (id !== req.communityId) {
+            return res.status(403).json({ success: false, message: "Community ID mismatch" });
+        }
+
+        if (!['admin', 'moderator'].includes(req.communityRole)) {
+            return res.status(403).json({ success: false, message: "Only admins and moderators can delete emojis" });
+        }
+
+        const community = await Community.findById(id);
+        if (!community) {
+            return res.status(404).json({ success: false, message: "Community not found" });
+        }
+
+        const emoji = community.emojis.id(emojiId);
+        if (!emoji) {
+            return res.status(404).json({ success: false, message: "Emoji not found" });
+        }
+
+        community.emojis.pull(emojiId);
+        await community.save();
+
+        res.status(200).json({ success: true, message: "Emoji deleted" });
+    } catch (error) {
+        console.log("Error in deleteEmoji:", error);
         res.status(500).json({ success: false, message: "Server error" });
     }
 };

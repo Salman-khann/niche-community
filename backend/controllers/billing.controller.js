@@ -7,9 +7,14 @@ let stripeClient = undefined;
 
 const resolveStripeClient = () => {
     if (stripeClient) return stripeClient;
-    if (!process.env.STRIPE_SECRET_KEY) return null;
+    let key = process.env.STRIPE_SECRET_KEY;
+    if (!key) return null;
+
+    // Clean key (remove single/double quotes and whitespace)
+    key = key.trim().replace(/^['"]|['"]$/g, '');
+
     try {
-        stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);
+        stripeClient = new Stripe(key);
     } catch (error) {
         console.log("Stripe SDK load error:", error.message);
         stripeClient = null;
@@ -362,20 +367,49 @@ export const createPortalSession = async (req, res) => {
             return res.status(500).json({ success: false, message: "Stripe is not configured" });
         }
 
-        const profile = await Profile.findOne({ userId: req.userId }).lean();
-        if (!profile?.stripeCustomerId) {
-            return res.status(400).json({ success: false, message: "No billing customer found" });
+        let profile = await Profile.findOne({ userId: req.userId });
+        if (!profile) {
+            return res.status(404).json({ success: false, message: "User profile not found in database" });
         }
 
-        const portal = await stripe.billingPortal.sessions.create({
-            customer: profile.stripeCustomerId,
-            return_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/upgrade`,
-        });
+        let stripeCustomerId = profile.stripeCustomerId;
 
-        return res.status(200).json({ success: true, url: portal.url });
+        if (!stripeCustomerId) {
+            try {
+                // Fetch user for email
+                const user = await User.findById(req.userId).lean();
+                const userEmail = user?.email || `user_${req.userId}@circlecore.local`;
+                
+                // Create a new customer in Stripe
+                const customer = await stripe.customers.create({
+                    email: userEmail,
+                    metadata: { userId: req.userId.toString() },
+                });
+                stripeCustomerId = customer.id;
+                
+                // Save it to the profile
+                profile.stripeCustomerId = stripeCustomerId;
+                await profile.save();
+            } catch (stripeErr) {
+                console.error("Stripe Customer Creation Error:", stripeErr);
+                return res.status(500).json({ success: false, message: `Failed to initialize billing account: ${stripeErr.message}` });
+            }
+        }
+
+        try {
+            const portal = await stripe.billingPortal.sessions.create({
+                customer: stripeCustomerId,
+                return_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/upgrade`,
+            });
+
+            return res.status(200).json({ success: true, url: portal.url });
+        } catch (portalErr) {
+            console.error("Stripe Portal Session Error:", portalErr);
+            return res.status(500).json({ success: false, message: `Stripe portal error: ${portalErr.message}` });
+        }
     } catch (error) {
-        console.log("Error in createPortalSession:", error);
-        return res.status(500).json({ success: false, message: "Server error" });
+        console.error("GENERIC ERROR in createPortalSession:", error);
+        return res.status(500).json({ success: false, message: `Server error: ${error.message}` });
     }
 };
 
@@ -460,6 +494,39 @@ export const getInvoices = async (req, res) => {
         return res.status(200).json({ success: true, invoices });
     } catch (error) {
         console.log("Error in getInvoices:", error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+export const getPaymentMethods = async (req, res) => {
+    try {
+        const stripe = resolveStripeClient();
+        if (!stripe) {
+            return res.status(500).json({ success: false, message: "Stripe is not configured" });
+        }
+
+        const profile = await Profile.findOne({ userId: req.userId }).lean();
+        if (!profile?.stripeCustomerId) {
+            return res.status(200).json({ success: true, paymentMethods: [] });
+        }
+
+        const methods = await stripe.paymentMethods.list({
+            customer: profile.stripeCustomerId,
+            type: 'card',
+        });
+
+        const paymentMethods = (methods.data || []).map((pm) => ({
+            id: pm.id,
+            brand: pm.card?.brand || 'unknown',
+            last4: pm.card?.last4 || '****',
+            expMonth: pm.card?.exp_month,
+            expYear: pm.card?.exp_year,
+            isDefault: false, // Stripe doesn't easily show default via this API without checking customer settings
+        }));
+
+        return res.status(200).json({ success: true, paymentMethods });
+    } catch (error) {
+        console.log("Error in getPaymentMethods:", error);
         return res.status(500).json({ success: false, message: "Server error" });
     }
 };

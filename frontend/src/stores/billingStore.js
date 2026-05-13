@@ -9,6 +9,7 @@ export const useBillingStore = create((set) => ({
     error: null,
     subscription: null,
     invoices: [],
+    paymentMethods: [],
 
     createCheckoutSession: async (plan = 'premium') => {
         set({ isLoading: true, error: null });
@@ -54,6 +55,22 @@ export const useBillingStore = create((set) => ({
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Failed to fetch invoices');
             set({ isLoading: false, invoices: data.invoices || [] });
+            return data;
+        } catch (error) {
+            set({ isLoading: false, error: error.message });
+            throw error;
+        }
+    },
+
+    fetchPaymentMethods: async () => {
+        set({ isLoading: true, error: null });
+        try {
+            const res = await apiFetch(`${API_URL}/payment-methods`, {
+                credentials: 'include',
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to fetch payment methods');
+            set({ isLoading: false, paymentMethods: data.paymentMethods || [] });
             return data;
         } catch (error) {
             set({ isLoading: false, error: error.message });

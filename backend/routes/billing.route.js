@@ -6,6 +6,7 @@ import {
 	createPortalSession,
 	setAutoRenewal,
 	getInvoices,
+	getPaymentMethods,
 } from "../controllers/billing.controller.js";
 import { verifyToken } from "../middleware/verifyToken.js";
 
@@ -17,5 +18,6 @@ router.get("/subscription", verifyToken, getSubscriptionStatus);
 router.post("/portal-session", verifyToken, createPortalSession);
 router.post("/auto-renewal", verifyToken, setAutoRenewal);
 router.get("/invoices", verifyToken, getInvoices);
+router.get("/payment-methods", verifyToken, getPaymentMethods);
 
 export default router;
